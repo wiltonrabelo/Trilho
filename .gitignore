@@ -1,0 +1,17 @@
+# Dependências
+node_modules
+dist
+dist-ssr
+
+# Rust / Tauri
+src-tauri/target
+
+# Logs e temporários
+*.log
+.DS_Store
+*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea

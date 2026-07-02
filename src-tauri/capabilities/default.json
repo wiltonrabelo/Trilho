@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões mínimas do Trilho (allowlist enxuta — baseline de segurança §11).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-get-app-info",
+    "allow-list-commits-mock"
+  ]
+}

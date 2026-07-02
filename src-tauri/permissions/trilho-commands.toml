@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-get-app-info"
+description = "Permite obter nome e versão do app."
+commands.allow = ["get_app_info"]
+
+[[permission]]
+identifier = "allow-list-commits-mock"
+description = "Permite listar commits de exemplo (M0)."
+commands.allow = ["list_commits_mock"]

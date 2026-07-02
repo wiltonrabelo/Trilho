@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tokens de tema (RF-17). Contraste AA nos dois temas.
+ * Valores em canais RGB (sem vírgulas) para uso com <alpha-value> do Tailwind.
+ */
+@layer base {
+  :root {
+    --bg: 248 249 251;
+    --surface: 255 255 255;
+    --border: 226 230 236;
+    --text: 24 28 35;
+    --muted: 104 112 126;
+    --accent: 63 91 176;
+  }
+
+  .dark {
+    --bg: 15 18 24;
+    --surface: 22 26 34;
+    --border: 39 45 56;
+    --text: 226 231 240;
+    --muted: 138 147 163;
+    --accent: 124 149 232;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-text font-sans antialiased;
+    margin: 0;
+  }
+
+  /* Transição suave ao trocar de tema. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+}
