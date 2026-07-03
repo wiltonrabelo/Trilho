@@ -18,6 +18,8 @@ import {
 
   fetchRemote,
 
+  getCredentialStatus,
+
   getAppInfo,
 
   getCommitDiff,
@@ -51,6 +53,8 @@ import type {
   RepoStatusDto,
 
   SyncInfoDto,
+
+  CredentialStatusDto,
 
 } from "@/types";
 
@@ -98,6 +102,8 @@ function App() {
 
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  const [credential, setCredential] = useState<CredentialStatusDto | null>(null);
+
   const [error, setError] = useState<string | null>(null);
 
 
@@ -142,6 +148,8 @@ function App() {
 
     getRecentRepos().then(setRecentRepos);
 
+    getCredentialStatus().then(setCredential).catch(() => null);
+
   }, []);
 
 
@@ -185,6 +193,8 @@ function App() {
       setStatus(repoStatus);
 
       setSync(syncInfo);
+
+      getCredentialStatus().then(setCredential).catch(() => null);
 
     } catch (e) {
 
@@ -390,6 +400,8 @@ function App() {
 
               sync={sync}
 
+              credential={credential}
+
               onFetch={handleFetch}
 
               loading={fetchLoading}
@@ -532,6 +544,7 @@ function App() {
                   unstaged={status?.unstaged ?? []}
                   untracked={status?.untracked ?? []}
                   selectedPath={selectedFile?.path ?? null}
+                  selectedStaged={selectedFile?.staged ?? null}
                   onSelectFile={handleSelectFile}
                 />
                 <div className="border-t border-border">

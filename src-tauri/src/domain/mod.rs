@@ -14,6 +14,8 @@ pub struct Commit {
     pub authored_at: String,
     /// Commit ainda não enviado ao remoto (badge "local").
     pub is_local_only: bool,
+    /// SHAs dos commits pais (para layout de lanes no M1-b).
+    pub parent_ids: Vec<String>,
 }
 
 /// Metadados do repositório aberto.

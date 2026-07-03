@@ -22,5 +22,6 @@ commands.allow = [
   "get_file_diff",
   "get_commit_diff",
   "get_sync_info",
+  "get_credential_status",
   "fetch_remote",
 ]

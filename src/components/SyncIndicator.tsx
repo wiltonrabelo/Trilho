@@ -1,8 +1,9 @@
 import { KeyRound, RefreshCw } from "lucide-react";
-import type { SyncInfoDto } from "@/types";
+import type { SyncInfoDto, CredentialStatusDto } from "@/types";
 
 interface SyncIndicatorProps {
   sync: SyncInfoDto | null;
+  credential: CredentialStatusDto | null;
   onFetch: () => void;
   loading?: boolean;
   error?: string | null;
@@ -21,6 +22,7 @@ function isAuthError(error: string | null | undefined): boolean {
 
 export function SyncIndicator({
   sync,
+  credential,
   onFetch,
   loading,
   error,
@@ -29,6 +31,8 @@ export function SyncIndicator({
     ? new Date(sync.lastFetchAt).toLocaleString("pt-BR")
     : null;
   const authError = isAuthError(error);
+  const showCredentialHint =
+    credential?.hint && sync?.upstream && !credential.gcmAvailable;
 
   return (
     <div className="flex max-w-xs flex-col gap-1 text-xs">
@@ -49,13 +53,16 @@ export function SyncIndicator({
             onClick={onFetch}
             disabled={loading}
             className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title="Abrir Git Credential Manager"
+            title="Reautenticar via Git Credential Manager"
           >
             <KeyRound size={14} />
             Conectar
           </button>
         )}
       </div>
+      {showCredentialHint && (
+        <span className="text-amber-600 dark:text-amber-400">{credential.hint}</span>
+      )}
       {sync?.upstream && (
         <span className="text-muted">
           {sync.upstream}

@@ -29,6 +29,7 @@ pub fn run() {
             commands::get_file_diff,
             commands::get_commit_diff,
             commands::get_sync_info,
+            commands::get_credential_status,
             commands::fetch_remote,
         ])
         .run(tauri::generate_context!())

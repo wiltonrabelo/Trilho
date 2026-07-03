@@ -2,7 +2,7 @@
 
 use crate::application::{AppState, GitCommand, GitError, GitReader};
 use crate::domain::{Commit, RepoInfo, RepoStatus, SyncInfo};
-use crate::infrastructure::{validate_git_object_id, validate_repo_relative_path, repo_info, Git2Reader, MockGitReader, SafeGitCli};
+use crate::infrastructure::{validate_git_object_id, validate_repo_relative_path, repo_info, CredentialStatus, Git2Reader, MockGitReader, SafeGitCli, detect_credential_status};
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -129,6 +129,11 @@ pub fn get_sync_info(state: State<AppState>) -> Result<SyncInfo, String> {
         .map_err(|e| e.to_string())?;
     info.last_fetch_at = state.last_fetch_at();
     Ok(info)
+}
+
+#[tauri::command]
+pub fn get_credential_status() -> CredentialStatus {
+    detect_credential_status()
 }
 
 #[tauri::command]

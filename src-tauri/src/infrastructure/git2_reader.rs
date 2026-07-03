@@ -49,7 +49,7 @@ impl GitReader for Git2Reader {
         revwalk
             .push_head()
             .map_err(|e| GitError::Io(e.to_string()))?;
-        revwalk.set_sorting(Sort::TIME).ok();
+        revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME).ok();
 
         let mut commits = Vec::with_capacity(limit.min(256));
         for (idx, oid) in revwalk.enumerate() {
@@ -76,6 +76,10 @@ impl GitReader for Git2Reader {
                 None => false,
             };
 
+            let parent_ids: Vec<String> = (0..commit.parent_count())
+                .filter_map(|i| commit.parent_id(i).ok().map(|p| p.to_string()))
+                .collect();
+
             commits.push(Commit {
                 id: oid.to_string(),
                 short_id: format!("{:.7}", oid),
@@ -83,6 +87,7 @@ impl GitReader for Git2Reader {
                 author_name: commit.author().name().unwrap_or("Desconhecido").to_string(),
                 authored_at: oid_time_to_iso(&commit),
                 is_local_only,
+                parent_ids,
             });
         }
         Ok(commits)
