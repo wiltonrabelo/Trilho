@@ -5,6 +5,7 @@ mod git_cli;
 mod git2_reader;
 mod repo_watcher;
 mod status_parser;
+mod upstream;
 mod validation;
 
 pub use credential::{detect_credential_status, CredentialStatus};

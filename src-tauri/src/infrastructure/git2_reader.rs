@@ -1,14 +1,18 @@
 //! Adaptador de leitura via libgit2 (RF-01, RF-04 parcial).
 
+use crate::application::{GitOperation, RevListAheadBehind, StatusPorcelain};
 use crate::application::{GitError, GitReader};
 use crate::domain::{Commit, RepoStatus, SyncInfo};
 use crate::infrastructure::git_cli::SafeGitCli;
+use crate::infrastructure::status_parser;
+use crate::infrastructure::upstream::resolve_head_upstream;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use git2::{BranchType, Oid, Repository, Sort};
+use git2::{Repository, Sort};
 use std::path::Path;
 
 pub struct Git2Reader {
     repo_path: String,
+    cli: SafeGitCli,
 }
 
 impl Git2Reader {
@@ -16,32 +20,19 @@ impl Git2Reader {
         Repository::discover(repo_path).map_err(|_| GitError::NotARepository)?;
         Ok(Self {
             repo_path: repo_path.to_string(),
+            cli: SafeGitCli::new(repo_path),
         })
     }
 
     fn open(&self) -> Result<Repository, GitError> {
         Repository::discover(&self.repo_path).map_err(|e| GitError::Io(e.to_string()))
     }
-
-    fn upstream_oid(&self, repo: &Repository) -> Option<Oid> {
-        let head = repo.head().ok()?;
-        if !head.is_branch() {
-            return None;
-        }
-        let branch = repo
-            .find_branch(
-                head.shorthand().unwrap_or("HEAD"),
-                BranchType::Local,
-            )
-            .ok()?;
-        branch.upstream().ok()?.get().target()
-    }
 }
 
 impl GitReader for Git2Reader {
     fn list_commits(&self, limit: usize, skip: usize) -> Result<Vec<Commit>, GitError> {
         let repo = self.open()?;
-        let upstream = self.upstream_oid(&repo);
+        let upstream_oid = resolve_head_upstream(&repo).and_then(|u| u.upstream_oid);
 
         let mut revwalk = repo
             .revwalk()
@@ -63,7 +54,7 @@ impl GitReader for Git2Reader {
             let commit = repo
                 .find_commit(oid)
                 .map_err(|e| GitError::Io(e.to_string()))?;
-            let is_local_only = match upstream {
+            let is_local_only = match upstream_oid {
                 Some(upstream_oid) => {
                     if oid == upstream_oid {
                         false
@@ -94,50 +85,22 @@ impl GitReader for Git2Reader {
     }
 
     fn get_status(&self) -> Result<RepoStatus, GitError> {
-        let output = SafeGitCli::run(
-            &self.repo_path,
-            &crate::application::GitCommand {
-                args: vec![
-                    "status".into(),
-                    "--porcelain=v2".into(),
-                    "--branch".into(),
-                    "-z".into(),
-                ],
-            },
-        )?;
-        crate::infrastructure::status_parser::parse_porcelain_v2(&output)
+        let op = StatusPorcelain;
+        let output = self.cli.run(&op.command())?;
+        status_parser::parse_porcelain_v2(&output)
     }
 
     fn get_sync_info(&self) -> Result<SyncInfo, GitError> {
         let repo = self.open()?;
-        let head = repo.head().ok();
-        let upstream_name = head
-            .as_ref()
-            .and_then(|h| h.shorthand())
-            .and_then(|branch| {
-                repo.find_branch(branch, BranchType::Local)
-                    .ok()?
-                    .upstream()
-                    .ok()?
-                    .name()
-                    .ok()
-                    .flatten()
-                    .map(|s| s.to_string())
-            });
+        let upstream = resolve_head_upstream(&repo);
 
-        let (ahead, behind) = if let Some(upstream_name) = upstream_name.as_deref() {
-            let out = SafeGitCli::run(
-                &self.repo_path,
-                &crate::application::GitCommand {
-                    args: vec![
-                        "rev-list".into(),
-                        "--left-right".into(),
-                        "--count".into(),
-                        format!("HEAD...{upstream_name}"),
-                    ],
-                },
-            )
-            .unwrap_or_else(|_| "0\t0".into());
+        let upstream_name = upstream.as_ref().and_then(|u| u.upstream_name.clone());
+
+        let (ahead, behind) = if let Some(name) = upstream_name.as_deref() {
+            let op = RevListAheadBehind {
+                upstream: name.to_string(),
+            };
+            let out = self.cli.run(&op.command()).unwrap_or_else(|_| "0\t0".into());
             parse_ahead_behind(&out)
         } else {
             (0, 0)
@@ -159,23 +122,17 @@ pub fn repo_info(repo_path: &str) -> Result<crate::domain::RepoInfo, GitError> {
         .as_ref()
         .map(|h| !h.is_branch())
         .unwrap_or(false);
-    let branch = head
+
+    let upstream_ref = resolve_head_upstream(&repo);
+    let branch = if is_detached {
+        None
+    } else {
+        upstream_ref.as_ref().map(|u| u.branch.clone())
+    };
+    let upstream = upstream_ref.and_then(|u| u.upstream_name);
+
+    let has_commits = head
         .as_ref()
-        .filter(|h| h.is_branch())
-        .and_then(|h| h.shorthand().map(|s| s.to_string()));
-    let upstream = branch.as_ref().and_then(|name| {
-        repo.find_branch(name, BranchType::Local)
-            .ok()?
-            .upstream()
-            .ok()?
-            .name()
-            .ok()
-            .flatten()
-            .map(|s| s.to_string())
-    });
-    let has_commits = repo
-        .head()
-        .ok()
         .and_then(|h| h.target())
         .is_some()
         && repo.is_empty().ok() == Some(false);
@@ -219,4 +176,56 @@ fn parse_ahead_behind(output: &str) -> (u32, u32) {
 pub fn is_git_repo(path: &str) -> bool {
     Path::new(path).join(".git").exists()
         || git2::Repository::discover(path).is_ok()
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+
+    fn init_repo_with_commit(path: &std::path::Path) {
+        fs::create_dir_all(path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(path)
+            .output()
+            .expect("git init");
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        fs::write(path.join("f.txt"), "x").unwrap();
+        Command::new("git")
+            .args(["add", "f.txt"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(path)
+            .output()
+            .expect("git commit");
+    }
+
+    #[test]
+    fn lista_commits_em_repo_temp() {
+        let dir = std::env::temp_dir().join(format!("trilho-reader-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        let path = dir.to_string_lossy();
+        let reader = Git2Reader::new(&path).expect("reader");
+        let commits = reader.list_commits(10, 0).expect("commits");
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].summary, "init");
+        let info = repo_info(&path).expect("info");
+        assert!(info.has_commits);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

@@ -1,8 +1,13 @@
-//! Comandos IPC expostos ao frontend.
+//! Comandos IPC expostos ao frontend — fachada fina sobre casos de uso.
 
-use crate::application::{AppState, GitCommand, GitError, GitReader};
+use crate::application::{
+    AppState, FetchRemote, FileDiff, GitError, GitReader, RepoContext, ShowCommit,
+};
 use crate::domain::{Commit, RepoInfo, RepoStatus, SyncInfo};
-use crate::infrastructure::{validate_git_object_id, validate_repo_relative_path, repo_info, CredentialStatus, Git2Reader, MockGitReader, SafeGitCli, detect_credential_status};
+use crate::infrastructure::{
+    detect_credential_status, repo_info, validate_git_object_id, validate_repo_relative_path,
+    CredentialStatus, MockGitReader,
+};
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -14,9 +19,9 @@ pub struct AppInfo {
     pub version: String,
 }
 
-fn reader_for(state: &State<AppState>) -> Result<Git2Reader, String> {
+fn repo_context(state: &State<AppState>) -> Result<RepoContext, String> {
     let path = state.repo_path()?;
-    Git2Reader::new(&path).map_err(|e| e.to_string())
+    RepoContext::open(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -67,15 +72,16 @@ pub fn list_commits(
     skip: usize,
     state: State<AppState>,
 ) -> Result<Vec<Commit>, String> {
-    let reader = reader_for(&state)?;
-    reader
+    let ctx = repo_context(&state)?;
+    ctx.reader()
         .list_commits(limit.min(500), skip)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_repo_status(state: State<AppState>) -> Result<RepoStatus, String> {
-    reader_for(&state)?
+    repo_context(&state)?
+        .reader()
         .get_status()
         .map_err(|e| e.to_string())
 }
@@ -86,19 +92,10 @@ pub fn get_file_diff(
     staged: bool,
     state: State<AppState>,
 ) -> Result<String, String> {
-    let repo = state.repo_path()?;
     let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
-    let mut args = vec!["diff".into(), "--no-color".into()];
-    if staged {
-        args.push("--cached".into());
-    }
-    args.push("--".into());
-    args.push(path);
-    SafeGitCli::run(
-        &repo,
-        &GitCommand { args },
-    )
-    .map_err(|e| e.to_string())
+    let ctx = repo_context(&state)?;
+    let op = FileDiff { path, staged };
+    ctx.execute(&op).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -106,25 +103,16 @@ pub fn get_commit_diff(
     commit_id: String,
     state: State<AppState>,
 ) -> Result<String, String> {
-    let repo = state.repo_path()?;
-    let commit_id = validate_git_object_id(&commit_id).map_err(|e| e.to_string())?;
-    SafeGitCli::run(
-        &repo,
-        &GitCommand {
-            args: vec![
-                "show".into(),
-                "--no-color".into(),
-                "--format=".into(),
-                commit_id,
-            ],
-        },
-    )
-    .map_err(|e| e.to_string())
+    let sha = validate_git_object_id(&commit_id).map_err(|e| e.to_string())?;
+    let ctx = repo_context(&state)?;
+    let op = ShowCommit { sha };
+    ctx.execute(&op).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_sync_info(state: State<AppState>) -> Result<SyncInfo, String> {
-    let mut info = reader_for(&state)?
+    let mut info = repo_context(&state)?
+        .reader()
         .get_sync_info()
         .map_err(|e| e.to_string())?;
     info.last_fetch_at = state.last_fetch_at();
@@ -138,24 +126,17 @@ pub fn get_credential_status() -> CredentialStatus {
 
 #[tauri::command]
 pub fn fetch_remote(app: AppHandle, state: State<AppState>) -> Result<SyncInfo, String> {
-    let repo = state.repo_path()?;
-    state.with_watch_suppressed(&app, || {
-        SafeGitCli::run(
-            &repo,
-            &GitCommand {
-                args: vec!["fetch".into(), "--prune".into()],
-            },
-        )
-    })
-    .map_err(|e: GitError| e.to_string())?;
+    let ctx = repo_context(&state)?;
+    state.with_watch_suppressed(&app, || ctx.execute(&FetchRemote))
+        .map_err(|e: GitError| e.to_string())?;
 
     let now = Utc::now().to_rfc3339();
     state.set_last_fetch_at(now.clone());
 
-    // Reconciliação pós-fetch (RF-19).
     let _ = app.emit("repo-changed", ());
 
-    let mut info = reader_for(&state)?
+    let mut info = repo_context(&state)?
+        .reader()
         .get_sync_info()
         .map_err(|e| e.to_string())?;
     info.last_fetch_at = Some(now);

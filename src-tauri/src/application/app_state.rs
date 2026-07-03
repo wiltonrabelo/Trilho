@@ -160,3 +160,17 @@ fn validate_git_repo(path: &str) -> Result<(), String> {
     })?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_path_rejeita_pasta_sem_git() {
+        let dir = std::env::temp_dir().join(format!("trilho-nogit-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let err = validate_git_repo(dir.to_str().unwrap()).expect_err("sem git");
+        assert!(err.contains("repositório Git"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

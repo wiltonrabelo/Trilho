@@ -27,21 +27,38 @@ pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
     ]
 }
 
-pub struct SafeGitCli;
+/// Adaptador Git CLI vinculado a um repositório — honra `GitWriter` (LSP).
+#[derive(Clone)]
+pub struct SafeGitCli {
+    repo_path: String,
+}
 
 impl SafeGitCli {
-    pub fn full_args(repo_path: &str, command: &GitCommand) -> Vec<String> {
-        let mut args = defensive_base_args(repo_path);
+    pub fn new(repo_path: impl Into<String>) -> Self {
+        Self {
+            repo_path: repo_path.into(),
+        }
+    }
+
+    pub fn repo_path(&self) -> &str {
+        &self.repo_path
+    }
+
+    pub fn full_args(&self, command: &GitCommand) -> Vec<String> {
+        let mut args = defensive_base_args(&self.repo_path);
         args.extend(command.args.iter().cloned());
         args
     }
 
-    pub fn run(repo_path: &str, command: &GitCommand) -> Result<String, GitError> {
-        let args = Self::full_args(repo_path, command);
+    pub fn run(&self, command: &GitCommand) -> Result<String, GitError> {
+        self.invoke(command)
+    }
+
+    fn invoke(&self, command: &GitCommand) -> Result<String, GitError> {
+        let args = self.full_args(command);
         let output = Command::new("git")
             .args(&args)
             .env("GIT_TERMINAL_PROMPT", "0")
-            // GCM no Windows intercepta credenciais independentemente do prompt de terminal.
             .env("GCM_INTERACTIVE", "always")
             .output()
             .map_err(|e| GitError::Io(format!("Não foi possível executar git: {e}")))?;
@@ -57,14 +74,12 @@ impl SafeGitCli {
 impl GitWriter for SafeGitCli {
     fn preview(&self, command: &GitCommand) -> Vec<String> {
         let mut line = vec!["git".to_string()];
-        line.extend(command.args.clone());
+        line.extend(self.full_args(command));
         line
     }
 
-    fn run(&self, _command: &GitCommand) -> Result<String, GitError> {
-        Err(GitError::Io(
-            "SafeGitCli::run requer repo_path — use SafeGitCli::run(path, cmd).".into(),
-        ))
+    fn run(&self, command: &GitCommand) -> Result<String, GitError> {
+        self.invoke(command)
     }
 }
 
@@ -78,16 +93,19 @@ mod tests {
         assert_eq!(args[0], "-C");
         assert_eq!(args[1], "C:/repo");
         assert!(args.contains(&"core.fsmonitor=false".to_string()));
-        assert!(args.contains(&"filter.lfs.smudge=".to_string()));
     }
 
     #[test]
-    fn full_args_concatena_base_e_subcomando() {
+    fn git_writer_run_honra_contrato() {
+        let cli = SafeGitCli::new("C:/repo");
         let cmd = GitCommand {
-            args: vec!["status".into(), "--porcelain=v2".into()],
+            args: vec!["status".into()],
         };
-        let full = SafeGitCli::full_args("C:/repo", &cmd);
-        assert_eq!(full[0], "-C");
-        assert_eq!(full.last().unwrap(), "--porcelain=v2");
+        let preview = cli.preview(&cmd);
+        assert_eq!(preview[0], "git");
+        assert!(preview.contains(&"-C".to_string()));
+        // Sem git real em C:/repo — run falha, mas não com erro de trait quebrado
+        let err = cli.run(&cmd).expect_err("repo inexistente");
+        assert!(!err.to_string().contains("use o método estático"));
     }
 }

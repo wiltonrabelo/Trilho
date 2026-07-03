@@ -38,22 +38,14 @@
 > Revisão SOLID/Clean Code (Claude, 2026-07-03). Itens localizados; nenhum bloqueia M2.
 
 ### Bloqueador para o M3
-- [ ] **Command pattern do PLANO §9 não materializado** — `commands.rs` monta `GitCommand { args }` inline
-  (`get_file_diff`, `get_commit_diff`, `fetch_remote`). O RF-08 (preview fiel) exige objetos de operação
-  com `preview()`/`run()` no mesmo lugar. Criar os Commands **antes** da primeira operação de escrita,
-  senão o preview nasce desacoplado do que executa.
-- [ ] **LSP quebrado no `SafeGitCli`** — implementa `GitWriter`, mas `run()` do trait retorna erro fixo
-  ("use o método estático"). Corrigir dando `repo_path` ao construtor (`SafeGitCli::new(path)`) e
-  honrando o trait — ou remover o `impl GitWriter` até lá.
+- [x] **Command pattern do PLANO §9** — `application/operations.rs` com `GitOperation`; `commands.rs` delega via `RepoContext::execute`.
+- [x] **LSP no `SafeGitCli`** — `SafeGitCli::new(path)` + `impl GitWriter` honrando `preview()`/`run()` via `invoke()`.
 
 ### Refactors (uma sessão cada, sem prazo rígido)
-- [ ] **DIP na composição** — `reader_for()` retorna `Git2Reader` concreto; nada injeta as portas.
-  Ao introduzir os Commands, compor via traits (facilita mock nos testes de caso de uso).
-- [ ] **`App.tsx` (~555 linhas)** — god component. Extrair hooks: `useRepo`, `useCommits`, `useSync`.
-- [ ] **Duplicação em `git2_reader`** — resolução de upstream repetida 3× (`upstream_oid`,
-  `get_sync_info`, `repo_info`). Extrair helper único.
-- [ ] **Testes de integração Rust** (PLANO §12) — `git2_reader` e `app_state` sem testes; cobrir com
-  repositórios temporários (`tempfile`) exercitando git real.
+- [x] **DIP na composição** — `RepoContext::open()` injeta `Arc<dyn GitReader>` + `SafeGitCli`.
+- [x] **`App.tsx`** — extraído para `useRepo`, `useCommits`, `useSync` (~250 linhas).
+- [x] **DRY upstream** — `infrastructure/upstream.rs` (`resolve_head_upstream`).
+- [x] **Testes de integração Rust** — `git2_reader` (repo temp), `upstream`, `app_state::validate_git_repo`.
 
 ## Próxima fase: M2 — Análise
 

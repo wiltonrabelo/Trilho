@@ -1,8 +1,15 @@
 //! Camada de Aplicação — portas (traits) e estado compartilhado.
 
+mod operations;
 mod app_state;
 
 pub use app_state::AppState;
+pub use operations::{
+    FetchRemote, FileDiff, GitOperation, RevListAheadBehind, ShowCommit, StatusPorcelain,
+};
+pub use repo_context::RepoContext;
+
+mod repo_context;
 
 use crate::domain::{Commit, RepoStatus, SyncInfo};
 use std::fmt;
