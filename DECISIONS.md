@@ -3,11 +3,13 @@
 ## M0
 
 ### shadcn/ui adiado para M1+
-- **Decisão:** não instalar shadcn/ui no M0.
-- **Motivo:** componentes atuais (ThemeToggle, lista de commits) são simples e Tailwind puro basta.
-- **Quando:** instalar no início do M1, junto com repo picker e layout de 3 colunas (PLANO §8).
+- **Decisão:** não instalar shadcn/ui no M0; **continua adiado no M1** (layout Tailwind puro).
+- **Motivo:** componentes atuais são simples; shadcn entra quando o layout estabilizar (M1-b ou início M2).
 
-### Code signing (certificado EV)
+### Auth RF-10 parcial (M1)
+- **「Conectar」** reexecuta `fetch` para acionar o GCM; se o credential helper não estiver
+  instalado/configurado, o usuário verá erro repetido — mensagem orienta `git fetch` no terminal
+  uma vez. Aceitável no MVP; assistente OAuth completo fica pós-MVP.
 - **Status:** não iniciado no M0.
 - **Ação:** iniciar aquisição do certificado EV **antes/durante M1** (lead time de semanas — caminho crítico do MVP §5).
 

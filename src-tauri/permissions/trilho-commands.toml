@@ -7,3 +7,20 @@ commands.allow = ["get_app_info"]
 identifier = "allow-list-commits-mock"
 description = "Permite listar commits de exemplo (M0)."
 commands.allow = ["list_commits_mock"]
+
+[[permission]]
+identifier = "allow-repo-commands"
+description = "Comandos de repositório (M1)."
+commands.allow = [
+  "validate_repo_path",
+  "open_repo",
+  "close_repo",
+  "get_repo_info",
+  "get_recent_repos",
+  "list_commits",
+  "get_repo_status",
+  "get_file_diff",
+  "get_commit_diff",
+  "get_sync_info",
+  "fetch_remote",
+]
