@@ -34,4 +34,8 @@ pub enum WriteRequest {
     Revert { commit_id: String },
     Push,
     PullFfOnly,
+    Publish {
+        #[serde(default)]
+        remote_url: Option<String>,
+    },
 }

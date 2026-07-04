@@ -43,6 +43,30 @@ pub fn validate_repo_relative_path(path: &str) -> Result<String, GitError> {
     Ok(trimmed.to_string())
 }
 
+/// URL de repositório remoto (HTTPS, SSH ou file).
+pub fn validate_remote_url(url: &str) -> Result<String, GitError> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::Git("URL do repositório remoto vazia.".into()));
+    }
+    if trimmed.contains('\0') || trimmed.contains('\n') {
+        return Err(GitError::Git("URL do repositório remoto inválida.".into()));
+    }
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("git@")
+        || lower.starts_with("ssh://")
+        || lower.starts_with("file://")
+    {
+        Ok(trimmed.to_string())
+    } else {
+        Err(GitError::Git(
+            "Informe uma URL Git válida (HTTPS ou SSH).".into(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,5 +85,15 @@ mod tests {
     #[test]
     fn rejeita_path_com_flag() {
         assert!(validate_repo_relative_path("--all").is_err());
+    }
+
+    #[test]
+    fn aceita_url_https() {
+        assert!(validate_remote_url("https://github.com/user/repo.git").is_ok());
+    }
+
+    #[test]
+    fn rejeita_url_invalida() {
+        assert!(validate_remote_url("not-a-url").is_err());
     }
 }

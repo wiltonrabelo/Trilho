@@ -42,6 +42,8 @@ export interface RepoInfo {
 
   upstream: string | null;
 
+  hasRemote: boolean;
+
   isDetached: boolean;
 
   hasCommits: boolean;
@@ -165,4 +167,5 @@ export type WriteRequestDto =
   | { kind: "uncommit" }
   | { kind: "revert"; commitId: string }
   | { kind: "push" }
-  | { kind: "pullFfOnly" };
+  | { kind: "pullFfOnly" }
+  | { kind: "publish"; remoteUrl?: string };

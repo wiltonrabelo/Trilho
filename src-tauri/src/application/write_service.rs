@@ -1,13 +1,14 @@
 //! Casos de uso de escrita M3 — preview (RF-08) e execução com gates.
 
 use crate::application::operations::{
-    CreateCommit, GitOperation, PullFfOnly, PushUpstream, RevertCommit, Stage, StageAll,
-    StageMany, UncommitSoft, Unstage, UnstageAll, UnstageMany,
+    AddRemote, CreateCommit, GitOperation, PullFfOnly, PushSetUpstream, PushUpstream, RevertCommit,
+    Stage, StageAll, StageMany, UncommitSoft, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, RepoContext};
 use crate::domain::{OperationPreview, WriteRequest};
-use crate::infrastructure::{validate_git_object_id, validate_repo_relative_path};
+use crate::infrastructure::{repo_info, validate_git_object_id, validate_remote_url, validate_repo_relative_path};
+use git2::Repository;
 
 /// Extrai o path Git de um rótulo de rename (`old → new`).
 fn git_path_from_display(display: &str) -> &str {
@@ -166,6 +167,7 @@ pub fn preview_write(
                 blocked,
             )
         }
+        WriteRequest::Publish { remote_url } => preview_publish(ctx, remote_url.as_deref())?,
     };
 
     Ok(OperationPreview {
@@ -232,6 +234,7 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         WriteRequest::PullFfOnly => {
             ctx.execute_op(&PullFfOnly)?;
         }
+        WriteRequest::Publish { remote_url } => execute_publish(ctx, remote_url.as_deref())?,
     }
     Ok(())
 }
@@ -243,6 +246,111 @@ fn blocked_preview(repo_path: &str, msg: &str) -> OperationPreview {
         repo_path: repo_path.to_string(),
         blocked: Some(msg.to_string()),
     }
+}
+
+struct PublishPlan {
+    add_remote: Option<AddRemote>,
+    push: PushSetUpstream,
+    description: String,
+}
+
+fn resolve_primary_remote(ctx: &RepoContext) -> Result<String, GitError> {
+    let repo = Repository::discover(ctx.repo_path()).map_err(|e| GitError::Io(e.to_string()))?;
+    let remotes = repo
+        .remotes()
+        .map_err(|e| GitError::Io(e.to_string()))?;
+    for i in 0..remotes.len() {
+        if remotes.get(i) == Some("origin") {
+            return Ok("origin".into());
+        }
+    }
+    remotes
+        .get(0)
+        .map(|s| s.to_string())
+        .ok_or_else(|| GitError::Git("Nenhum remoto configurado.".into()))
+}
+
+fn plan_publish(ctx: &RepoContext, remote_url: Option<&str>) -> Result<PublishPlan, GitError> {
+    let info = repo_info(ctx.repo_path())?;
+    if info.is_detached {
+        return Err(GitError::Git(
+            "Repositório em detached HEAD — troque para uma branch antes de publicar.".into(),
+        ));
+    }
+    if info.upstream.is_some() {
+        return Err(GitError::Git(
+            "Esta branch já está publicada. Use Push para enviar novos commits.".into(),
+        ));
+    }
+    let branch = info
+        .branch
+        .ok_or_else(|| GitError::Git("Sem branch ativa para publicar.".into()))?;
+
+    let (add_remote, remote_name) = if info.has_remote {
+        (None, resolve_primary_remote(ctx)?)
+    } else {
+        let url = match remote_url {
+            Some(url) => validate_remote_url(url)?,
+            None => {
+                return Err(GitError::Git(
+                    "Informe a URL do repositório remoto para publicar.".into(),
+                ));
+            }
+        };
+        (
+            Some(AddRemote {
+                name: "origin".into(),
+                url,
+            }),
+            "origin".to_string(),
+        )
+    };
+
+    let description = if add_remote.is_some() {
+        "Conecta ao remoto e publica a branch pela primeira vez.".to_string()
+    } else {
+        format!("Publica a branch {branch} no remoto e configura o upstream.")
+    };
+
+    Ok(PublishPlan {
+        add_remote,
+        push: PushSetUpstream {
+            remote: remote_name,
+            branch,
+        },
+        description,
+    })
+}
+
+fn preview_publish(
+    ctx: &RepoContext,
+    remote_url: Option<&str>,
+) -> Result<(Vec<String>, String, Option<String>), GitError> {
+    match plan_publish(ctx, remote_url) {
+        Ok(plan) => {
+            let mut commands = Vec::new();
+            if let Some(ref op) = plan.add_remote {
+                commands.extend(ctx.preview_op(op));
+            }
+            commands.extend(ctx.preview_op(&plan.push));
+            Ok((commands, plan.description, None))
+        }
+        Err(GitError::Git(msg))
+            if msg.contains("Informe a URL") || msg.contains("já está publicada") =>
+        {
+            Ok((vec![], String::new(), Some(msg)))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn execute_publish(ctx: &RepoContext, remote_url: Option<&str>) -> Result<(), GitError> {
+    let plan = plan_publish(ctx, remote_url)?;
+    if let Some(op) = plan.add_remote {
+        ctx.execute_op(&op)?;
+    }
+    ctx.execute_op(&plan.push)?;
+    Ok(())
 }
 
 fn gate_amend(ctx: &RepoContext) -> Result<Option<String>, GitError> {

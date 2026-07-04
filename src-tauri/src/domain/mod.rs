@@ -54,6 +54,7 @@ pub struct RepoInfo {
     pub path: String,
     pub branch: Option<String>,
     pub upstream: Option<String>,
+    pub has_remote: bool,
     pub is_detached: bool,
     pub has_commits: bool,
 }

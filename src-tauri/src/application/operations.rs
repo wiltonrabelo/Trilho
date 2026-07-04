@@ -279,6 +279,48 @@ impl GitOperation for RevertCommit {
     }
 }
 
+pub struct PushSetUpstream {
+    pub remote: String,
+    pub branch: String,
+}
+
+impl GitOperation for PushSetUpstream {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "push".into(),
+                "-u".into(),
+                self.remote.clone(),
+                self.branch.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Publica a branch no remoto e define o upstream."
+    }
+}
+
+pub struct AddRemote {
+    pub name: String,
+    pub url: String,
+}
+
+impl GitOperation for AddRemote {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "remote".into(),
+                "add".into(),
+                self.name.clone(),
+                self.url.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Conecta o repositório local ao remoto."
+    }
+}
+
 pub struct PushUpstream;
 
 impl GitOperation for PushUpstream {
@@ -363,5 +405,17 @@ mod tests {
         };
         assert!(op.command().args.contains(&"--amend".to_string()));
         assert!(op.stdin_payload().is_some());
+    }
+
+    #[test]
+    fn push_set_upstream_inclui_u() {
+        let op = PushSetUpstream {
+            remote: "origin".into(),
+            branch: "master".into(),
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["push", "-u", "origin", "master"]
+        );
     }
 }

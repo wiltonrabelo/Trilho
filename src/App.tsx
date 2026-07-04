@@ -6,6 +6,7 @@ import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
+import { PublishDialog } from "@/components/PublishDialog";
 import { RepoPicker } from "@/components/RepoPicker";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
@@ -19,7 +20,7 @@ import { useOperations } from "@/hooks/useOperations";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useSync } from "@/hooks/useSync";
-import { getAppInfo, runningInTauri } from "@/lib/api";
+import { getAppInfo, getRepoInfo, runningInTauri } from "@/lib/api";
 import {
   fileCheckKey,
   type FileCheckSection,
@@ -31,6 +32,7 @@ function App() {
   const [webOnly, setWebOnly] = useState(false);
   const [workingCopySelected, setWorkingCopySelected] = useState(true);
   const [checkedPaths, setCheckedPaths] = useState<Set<string>>(() => new Set());
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const {
     repo,
@@ -115,10 +117,15 @@ function App() {
 
   const refreshAfterWrite = useCallback(async () => {
     await refreshAll();
+    try {
+      setRepo(await getRepoInfo());
+    } catch {
+      /* repo pode ter fechado */
+    }
     clearSelection();
     setWorkingCopySelected(true);
     setCheckedPaths(new Set());
-  }, [refreshAll, clearSelection]);
+  }, [refreshAll, clearSelection, setRepo]);
 
   const ops = useOperations(refreshAfterWrite);
 
@@ -133,6 +140,16 @@ function App() {
         headCommit.isLocalOnly,
     ) && !repo?.isDetached;
   const writeDisabled = Boolean(repo?.isDetached);
+  const upstreamConfigured = Boolean(repo?.upstream || sync?.upstream);
+
+  const handlePublish = useCallback(() => {
+    if (!repo || writeDisabled) return;
+    if (repo.hasRemote) {
+      void ops.request({ kind: "publish" });
+    } else {
+      setPublishOpen(true);
+    }
+  }, [repo, writeDisabled, ops]);
 
   useEffect(() => {
     setWebOnly(!runningInTauri());
@@ -263,6 +280,21 @@ function App() {
         loading={ops.loading}
         onConfirm={() => void ops.confirm()}
         onCancel={ops.cancel}
+        title={
+          ops.pending?.kind === "publish"
+            ? "Confirmar publicação"
+            : undefined
+        }
+      />
+      <PublishDialog
+        open={publishOpen}
+        branch={repo?.branch}
+        loading={ops.loading}
+        onCancel={() => setPublishOpen(false)}
+        onContinue={(remoteUrl) => {
+          setPublishOpen(false);
+          void ops.request({ kind: "publish", remoteUrl });
+        }}
       />
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
@@ -295,7 +327,14 @@ function App() {
             <SyncIndicator
               sync={sync}
               credential={credential}
+              branch={repo.branch}
+              hasRemote={repo.hasRemote}
+              upstreamConfigured={Boolean(repo.upstream || sync?.upstream)}
+              writeDisabled={writeDisabled}
               onFetch={fetch}
+              onPublish={
+                writeDisabled || upstreamConfigured ? undefined : handlePublish
+              }
               onPush={
                 writeDisabled
                   ? undefined
@@ -328,18 +367,6 @@ function App() {
           operações de escrita desabilitadas.
         </div>
       )}
-
-      {repo &&
-        repo.hasCommits &&
-        !repo.isDetached &&
-        repo.branch &&
-        !repo.upstream && (
-          <div className="border-b border-border bg-surface px-5 py-2 text-xs text-muted">
-            Branch <strong>{repo.branch}</strong> sem upstream —
-            ahead/behind e fetch remoto dependem de{" "}
-            <code className="font-mono">git branch -u</code>.
-          </div>
-        )}
 
       {origin &&
         origin.confidence !== "indeterminate" &&
