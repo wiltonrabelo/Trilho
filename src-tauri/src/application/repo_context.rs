@@ -23,6 +23,7 @@ impl RepoContext {
         self.reader.as_ref()
     }
 
+    #[allow(dead_code)] // M3: exposto para preview() na UI de operações
     pub fn writer(&self) -> &SafeGitCli {
         &self.writer
     }
@@ -31,6 +32,7 @@ impl RepoContext {
         self.writer.run(&op.command())
     }
 
+    #[allow(dead_code)] // M3: RF-08 preview na UI
     pub fn preview(&self, op: &dyn GitOperation) -> Vec<String> {
         self.writer.preview(&op.command())
     }

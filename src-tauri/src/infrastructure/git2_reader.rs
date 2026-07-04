@@ -119,7 +119,7 @@ impl GitReader for Git2Reader {
         }
         // Intercala as duas linhas por data (desc); a ordem interna de cada
         // linha (ancestralidade first-parent) é preservada pelo sort estável.
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         let mut result: Vec<TrailEntry> = entries.into_iter().map(|(e, _)| e).collect();
 
@@ -407,6 +407,7 @@ fn parse_ahead_behind(output: &str) -> (u32, u32) {
     }
 }
 
+#[allow(dead_code)] // utilitário de validação — usar em validate_repo_path no M3
 pub fn is_git_repo(path: &str) -> bool {
     Path::new(path).join(".git").exists() || git2::Repository::discover(path).is_ok()
 }

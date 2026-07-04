@@ -216,7 +216,7 @@ pub async fn get_file_blame(
     let source = parse_blame_source(&source).map_err(|e| e.to_string())?;
     let commit_ref = commit_id
         .as_deref()
-        .map(|id| validate_git_object_id(id))
+        .map(validate_git_object_id)
         .transpose()
         .map_err(|e| e.to_string())?;
     repo_context(&state)?

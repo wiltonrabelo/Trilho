@@ -40,6 +40,7 @@ impl SafeGitCli {
         }
     }
 
+    #[allow(dead_code)] // M3: diagnóstico / logs de operações
     pub fn repo_path(&self) -> &str {
         &self.repo_path
     }

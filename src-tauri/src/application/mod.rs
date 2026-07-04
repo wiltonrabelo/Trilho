@@ -24,6 +24,7 @@ use std::fmt;
 pub enum GitError {
     Io(String),
     NotARepository,
+    #[allow(dead_code)] // M3: erro tipado reservado para AppState sem repo aberto
     NoRepositoryOpen,
     Auth(String),
     Git(String),
@@ -52,6 +53,7 @@ impl GitError {
         GitError::Git(map_git_stderr(stderr))
     }
 
+    #[allow(dead_code)] // usado nos testes de classificação de auth (mod tests)
     pub fn is_auth(&self) -> bool {
         matches!(self, GitError::Auth(_))
     }
@@ -140,6 +142,7 @@ pub trait GitReader: Send + Sync {
 }
 
 /// Porta de ESCRITA do repositório (commit, restore, reset, revert, push, ...).
+#[allow(dead_code)] // M3: RF-08 preview + operações de escrita
 pub trait GitWriter: Send + Sync {
     fn preview(&self, command: &GitCommand) -> Vec<String>;
     fn run(&self, command: &GitCommand) -> Result<String, GitError>;

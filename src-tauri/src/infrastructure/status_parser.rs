@@ -23,9 +23,9 @@ pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
             continue;
         }
 
-        if entry.starts_with("? ") {
+        if let Some(path) = entry.strip_prefix("? ") {
             untracked.push(FileChange {
-                path: entry[2..].to_string(),
+                path: path.to_string(),
                 kind: FileChangeKind::Untracked,
                 staged: false,
             });
@@ -69,7 +69,7 @@ fn parse_v1_entry(entry: &str, staged: &mut Vec<FileChange>, unstaged: &mut Vec<
     if parts.len() < 9 {
         return;
     }
-    push_xy_changes(&parts[1], &parts[8], staged, unstaged);
+    push_xy_changes(parts[1], parts[8], staged, unstaged);
 }
 
 fn parse_v2_rename_entry(
@@ -89,7 +89,7 @@ fn parse_v2_rename_entry(
         Some(old) => format!("{old} → {new_path}"),
         None => new_path.to_string(),
     };
-    push_xy_changes(&parts[1], &display, staged, unstaged);
+    push_xy_changes(parts[1], &display, staged, unstaged);
 }
 
 fn push_xy_changes(
@@ -166,7 +166,11 @@ mod tests {
     #[test]
     fn origem_orfa_nao_confunde_com_path_2foo() {
         // Path de origem "2foo.ts" não é linha de status (precisa ser "2 ").
-        let raw = "2 R. N... 100644 100644 100644 abcd1234 abcd1234 R100 new.ts\02foo.ts\0";
+        // Concatena segmentos NUL — evita `\02` interpretado como escape octal.
+        let raw = concat!(
+            "2 R. N... 100644 100644 100644 abcd1234 abcd1234 R100 new.ts\0",
+            "2foo.ts\0"
+        );
         let status = parse_porcelain_v2(raw).expect("parse");
         assert_eq!(status.staged[0].path, "2foo.ts → new.ts");
     }

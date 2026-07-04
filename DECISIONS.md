@@ -79,3 +79,25 @@
 ## Próxima fase: M3 — Operações seguras
 
 - RF-08 preview, RF-05 unstage, RF-15 commit, RF-06 uncommit, RF-07 revert, push
+
+## Dívidas técnicas pós-revisão M2 (antes do M3)
+
+> Revisão SOLID/Clean Code (2026-07-04). Camadas saudáveis; itens abaixo são
+> pequenos e não bloqueiam o M3, mas devem ser fechados cedo para não acumular.
+
+### 1. ISP — `GitReader` com 7 métodos (prioridade)
+- Ainda coeso (tudo leitura), mas no teto do PLANO §9 (portas focadas).
+- **Ação:** extrair `BlameProvider` (`get_file_blame`) e `TrailReader`
+  (`list_commits`, `get_dual_trail`, `list_commit_files`) antes de crescer no M3.
+- `Git2Reader` implementa as três portas; `RepoContext` compõe.
+
+### 2. `branch_origin.rs` (~900 linhas)
+- Coeso, mas no teto. **Ação:** ao próximo toque, separar coleta de candidatas /
+  scoring / classificação em submódulos (`candidates.rs`, `scoring.rs`, …).
+
+### 3. Clippy ✅
+- `npm run test:rust` agora roda `cargo clippy -- -D warnings` antes dos testes.
+- Corrigidos: `strip_prefix`, `needless_borrow`, `redundant_closure`,
+  `unnecessary_sort_by`, escape octal suspeito em teste de rename (`\02foo`).
+- Dead-code pre-M3 (`GitWriter`, `preview`, `NoRepositoryOpen`) anotado com
+  `#[allow(dead_code)]` até o M3 ligar RF-08.

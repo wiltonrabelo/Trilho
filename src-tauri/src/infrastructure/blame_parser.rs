@@ -37,8 +37,8 @@ pub fn parse_line_porcelain(raw: &str) -> Result<Vec<BlameLine>, GitError> {
 
         while i < lines.len() {
             let line = &lines[i];
-            if line.starts_with('\t') {
-                content = line[1..].to_string();
+            if let Some(stripped) = line.strip_prefix('\t') {
+                content = stripped.to_string();
                 i += 1;
                 break;
             }
