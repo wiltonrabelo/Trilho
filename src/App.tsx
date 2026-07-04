@@ -1,9 +1,11 @@
 import { GitBranch, TrainFront, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
+import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
 import { DetailPanel } from "@/components/DetailPanel";
+import { OperationDialog } from "@/components/OperationDialog";
 import { RepoPicker } from "@/components/RepoPicker";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
@@ -13,15 +15,22 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
 import { useBranchOrigin } from "@/hooks/useBranchOrigin";
 import { useCommits } from "@/hooks/useCommits";
+import { useOperations } from "@/hooks/useOperations";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useSync } from "@/hooks/useSync";
 import { getAppInfo, runningInTauri } from "@/lib/api";
+import {
+  fileCheckKey,
+  type FileCheckSection,
+} from "@/lib/fileCheck";
 import type { AppInfo } from "@/types";
 
 function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [webOnly, setWebOnly] = useState(false);
+  const [workingCopySelected, setWorkingCopySelected] = useState(true);
+  const [checkedPaths, setCheckedPaths] = useState<Set<string>>(() => new Set());
 
   const {
     repo,
@@ -72,9 +81,11 @@ function App() {
     error: blameError,
     selectLine: selectBlameLine,
   } = useBlame({
-    path: selectedFile?.path ?? selectedCommitFile ?? null,
+    path: workingCopySelected
+      ? selectedFile?.path ?? null
+      : selectedFile?.path ?? selectedCommitFile ?? null,
     staged: selectedFile?.staged ?? null,
-    commit: selectedCommit,
+    commit: workingCopySelected ? null : selectedCommit,
   });
 
   const onAfterFetch = useCallback(async () => {
@@ -102,10 +113,72 @@ function App() {
 
   useRepoChanged(refreshAll);
 
+  const refreshAfterWrite = useCallback(async () => {
+    await refreshAll();
+    clearSelection();
+    setWorkingCopySelected(true);
+    setCheckedPaths(new Set());
+  }, [refreshAll, clearSelection]);
+
+  const ops = useOperations(refreshAfterWrite);
+
+  const headCommit = commits[0] ?? null;
+  const canAmend =
+    Boolean(headCommit?.isLocalOnly) && !repo?.isDetached;
+  const canUncommit =
+    Boolean(
+      selectedCommit &&
+        headCommit &&
+        selectedCommit.id === headCommit.id &&
+        headCommit.isLocalOnly,
+    ) && !repo?.isDetached;
+  const writeDisabled = Boolean(repo?.isDetached);
+
   useEffect(() => {
     setWebOnly(!runningInTauri());
     getAppInfo().then(setInfo);
   }, []);
+
+  useEffect(() => {
+    if (!repo?.path) return;
+    setWorkingCopySelected(true);
+    setCheckedPaths(new Set());
+    clearSelection();
+  }, [repo?.path, clearSelection]);
+
+  const toggleCheck = useCallback((path: string, section: FileCheckSection) => {
+    const key = fileCheckKey(section, path);
+    setCheckedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const allStageablePaths = useMemo(
+    () => [
+      ...(status?.unstaged ?? []).map((f) => f.path),
+      ...(status?.untracked ?? []).map((f) => f.path),
+    ],
+    [status?.unstaged, status?.untracked],
+  );
+
+  const allStagedPaths = useMemo(
+    () => (status?.staged ?? []).map((f) => f.path),
+    [status?.staged],
+  );
+
+  const changeCount =
+    (status?.staged.length ?? 0) +
+    (status?.unstaged.length ?? 0) +
+    (status?.untracked.length ?? 0);
+
+  function handleSelectWorkingCopy() {
+    clearSelection();
+    clearFileSelection();
+    setWorkingCopySelected(true);
+  }
 
   async function handleOpenRepo(path: string) {
     try {
@@ -119,12 +192,38 @@ function App() {
   }
 
   async function handleSelectCommit(commit: Parameters<typeof selectCommit>[0]) {
+    setWorkingCopySelected(false);
     clearFileSelection();
     await selectCommit(commit);
   }
 
-  async function handleSelectFile(path: string, staged: boolean) {
-    clearSelection();
+  async function handleSelectFile(
+    path: string,
+    staged: boolean,
+    meta?: { ctrlKey?: boolean; shiftKey?: boolean },
+  ) {
+    if (meta?.ctrlKey) {
+      toggleCheck(path, staged ? "staged" : "working");
+      return;
+    }
+    if (meta?.shiftKey && selectedFile?.path) {
+      const pool = staged ? allStagedPaths : allStageablePaths;
+      const section: FileCheckSection = staged ? "staged" : "working";
+      const anchor = selectedFile.path;
+      const a = pool.indexOf(anchor);
+      const b = pool.indexOf(path);
+      if (a >= 0 && b >= 0) {
+        const [from, to] = a < b ? [a, b] : [b, a];
+        setCheckedPaths((prev) => {
+          const next = new Set(prev);
+          for (let i = from; i <= to; i++) {
+            next.add(fileCheckKey(section, pool[i]!));
+          }
+          return next;
+        });
+        return;
+      }
+    }
     await selectFile(path, staged);
   }
 
@@ -134,15 +233,42 @@ function App() {
   }
 
   const loading = repoLoading || commitsLoading || diffLoading || fileLoading;
-  const detailFilePath = selectedFile?.path ?? selectedCommitFile ?? null;
-  const diff = selectedCommit
-    ? selectedCommitFile
-      ? commitFileDiff
-      : commitDiff
-    : fileDiff;
+  const selectedPath = selectedFile?.path ?? null;
+  const fileInStaged = Boolean(
+    selectedPath && status?.staged.some((f) => f.path === selectedPath),
+  );
+  const fileInUnstaged = Boolean(
+    selectedPath && status?.unstaged.some((f) => f.path === selectedPath),
+  );
+  const fileInUntracked = Boolean(
+    selectedPath && status?.untracked.some((f) => f.path === selectedPath),
+  );
+  const detailFilePath = workingCopySelected
+    ? selectedFile?.path ?? null
+    : selectedFile?.path ?? selectedCommitFile ?? null;
+  const diff = workingCopySelected
+    ? fileDiff
+    : selectedFile
+      ? fileDiff
+      : selectedCommit
+        ? selectedCommitFile
+          ? commitFileDiff
+          : commitDiff
+        : fileDiff;
 
   return (
     <div className="flex h-full flex-col">
+      <OperationDialog
+        preview={ops.preview}
+        loading={ops.loading}
+        onConfirm={() => void ops.confirm()}
+        onCancel={ops.cancel}
+      />
+      {ops.error && (
+        <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
+          {ops.error}
+        </div>
+      )}
       <header className="flex items-center justify-between border-b border-border bg-surface px-5 py-3">
         <div className="flex items-center gap-2.5">
           <TrainFront className="text-accent" size={22} />
@@ -170,7 +296,18 @@ function App() {
               sync={sync}
               credential={credential}
               onFetch={fetch}
+              onPush={
+                writeDisabled
+                  ? undefined
+                  : () => void ops.request({ kind: "push" })
+              }
+              onPull={
+                writeDisabled
+                  ? undefined
+                  : () => void ops.request({ kind: "pullFfOnly" })
+              }
               loading={fetchLoading}
+              pushLoading={ops.loading}
               error={fetchError}
             />
           )}
@@ -188,7 +325,7 @@ function App() {
       {repo?.isDetached && (
         <div className="border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-xs">
           Repositório em <strong>detached HEAD</strong> — grafo em leitura;
-          operações de branch desabilitadas no MVP.
+          operações de escrita desabilitadas.
         </div>
       )}
 
@@ -271,7 +408,9 @@ function App() {
               ) : (
                 <CommitGraph
                   commits={commits}
-                  selectedId={selectedCommit?.id ?? null}
+                  selectedId={
+                    workingCopySelected ? null : selectedCommit?.id ?? null
+                  }
                   view={view}
                   onViewChange={setView}
                   trails={trails}
@@ -283,6 +422,10 @@ function App() {
                         }
                       : null
                   }
+                  workingCopySelected={workingCopySelected}
+                  changeCount={changeCount}
+                  stagedCount={status?.staged.length ?? 0}
+                  onSelectWorkingCopy={handleSelectWorkingCopy}
                   onSelect={(c) => void handleSelectCommit(c)}
                   onLoadMore={() => void loadMore()}
                   hasMore={hasMore}
@@ -297,22 +440,91 @@ function App() {
                 minTop={140}
                 minBottom={200}
                 top={
-                  <StatusPanel
-                    staged={status?.staged ?? []}
-                    unstaged={status?.unstaged ?? []}
-                    untracked={status?.untracked ?? []}
-                    selectedPath={selectedFile?.path ?? null}
-                    selectedStaged={selectedFile?.staged ?? null}
-                    onSelectFile={(p, s) => void handleSelectFile(p, s)}
-                    commit={selectedCommit}
-                    commitFiles={commitFiles}
-                    selectedCommitFile={selectedCommitFile}
-                    onSelectCommitFile={(p) => void handleSelectCommitFile(p)}
-                  />
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="min-h-0 flex-1">
+                      <StatusPanel
+                        staged={status?.staged ?? []}
+                        unstaged={status?.unstaged ?? []}
+                        untracked={status?.untracked ?? []}
+                        selectedPath={selectedFile?.path ?? null}
+                        selectedStaged={selectedFile?.staged ?? null}
+                        checkedPaths={checkedPaths}
+                        onSelectFile={(p, s, meta) =>
+                          void handleSelectFile(p, s, meta)
+                        }
+                        onToggleCheck={toggleCheck}
+                        commit={
+                          workingCopySelected ? null : selectedCommit
+                        }
+                        commitFiles={commitFiles}
+                        selectedCommitFile={selectedCommitFile}
+                        onSelectCommitFile={(p) =>
+                          void handleSelectCommitFile(p)
+                        }
+                        onStage={
+                          writeDisabled
+                            ? undefined
+                            : (p) =>
+                                void ops.request({ kind: "stage", path: p })
+                        }
+                        onStageMany={
+                          writeDisabled
+                            ? undefined
+                            : (paths) =>
+                                void ops.request({ kind: "stageMany", paths })
+                        }
+                        onStageAll={
+                          writeDisabled
+                            ? undefined
+                            : () => void ops.request({ kind: "stageAll" })
+                        }
+                        onUnstage={
+                          writeDisabled
+                            ? undefined
+                            : (p) =>
+                                void ops.request({ kind: "unstage", path: p })
+                        }
+                        onUnstageMany={
+                          writeDisabled
+                            ? undefined
+                            : (paths) =>
+                                void ops.request({
+                                  kind: "unstageMany",
+                                  paths,
+                                })
+                        }
+                        onUnstageAll={
+                          writeDisabled
+                            ? undefined
+                            : () => void ops.request({ kind: "unstageAll" })
+                        }
+                      />
+                    </div>
+                    {workingCopySelected &&
+                      !writeDisabled &&
+                      ((status?.staged.length ?? 0) > 0 || canAmend) && (
+                      <div className="shrink-0">
+                        <CommitForm
+                        canAmend={canAmend}
+                        busy={ops.loading && ops.pending?.kind === "commit"}
+                        onCommit={(summary, body, amend) => {
+                          void ops.request({
+                            kind: "commit",
+                            summary,
+                            body: body || undefined,
+                            amend,
+                          });
+                        }}
+                      />
+                      </div>
+                    )}
+                  </div>
                 }
                 bottom={
                   <DetailPanel
-                    commit={selectedCommit}
+                    commit={
+                      workingCopySelected ? null : selectedCommit
+                    }
                     filePath={detailFilePath}
                     diff={diff}
                     loading={loading}
@@ -323,6 +535,47 @@ function App() {
                     blameLoading={blameLoading}
                     blameError={blameError}
                     onLineClick={selectBlameLine}
+                    canUncommit={canUncommit}
+                    onRevert={
+                      selectedCommit && !writeDisabled
+                        ? () =>
+                            void ops.request({
+                              kind: "revert",
+                              commitId: selectedCommit.id,
+                            })
+                        : undefined
+                    }
+                    onUncommit={
+                      canUncommit && !writeDisabled
+                        ? () => void ops.request({ kind: "uncommit" })
+                        : undefined
+                    }
+                    workingTreeFile={Boolean(
+                      selectedFile &&
+                        (fileInStaged || fileInUnstaged || fileInUntracked),
+                    )}
+                    showStageFile={fileInUnstaged || fileInUntracked}
+                    showUnstageFile={fileInStaged}
+                    onStageFile={
+                      selectedFile &&
+                      (fileInUnstaged || fileInUntracked) &&
+                      !writeDisabled
+                        ? () =>
+                            void ops.request({
+                              kind: "stage",
+                              path: selectedFile.path,
+                            })
+                        : undefined
+                    }
+                    onUnstageFile={
+                      selectedFile && fileInStaged && !writeDisabled
+                        ? () =>
+                            void ops.request({
+                              kind: "unstage",
+                              path: selectedFile.path,
+                            })
+                        : undefined
+                    }
                   />
                 }
               />

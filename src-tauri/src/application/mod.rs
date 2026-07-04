@@ -3,6 +3,9 @@
 mod app_state;
 mod branch_origin;
 mod operations;
+mod repo_context;
+mod write_gates;
+mod write_service;
 
 pub use app_state::AppState;
 pub use branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};
@@ -11,8 +14,7 @@ pub use operations::{
     StatusPorcelain,
 };
 pub use repo_context::RepoContext;
-
-mod repo_context;
+pub use write_service::{execute_write, preview_write};
 
 use crate::domain::{
     BlameLine, BlameSource, BranchOrigin, Commit, FileChange, RepoStatus, SyncInfo, TrailEntry,
@@ -24,7 +26,6 @@ use std::fmt;
 pub enum GitError {
     Io(String),
     NotARepository,
-    #[allow(dead_code)] // M3: erro tipado reservado para AppState sem repo aberto
     NoRepositoryOpen,
     Auth(String),
     Git(String),
@@ -97,6 +98,13 @@ fn map_git_stderr(stderr: &str) -> String {
                 repositório para exibir o blame. Faça o commit para acompanhá-lo."
             .into();
     }
+    if lower.contains("non-fast-forward")
+        || lower.contains("rejected")
+        || lower.contains("fetch first")
+    {
+        return "O remoto está à frente — use «Atualizar (pull --ff-only)» e tente o push de novo."
+            .into();
+    }
     // Demais falhas: primeira linha, sem o prefixo técnico "fatal:"/"error:".
     let first = trimmed.lines().next().unwrap_or(trimmed);
     first
@@ -142,7 +150,6 @@ pub trait GitReader: Send + Sync {
 }
 
 /// Porta de ESCRITA do repositório (commit, restore, reset, revert, push, ...).
-#[allow(dead_code)] // M3: RF-08 preview + operações de escrita
 pub trait GitWriter: Send + Sync {
     fn preview(&self, command: &GitCommand) -> Vec<String>;
     fn run(&self, command: &GitCommand) -> Result<String, GitError>;

@@ -1,9 +1,10 @@
 //! Comandos IPC expostos ao frontend — fachada fina sobre casos de uso.
 
 use crate::application::{
-    AppState, CommitFileDiff, FetchRemote, FileDiff, GitError, GitReader, RepoContext, ShowCommit,
+    execute_write, preview_write, AppState, CommitFileDiff, FetchRemote, FileDiff, GitError,
+    GitReader, RepoContext, ShowCommit,
 };
-use crate::domain::{Commit, RepoInfo, RepoStatus, SyncInfo};
+use crate::domain::{Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
     detect_credential_status, repo_info, validate_git_object_id, validate_repo_relative_path,
     CredentialStatus, MockGitReader,
@@ -20,7 +21,9 @@ pub struct AppInfo {
 }
 
 fn repo_context(state: &State<'_, AppState>) -> Result<RepoContext, String> {
-    let path = state.repo_path()?;
+    let path = state
+        .repo_path()
+        .map_err(|_| GitError::NoRepositoryOpen.to_string())?;
     RepoContext::open(&path).map_err(|e| e.to_string())
 }
 
@@ -232,4 +235,28 @@ fn parse_blame_source(raw: &str) -> Result<crate::domain::BlameSource, GitError>
         "staging" => Ok(crate::domain::BlameSource::Staging),
         _ => Err(GitError::Git(format!("Fonte de blame inválida: {raw}"))),
     }
+}
+
+#[tauri::command]
+pub fn preview_write_operation(
+    request: WriteRequest,
+    state: State<'_, AppState>,
+) -> Result<OperationPreview, String> {
+    let path = state.repo_path()?;
+    let ctx = repo_context(&state)?;
+    preview_write(&ctx, &path, &request).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn execute_write_operation(
+    request: WriteRequest,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let ctx = repo_context(&state)?;
+    state
+        .with_watch_suppressed(&app, || execute_write(&ctx, request))
+        .map_err(|e: GitError| e.to_string())?;
+    let _ = app.emit("repo-changed", ());
+    Ok(())
 }

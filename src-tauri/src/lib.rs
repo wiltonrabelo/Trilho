@@ -36,6 +36,8 @@ pub fn run() {
             commands::get_branch_origin,
             commands::get_dual_trail,
             commands::get_file_blame,
+            commands::preview_write_operation,
+            commands::execute_write_operation,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Trilho");

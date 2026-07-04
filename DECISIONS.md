@@ -76,9 +76,26 @@
   (branch atual vs base inferida). Evolução: seletor manual de base + linha da base como
   segunda lane + marcação dos merges de convergência.
 
-## Próxima fase: M3 — Operações seguras
+## M3 — Operações seguras ✅ (encerrado)
 
-- RF-08 preview, RF-05 unstage, RF-15 commit, RF-06 uncommit, RF-07 revert, push
+### Escopo entregue
+- **RF-08** preview antes de toda escrita: modal com comando copiável + confirmação
+- **RF-05** unstage por arquivo e unstage all (`restore --staged`)
+- **RF-15** commit com resumo/corpo + amend (só HEAD local)
+- **RF-06** uncommit soft (só HEAD local)
+- **RF-07** revert de commit selecionado
+- Push upstream + pull `--ff-only` com gates (ahead/behind, upstream)
+- Backend: `WriteRequest`, `write_service`, `write_gates`, `GitOperation` (M3 ops)
+- IPC: `preview_write_operation`, `execute_write_operation` + evento `repo-changed`
+- UI: `OperationDialog`, `CommitForm`, ações em `StatusPanel`, `DetailPanel`, `SyncIndicator`
+
+### Gates
+- Amend/uncommit bloqueados se HEAD já está no remoto
+- Push bloqueado se `behind > 0`, `ahead == 0` ou sem upstream
+- Pull bloqueado se `behind == 0`
+- Operações de escrita desabilitadas em detached HEAD
+
+## Próxima fase: M4 — Empacotamento e qualidade
 
 ## Dívidas técnicas pós-revisão M2 (antes do M3)
 
@@ -99,5 +116,5 @@
 - `npm run test:rust` agora roda `cargo clippy -- -D warnings` antes dos testes.
 - Corrigidos: `strip_prefix`, `needless_borrow`, `redundant_closure`,
   `unnecessary_sort_by`, escape octal suspeito em teste de rename (`\02foo`).
-- Dead-code pre-M3 (`GitWriter`, `preview`, `NoRepositoryOpen`) anotado com
-  `#[allow(dead_code)]` até o M3 ligar RF-08.
+- Dead-code pre-M3 (`NoRepositoryOpen`, `GitWriter`) ligados no M3 via `repo_context` /
+  `commands::repo_context` e chamadas via trait `GitWriter`.

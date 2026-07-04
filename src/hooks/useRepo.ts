@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   closeRepo,
@@ -8,6 +8,22 @@ import {
   openRepo,
 } from "@/lib/api";
 import type { RepoInfo, RepoStatusDto } from "@/types";
+
+function reconcileStagedFlag(
+  path: string,
+  preferStaged: boolean,
+  status: RepoStatusDto,
+): boolean | null {
+  const inStaged = status.staged.some((f) => f.path === path);
+  const inUnstaged = status.unstaged.some((f) => f.path === path);
+  const inUntracked = status.untracked.some((f) => f.path === path);
+  if (!inStaged && !inUnstaged && !inUntracked) return null;
+  if (preferStaged && inStaged) return true;
+  if (!preferStaged && (inUnstaged || inUntracked)) return false;
+  if (inStaged) return true;
+  if (inUnstaged || inUntracked) return false;
+  return null;
+}
 
 export function useRepo() {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
@@ -21,10 +37,51 @@ export function useRepo() {
   } | null>(null);
   const [fileDiff, setFileDiff] = useState<string | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
+  const selectedFileRef = useRef(selectedFile);
+  selectedFileRef.current = selectedFile;
 
   useEffect(() => {
     getRecentRepos().then(setRecentRepos);
   }, []);
+
+  /** Mantém seleção alinhada ao status após stage/unstage (evita botão Stage fantasma). */
+  useEffect(() => {
+    const current = selectedFileRef.current;
+    if (!status || !current) return;
+
+    const nextStaged = reconcileStagedFlag(
+      current.path,
+      current.staged,
+      status,
+    );
+    if (nextStaged === null) {
+      setSelectedFile(null);
+      setFileDiff(null);
+      return;
+    }
+    if (nextStaged === current.staged) return;
+
+    let cancelled = false;
+    setFileDiff(null);
+    setFileLoading(true);
+    void getFileDiff(current.path, nextStaged)
+      .then((d) => {
+        if (cancelled) return;
+        setSelectedFile({ path: current.path, staged: nextStaged });
+        setFileDiff(d || "(sem diff)");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setFileDiff(`Erro: ${e}`);
+      })
+      .finally(() => {
+        if (!cancelled) setFileLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   const refreshStatus = useCallback(async () => {
     if (!repo) return;

@@ -99,7 +99,7 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     }
   }
 
-  async function selectCommit(commit: CommitDto) {
+  const selectCommit = useCallback(async (commit: CommitDto) => {
     const reqRepo = repo;
     setSelectedCommit(commit);
     setSelectedCommitFile(null);
@@ -121,11 +121,14 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     } finally {
       setDiffLoading(false);
     }
-  }
+  }, [repo]);
 
-  async function selectCommitFile(path: string) {
-    if (!selectedCommit) return;
-    const commitId = selectedCommit.id;
+  const selectedCommitRef = useRef<CommitDto | null>(null);
+  selectedCommitRef.current = selectedCommit;
+
+  const selectCommitFile = useCallback(async (path: string) => {
+    const commitId = selectedCommitRef.current?.id;
+    if (!commitId) return;
     setSelectedCommitFile(path);
     setCommitFileDiff(null);
     setDiffLoading(true);
@@ -137,15 +140,15 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     } finally {
       setDiffLoading(false);
     }
-  }
+  }, []);
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     setSelectedCommit(null);
     setCommitDiff(null);
     setCommitFiles([]);
     setSelectedCommitFile(null);
     setCommitFileDiff(null);
-  }
+  }, []);
 
   return {
     view,

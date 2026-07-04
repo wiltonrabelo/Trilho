@@ -145,3 +145,24 @@ export interface BlameLineDto {
   summary: string;
   content: string;
 }
+
+/** RF-08 — pré-visualização de operação de escrita (M3). */
+export interface OperationPreviewDto {
+  commands: string[];
+  description: string;
+  repoPath: string;
+  blocked: string | null;
+}
+
+export type WriteRequestDto =
+  | { kind: "stage"; path: string }
+  | { kind: "stageMany"; paths: string[] }
+  | { kind: "stageAll" }
+  | { kind: "unstage"; path: string }
+  | { kind: "unstageMany"; paths: string[] }
+  | { kind: "unstageAll" }
+  | { kind: "commit"; summary: string; body?: string; amend?: boolean }
+  | { kind: "uncommit" }
+  | { kind: "revert"; commitId: string }
+  | { kind: "push" }
+  | { kind: "pullFfOnly" };

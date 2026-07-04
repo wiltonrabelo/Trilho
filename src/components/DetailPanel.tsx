@@ -1,3 +1,4 @@
+import { Plus, Undo2 } from "lucide-react";
 import type { CommitDto } from "@/types";
 import { BlamePanel } from "@/components/BlamePanel";
 import { DiffViewer } from "@/components/DiffViewer";
@@ -16,6 +17,15 @@ interface DetailPanelProps {
   blameLoading?: boolean;
   blameError?: string | null;
   onLineClick?: (lineNo: number) => void;
+  canUncommit?: boolean;
+  onRevert?: () => void;
+  onUncommit?: () => void;
+  /** Working tree: arquivo selecionado pode ir p/ stage ou sair do stage. */
+  workingTreeFile?: boolean;
+  showStageFile?: boolean;
+  showUnstageFile?: boolean;
+  onStageFile?: () => void;
+  onUnstageFile?: () => void;
 }
 
 export function DetailPanel({
@@ -30,6 +40,14 @@ export function DetailPanel({
   blameLoading,
   blameError,
   onLineClick,
+  canUncommit,
+  onRevert,
+  onUncommit,
+  workingTreeFile,
+  showStageFile,
+  showUnstageFile,
+  onStageFile,
+  onUnstageFile,
 }: DetailPanelProps) {
   const showBlame = Boolean(filePath);
 
@@ -53,14 +71,57 @@ export function DetailPanel({
             {" · "}
             {new Date(commit.authoredAt).toLocaleString("pt-BR")}
           </p>
+          {(onRevert || (canUncommit && onUncommit)) && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {onRevert && (
+                <button
+                  type="button"
+                  onClick={onRevert}
+                  className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
+                >
+                  Reverter commit
+                </button>
+              )}
+              {canUncommit && onUncommit && (
+                <button
+                  type="button"
+                  onClick={onUncommit}
+                  className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
+                >
+                  Uncommit (soft)
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
-      {filePath && !commit && (
-        <div className="border-b border-border px-4 py-2 text-xs font-medium truncate">
-          {filePath}
+      {filePath && workingTreeFile && (
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+          <span className="min-w-0 truncate text-xs font-medium">{filePath}</span>
+          <div className="flex shrink-0 gap-1.5">
+            {showStageFile && onStageFile && (
+              <button
+                type="button"
+                onClick={onStageFile}
+                className="flex items-center gap-1 rounded border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] text-accent hover:bg-accent/20"
+              >
+                <Plus size={12} />
+                Stage
+              </button>
+            )}
+            {showUnstageFile && onUnstageFile && (
+              <button
+                type="button"
+                onClick={onUnstageFile}
+                className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
+              >
+                <Undo2 size={12} />
+                Unstage
+              </button>
+            )}
+          </div>
         </div>
-      )}
-      {showBlame ? (
+      )}      {showBlame ? (
         <ResizableRows
           storageKey="trilho.rows.detail.v1"
           defaultTop={220}

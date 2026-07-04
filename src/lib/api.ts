@@ -19,6 +19,8 @@ import type {
   BlameLineDto,
   BlameSourceDto,
   TrailEntryDto,
+  OperationPreviewDto,
+  WriteRequestDto,
 } from "@/types";
 
 import { MOCK_APP_INFO, MOCK_COMMITS, MOCK_REPO, MOCK_STATUS } from "@/lib/mock-data";
@@ -297,4 +299,24 @@ export async function getFileBlame(
   });
 }
 
+export async function previewWriteOperation(
+  request: WriteRequestDto,
+): Promise<OperationPreviewDto> {
+  if (!isTauri()) {
+    return {
+      commands: ["git -C /mock restore --staged -- file"],
+      description: "Mock — preview de operação.",
+      repoPath: "/mock",
+      blocked: null,
+    };
+  }
+  return invoke<OperationPreviewDto>("preview_write_operation", { request });
+}
+
+export async function executeWriteOperation(
+  request: WriteRequestDto,
+): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("execute_write_operation", { request });
+}
 

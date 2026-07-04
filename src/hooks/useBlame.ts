@@ -19,13 +19,10 @@ export function useBlame({ path, staged, commit }: UseBlameOptions) {
   const activePath = path ?? null;
 
   useEffect(() => {
-    if (commit && activePath) {
-      // Arquivo dentro de um commit: blame sempre na fonte "commit" (naquele SHA).
+    if (staged !== null) {
+      setSource(staged ? "staging" : "workingTree");
+    } else if (commit && activePath) {
       setSource("commit");
-    } else if (activePath && staged === true) {
-      setSource("staging");
-    } else if (activePath) {
-      setSource("workingTree");
     }
   }, [activePath, staged, commit]);
 

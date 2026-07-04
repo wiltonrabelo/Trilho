@@ -9,6 +9,10 @@ interface CommitGraphProps {
   onViewChange: (view: GraphView) => void;
   trails?: TrailKindDto[] | null;
   divergence?: TrailDivergence | null;
+  workingCopySelected?: boolean;
+  changeCount?: number;
+  stagedCount?: number;
+  onSelectWorkingCopy?: () => void;
   onSelect: (commit: CommitDto) => void;
   onLoadMore?: () => void;
   hasMore?: boolean;
@@ -35,6 +39,10 @@ export function CommitGraph({
   onViewChange,
   trails,
   divergence,
+  workingCopySelected,
+  changeCount,
+  stagedCount,
+  onSelectWorkingCopy,
   onSelect,
   onLoadMore,
   hasMore,
@@ -71,6 +79,11 @@ export function CommitGraph({
         trails={view === "trail" ? trails : null}
         divergence={divergence}
         compact={view === "graph"}
+        showWorkingCopy
+        workingCopySelected={workingCopySelected}
+        changeCount={changeCount}
+        stagedCount={stagedCount}
+        onSelectWorkingCopy={onSelectWorkingCopy}
         onSelect={onSelect}
       />
       {hasMore && (

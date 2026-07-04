@@ -2,9 +2,11 @@
 
 mod blame;
 mod branch_origin;
+mod operation;
 
 pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
+pub use operation::{OperationPreview, WriteRequest};
 
 use serde::Serialize;
 /// Um commit da trilha (RF-01). Serializa em camelCase para o frontend.

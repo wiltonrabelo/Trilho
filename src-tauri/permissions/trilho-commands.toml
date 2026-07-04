@@ -29,4 +29,6 @@ commands.allow = [
   "get_branch_origin",
   "get_dual_trail",
   "get_file_blame",
+  "preview_write_operation",
+  "execute_write_operation",
 ]

@@ -30,8 +30,8 @@ npm run test:rust    # cargo test
 |------|--------|---------|
 | M0 | ✅ | Scaffolding, tema, arquitetura Git, baseline de segurança |
 | M1 + M1-b | ✅ | Leitura, fetch, watcher, grafo com lanes, status/diff |
-| M2 | ⏳ | Origem da branch, blame |
-| M3 | ⏳ | Operações seguras (commit, unstage, push, …) |
+| M2 | ✅ | Origem da branch, blame |
+| M3 | ✅ | Operações seguras (preview, unstage, commit, push/pull) |
 | M4 | ⏳ | Instalador assinado, E2E, a11y |
 
 Documentação completa: `C:\Projetos\SysPDV\Docs\git-trail-viewer\MVP.md`
