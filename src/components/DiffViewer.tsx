@@ -4,6 +4,8 @@ import { parseUnifiedDiff } from "@/lib/diff-parse";
 interface DiffViewerProps {
   diff: string | null;
   loading?: boolean;
+  onLineClick?: (lineNo: number) => void;
+  selectedLine?: number | null;
 }
 
 function lineClass(kind: string): string {
@@ -17,7 +19,12 @@ function lineClass(kind: string): string {
   }
 }
 
-export function DiffViewer({ diff, loading }: DiffViewerProps) {
+export function DiffViewer({
+  diff,
+  loading,
+  onLineClick,
+  selectedLine,
+}: DiffViewerProps) {
   const parsed = useMemo(() => (diff ? parseUnifiedDiff(diff) : null), [diff]);
 
   if (loading) {
@@ -55,26 +62,37 @@ export function DiffViewer({ diff, loading }: DiffViewerProps) {
           </div>
           <table className="w-full border-collapse font-mono text-xs">
             <tbody>
-              {file.rows.map((row, i) => (
-                <tr key={i} className="hover:bg-surface/50">
-                  <td className="w-10 select-none border-r border-border px-2 py-0.5 text-right text-muted">
-                    {row.left.lineNo ?? ""}
-                  </td>
-                  <td
-                    className={`w-[calc(50%-2.5rem)] border-r border-border px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.left.kind)}`}
+              {file.rows.map((row, i) => {
+                const rightLine = row.right.lineNo;
+                const isSelected =
+                  selectedLine != null && rightLine === selectedLine;
+                return (
+                  <tr
+                    key={i}
+                    className={`hover:bg-surface/50 ${isSelected ? "ring-1 ring-inset ring-accent/40" : ""} ${onLineClick && rightLine ? "cursor-pointer" : ""}`}
+                    onClick={() => {
+                      if (onLineClick && rightLine) onLineClick(rightLine);
+                    }}
                   >
-                    {row.left.text || "\u00a0"}
-                  </td>
-                  <td className="w-10 select-none border-r border-border px-2 py-0.5 text-right text-muted">
-                    {row.right.lineNo ?? ""}
-                  </td>
-                  <td
-                    className={`w-[calc(50%-2.5rem)] px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.right.kind)}`}
-                  >
-                    {row.right.text || "\u00a0"}
-                  </td>
-                </tr>
-              ))}
+                    <td className="w-10 select-none border-r border-border px-2 py-0.5 text-right text-muted">
+                      {row.left.lineNo ?? ""}
+                    </td>
+                    <td
+                      className={`w-[calc(50%-2.5rem)] border-r border-border px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.left.kind)}`}
+                    >
+                      {row.left.text || "\u00a0"}
+                    </td>
+                    <td className="w-10 select-none border-r border-border px-2 py-0.5 text-right text-muted">
+                      {row.right.lineNo ?? ""}
+                    </td>
+                    <td
+                      className={`w-[calc(50%-2.5rem)] px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.right.kind)}`}
+                    >
+                      {row.right.text || "\u00a0"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

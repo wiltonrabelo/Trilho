@@ -26,6 +26,10 @@ describe("resolveTheme", () => {
     expect(resolveTheme("dark")).toBe("dark");
   });
 
+  it("retorna coffee quando preferência é coffee", () => {
+    expect(resolveTheme("coffee")).toBe("coffee");
+  });
+
   it("system delega ao prefers-color-scheme (dark)", () => {
     mockMatchMedia(true);
     const pref: ThemePreference = "system";

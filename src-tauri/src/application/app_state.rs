@@ -20,10 +20,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?;
+        let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
         let recents_file = data_dir.join("recent_repos.json");
         let recent_repos = load_recents(&recents_file);
@@ -43,7 +40,11 @@ impl AppState {
         self.repo_path
             .lock()
             .map_err(|_| "Estado indisponível.".into())
-            .and_then(|guard| guard.clone().ok_or_else(|| "Nenhum repositório aberto.".into()))
+            .and_then(|guard| {
+                guard
+                    .clone()
+                    .ok_or_else(|| "Nenhum repositório aberto.".into())
+            })
     }
 
     pub fn set_repo(&self, path: String, app: &AppHandle) -> Result<(), String> {

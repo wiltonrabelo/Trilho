@@ -51,6 +51,7 @@ export const MOCK_COMMITS: CommitDto[] = [
       "feat01abcdef0123456789abcdef0123456789ab",
 
     ],
+    refs: [],
 
   },
 
@@ -69,6 +70,7 @@ export const MOCK_COMMITS: CommitDto[] = [
     isLocalOnly: true,
 
     parentIds: ["1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"],
+    refs: [],
 
   },
 
@@ -87,6 +89,7 @@ export const MOCK_COMMITS: CommitDto[] = [
     isLocalOnly: true,
 
     parentIds: ["1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"],
+    refs: [],
 
   },
 
@@ -105,6 +108,7 @@ export const MOCK_COMMITS: CommitDto[] = [
     isLocalOnly: false,
 
     parentIds: [],
+    refs: [],
 
   },
 

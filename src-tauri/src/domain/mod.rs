@@ -1,7 +1,12 @@
 //! Camada de Domínio — entidades puras, sem dependência de infraestrutura.
 
-use serde::Serialize;
+mod blame;
+mod branch_origin;
 
+pub use blame::{BlameLine, BlameSource};
+pub use branch_origin::{BranchOrigin, OriginConfidence};
+
+use serde::Serialize;
 /// Um commit da trilha (RF-01). Serializa em camelCase para o frontend.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +21,28 @@ pub struct Commit {
     pub is_local_only: bool,
     /// SHAs dos commits pais (para layout de lanes no M1-b).
     pub parent_ids: Vec<String>,
+    /// Refs que apontam para este commit (branches locais/remotas e tags).
+    pub refs: Vec<String>,
+}
+
+/// A qual linha da trilha dupla o commit pertence (RF-01 + RF-02).
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TrailKind {
+    /// Commit exclusivo da branch atual (acima do merge-base).
+    Current,
+    /// Commit exclusivo da branch base após a divergência (ex.: development).
+    Base,
+    /// Trilho comum antes da divergência (o primeiro é o merge-base).
+    Shared,
+}
+
+/// Item da trilha dupla: commit + a linha a que pertence.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrailEntry {
+    pub commit: Commit,
+    pub trail: TrailKind,
 }
 
 /// Metadados do repositório aberto.

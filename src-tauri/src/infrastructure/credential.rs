@@ -101,18 +101,14 @@ fn command_exists(name: &str) -> bool {
     let probe = Command::new("where").arg(name).output();
     #[cfg(not(windows))]
     let probe = Command::new("which").arg(name).output();
-    probe
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    probe.map(|o| o.status.success()).unwrap_or(false)
 }
 
 #[cfg(windows)]
 fn windows_gcm_paths() -> Vec<String> {
     let mut paths = Vec::new();
     if let Ok(pf) = std::env::var("ProgramFiles") {
-        paths.push(format!(
-            r"{pf}\Git\mingw64\bin\git-credential-manager.exe"
-        ));
+        paths.push(format!(r"{pf}\Git\mingw64\bin\git-credential-manager.exe"));
         paths.push(format!(
             r"{pf}\Git\mingw64\libexec\git-core\git-credential-manager.exe"
         ));

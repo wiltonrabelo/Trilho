@@ -1,17 +1,22 @@
 //! Camada de Aplicação — portas (traits) e estado compartilhado.
 
-mod operations;
 mod app_state;
+mod branch_origin;
+mod operations;
 
 pub use app_state::AppState;
+pub use branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};
 pub use operations::{
-    FetchRemote, FileDiff, GitOperation, RevListAheadBehind, ShowCommit, StatusPorcelain,
+    CommitFileDiff, FetchRemote, FileDiff, GitOperation, RevListAheadBehind, ShowCommit,
+    StatusPorcelain,
 };
 pub use repo_context::RepoContext;
 
 mod repo_context;
 
-use crate::domain::{Commit, RepoStatus, SyncInfo};
+use crate::domain::{
+    BlameLine, BlameSource, BranchOrigin, Commit, FileChange, RepoStatus, SyncInfo, TrailEntry,
+};
 use std::fmt;
 
 /// Erros de leitura/escrita do Git na fronteira da aplicação.
@@ -79,10 +84,24 @@ fn auth_action_message(lower: &str) -> String {
 fn map_git_stderr(stderr: &str) -> String {
     let trimmed = stderr.trim();
     if trimmed.is_empty() {
-        "Comando Git falhou.".into()
-    } else {
-        trimmed.lines().next().unwrap_or(trimmed).to_string()
+        return "Comando Git falhou.".into();
     }
+    let lower = trimmed.to_lowercase();
+    // Blame/diff de arquivo sem histórico (novo ou não rastreado): o git aborta
+    // com "no such path ... in HEAD". Traduz para algo acionável, sem vazar
+    // "fatal:" cru (MVP §4 — nunca stderr cru).
+    if lower.contains("no such path") || lower.contains("no such ref") {
+        return "Arquivo novo ou não rastreado — ainda não há histórico no \
+                repositório para exibir o blame. Faça o commit para acompanhá-lo."
+            .into();
+    }
+    // Demais falhas: primeira linha, sem o prefixo técnico "fatal:"/"error:".
+    let first = trimmed.lines().next().unwrap_or(trimmed);
+    first
+        .trim_start_matches("fatal: ")
+        .trim_start_matches("error: ")
+        .trim()
+        .to_string()
 }
 
 /// Representa um comando Git a ser pré-visualizado (RF-08) e/ou executado.
@@ -93,13 +112,63 @@ pub struct GitCommand {
 
 /// Porta de LEITURA do repositório (grafo, status, blame, ...).
 pub trait GitReader: Send + Sync {
-    fn list_commits(&self, limit: usize, skip: usize) -> Result<Vec<Commit>, GitError>;
+    /// `first_parent`: trilha da branch atual (`--first-parent`) — visão padrão
+    /// legível em repositórios com muitos merges (RF-01); `false` = grafo completo.
+    fn list_commits(
+        &self,
+        limit: usize,
+        skip: usize,
+        first_parent: bool,
+    ) -> Result<Vec<Commit>, GitError>;
+    /// Trilha dupla: first-parent da branch atual + first-parent da `base`
+    /// até o merge-base, e o trilho comum abaixo dele (RF-01/RF-02).
+    fn get_dual_trail(&self, base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError>;
     fn get_status(&self) -> Result<RepoStatus, GitError>;
+    /// Arquivos alterados por um commit (diff contra o 1º pai; árvore vazia se
+    /// for o commit raiz) — alimenta os "detalhes de commit" (M1).
+    fn list_commit_files(&self, sha: &str) -> Result<Vec<FileChange>, GitError>;
     fn get_sync_info(&self) -> Result<SyncInfo, GitError>;
+    fn get_branch_origin(&self) -> Result<BranchOrigin, GitError>;
+    fn get_file_blame(
+        &self,
+        path: &str,
+        source: BlameSource,
+        commit_id: Option<&str>,
+        start_line: u32,
+        end_line: u32,
+    ) -> Result<Vec<BlameLine>, GitError>;
 }
 
 /// Porta de ESCRITA do repositório (commit, restore, reset, revert, push, ...).
 pub trait GitWriter: Send + Sync {
     fn preview(&self, command: &GitCommand) -> Vec<String>;
     fn run(&self, command: &GitCommand) -> Result<String, GitError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blame_de_arquivo_novo_vira_mensagem_amigavel() {
+        let err = GitError::from_git_stderr(
+            "fatal: no such path 'Docs/novo.md' in HEAD\n",
+        );
+        let msg = err.to_string();
+        assert!(!msg.contains("fatal"), "não deve vazar 'fatal:' cru: {msg}");
+        assert!(!msg.contains("HEAD"), "não deve vazar termos crus: {msg}");
+        assert!(msg.to_lowercase().contains("hist"), "deve explicar: {msg}");
+    }
+
+    #[test]
+    fn stderr_generico_perde_prefixo_tecnico() {
+        let err = GitError::from_git_stderr("fatal: bad revision 'zzz'\n");
+        assert_eq!(err.to_string(), "bad revision 'zzz'");
+    }
+
+    #[test]
+    fn falha_de_auth_e_classificada() {
+        let err = GitError::from_git_stderr("fatal: Authentication failed for 'https://...'");
+        assert!(err.is_auth());
+    }
 }

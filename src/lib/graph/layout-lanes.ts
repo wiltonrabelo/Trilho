@@ -56,10 +56,21 @@ export function layoutLanes(commits: CommitDto[]): GraphLayout {
     }
   }
 
-  const laneCount = Math.max(1, ...nodes.map((n) => n.lane + 1));
-  if (laneCount > MAX_LANES) {
-    return layoutLinear(commits);
+  const rawLaneCount = Math.max(1, ...nodes.map((n) => n.lane + 1));
+  // Histórico muito ramificado (muitas lanes concorrentes): em vez de colapsar
+  // tudo numa única coluna — o que fazia o grafo "voltar para a trilha da
+  // branch" ao carregar mais páginas —, comprimimos as lanes excedentes na
+  // última coluna. O grafo continua multi-trilha e estável entre páginas.
+  if (rawLaneCount > MAX_LANES) {
+    const cap = MAX_LANES - 1;
+    for (const n of nodes) {
+      if (n.lane > cap) {
+        n.lane = cap;
+        n.laneColor = laneColor(cap);
+      }
+    }
   }
+  const laneCount = Math.min(rawLaneCount, MAX_LANES);
 
   const laneById = new Map(nodes.map((n) => [n.commitId, n.lane]));
   const edges: GraphEdge[] = [];
@@ -79,6 +90,7 @@ export function layoutLanes(commits: CommitDto[]): GraphLayout {
         toLane,
         fromRow,
         toRow,
+        firstParent: parentId === commit.parentIds[0],
       });
     }
   }

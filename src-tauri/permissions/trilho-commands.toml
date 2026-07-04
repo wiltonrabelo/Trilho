@@ -21,7 +21,12 @@ commands.allow = [
   "get_repo_status",
   "get_file_diff",
   "get_commit_diff",
+  "list_commit_files",
+  "get_commit_file_diff",
   "get_sync_info",
   "get_credential_status",
   "fetch_remote",
+  "get_branch_origin",
+  "get_dual_trail",
+  "get_file_blame",
 ]

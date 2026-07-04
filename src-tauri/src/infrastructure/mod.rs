@@ -1,21 +1,23 @@
 //! Camada de Infraestrutura — adaptadores concretos.
 
+mod blame;
+mod blame_parser;
 mod credential;
-mod git_cli;
 mod git2_reader;
+mod git_cli;
 mod repo_watcher;
 mod status_parser;
 mod upstream;
 mod validation;
 
 pub use credential::{detect_credential_status, CredentialStatus};
-pub use git_cli::SafeGitCli;
 pub use git2_reader::{repo_info, Git2Reader};
+pub use git_cli::SafeGitCli;
 pub use repo_watcher::RepoWatcher;
 pub use validation::{validate_git_object_id, validate_repo_relative_path};
 
 use crate::application::{GitError, GitReader};
-use crate::domain::Commit;
+use crate::domain::{Commit, TrailEntry, TrailKind};
 
 /// Adaptador mock (M0) — mantido para fallback web e testes.
 pub struct MockGitReader;
@@ -33,7 +35,12 @@ impl Default for MockGitReader {
 }
 
 impl GitReader for MockGitReader {
-    fn list_commits(&self, limit: usize, skip: usize) -> Result<Vec<Commit>, GitError> {
+    fn list_commits(
+        &self,
+        limit: usize,
+        skip: usize,
+        _first_parent: bool,
+    ) -> Result<Vec<Commit>, GitError> {
         let sample = vec![
             Commit {
                 id: "merge01abcdef0123456789abcdef0123456789ab".into(),
@@ -46,6 +53,7 @@ impl GitReader for MockGitReader {
                     "9f3a1c2e5b7d0a4f6e8c1b2d3a4f5e6c7d8b9a0f".into(),
                     "feat01abcdef0123456789abcdef0123456789ab".into(),
                 ],
+                refs: vec![],
             },
             Commit {
                 id: "feat01abcdef0123456789abcdef0123456789ab".into(),
@@ -55,6 +63,7 @@ impl GitReader for MockGitReader {
                 authored_at: "2026-07-03T12:00:00-03:00".into(),
                 is_local_only: true,
                 parent_ids: vec!["1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e".into()],
+                refs: vec![],
             },
             Commit {
                 id: "9f3a1c2e5b7d0a4f6e8c1b2d3a4f5e6c7d8b9a0f".into(),
@@ -64,6 +73,7 @@ impl GitReader for MockGitReader {
                 authored_at: "2026-07-02T14:10:00-03:00".into(),
                 is_local_only: true,
                 parent_ids: vec!["1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e".into()],
+                refs: vec![],
             },
             Commit {
                 id: "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e".into(),
@@ -73,6 +83,7 @@ impl GitReader for MockGitReader {
                 authored_at: "2026-07-02T11:05:00-03:00".into(),
                 is_local_only: false,
                 parent_ids: vec![],
+                refs: vec![],
             },
         ];
         Ok(sample.into_iter().skip(skip).take(limit).collect())
@@ -86,6 +97,25 @@ impl GitReader for MockGitReader {
         })
     }
 
+    fn list_commit_files(
+        &self,
+        _sha: &str,
+    ) -> Result<Vec<crate::domain::FileChange>, GitError> {
+        use crate::domain::{FileChange, FileChangeKind};
+        Ok(vec![
+            FileChange {
+                path: "src/App.tsx".into(),
+                kind: FileChangeKind::Modified,
+                staged: false,
+            },
+            FileChange {
+                path: "src/lib/graph/layout-lanes.ts".into(),
+                kind: FileChangeKind::Added,
+                staged: false,
+            },
+        ])
+    }
+
     fn get_sync_info(&self) -> Result<crate::domain::SyncInfo, GitError> {
         Ok(crate::domain::SyncInfo {
             last_fetch_at: None,
@@ -93,6 +123,49 @@ impl GitReader for MockGitReader {
             ahead: 0,
             behind: 0,
         })
+    }
+
+    fn get_dual_trail(&self, _base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError> {
+        Ok(self
+            .list_commits(limit, 0, true)?
+            .into_iter()
+            .map(|commit| TrailEntry {
+                commit,
+                trail: TrailKind::Current,
+            })
+            .collect())
+    }
+
+    fn get_branch_origin(&self) -> Result<crate::domain::BranchOrigin, GitError> {
+        Ok(crate::domain::BranchOrigin {
+            current_branch: Some("master".into()),
+            candidate: Some("main".into()),
+            confidence: crate::domain::OriginConfidence::Medium,
+            explanation: "Mock — origem inferida de main.".into(),
+            signals: vec!["mock".into()],
+            merge_base_id: None,
+        })
+    }
+
+    fn get_file_blame(
+        &self,
+        path: &str,
+        _source: crate::domain::BlameSource,
+        _commit_id: Option<&str>,
+        start_line: u32,
+        end_line: u32,
+    ) -> Result<Vec<crate::domain::BlameLine>, GitError> {
+        Ok((start_line..=end_line)
+            .map(|line| crate::domain::BlameLine {
+                line,
+                commit_id: "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e".into(),
+                short_id: "1b2c3d4".into(),
+                author: "Mock".into(),
+                authored_at: "2026-07-02T11:05:00-03:00".into(),
+                summary: format!("mock blame — {path}"),
+                content: format!("linha {line}"),
+            })
+            .collect())
     }
 }
 
@@ -105,7 +178,7 @@ mod tests {
     #[test]
     fn mock_reader_respeita_limite() {
         let reader = MockGitReader::new();
-        let commits = reader.list_commits(2, 0).expect("deve listar");
+        let commits = reader.list_commits(2, 0, false).expect("deve listar");
         assert_eq!(commits.len(), 2);
     }
 

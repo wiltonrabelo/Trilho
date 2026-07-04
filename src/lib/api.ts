@@ -6,6 +6,8 @@ import type {
 
   CommitDto,
 
+  FileChangeDto,
+
   RepoInfo,
 
   RepoStatusDto,
@@ -13,7 +15,10 @@ import type {
   SyncInfoDto,
 
   CredentialStatusDto,
-
+  BranchOriginDto,
+  BlameLineDto,
+  BlameSourceDto,
+  TrailEntryDto,
 } from "@/types";
 
 import { MOCK_APP_INFO, MOCK_COMMITS, MOCK_REPO, MOCK_STATUS } from "@/lib/mock-data";
@@ -104,15 +109,28 @@ export async function listCommits(
 
   skip = 0,
 
+  firstParent = true,
+
 ): Promise<CommitDto[]> {
 
   if (!isTauri()) return MOCK_COMMITS;
 
-  return invoke<CommitDto[]>("list_commits", { limit, skip });
+  return invoke<CommitDto[]>("list_commits", { limit, skip, firstParent });
 
 }
 
 
+
+/** Trilha dupla: branch atual + base até o merge-base + trilho comum. */
+export async function getDualTrail(
+  base: string,
+  limit = 300,
+): Promise<TrailEntryDto[]> {
+  if (!isTauri()) {
+    return MOCK_COMMITS.map((commit) => ({ commit, trail: "current" }));
+  }
+  return invoke<TrailEntryDto[]>("get_dual_trail", { base, limit });
+}
 
 export async function getRepoStatus(): Promise<RepoStatusDto> {
 
@@ -146,6 +164,32 @@ export async function getCommitDiff(commitId: string): Promise<string> {
 
   return invoke<string>("get_commit_diff", { commitId });
 
+}
+
+
+
+/** Arquivos alterados por um commit (detalhes de commit, M1). */
+export async function listCommitFiles(
+  commitId: string,
+): Promise<FileChangeDto[]> {
+  if (!isTauri()) {
+    return [
+      { path: "src/App.tsx", kind: "modified", staged: false },
+      { path: "src/lib/graph/layout-lanes.ts", kind: "added", staged: false },
+    ];
+  }
+  return invoke<FileChangeDto[]>("list_commit_files", { commitId });
+}
+
+
+
+/** Diff de um arquivo específico dentro de um commit. */
+export async function getCommitFileDiff(
+  commitId: string,
+  path: string,
+): Promise<string> {
+  if (!isTauri()) return `commit file diff mock — ${commitId} · ${path}`;
+  return invoke<string>("get_commit_file_diff", { commitId, path });
 }
 
 
@@ -208,6 +252,49 @@ export async function getCredentialStatus(): Promise<CredentialStatusDto> {
 
   return invoke<CredentialStatusDto>("get_credential_status");
 
+}
+
+export async function getBranchOrigin(): Promise<BranchOriginDto> {
+  if (!isTauri()) {
+    return {
+      currentBranch: "master",
+      candidate: "main",
+      confidence: "medium",
+      explanation: "Mock — origem inferida de main.",
+      signals: ["mock"],
+      mergeBaseId: null,
+    };
+  }
+  return invoke<BranchOriginDto>("get_branch_origin");
+}
+
+export async function getFileBlame(
+  path: string,
+  source: BlameSourceDto,
+  startLine: number,
+  endLine: number,
+  commitId?: string,
+): Promise<BlameLineDto[]> {
+  if (!isTauri()) {
+    return [
+      {
+        line: startLine,
+        commitId: "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e",
+        shortId: "1b2c3d4",
+        author: "Mock",
+        authoredAt: "2026-07-02T11:05:00-03:00",
+        summary: `mock blame — ${path}`,
+        content: `linha ${startLine}`,
+      },
+    ];
+  }
+  return invoke<BlameLineDto[]>("get_file_blame", {
+    path,
+    source,
+    commitId: commitId ?? null,
+    startLine,
+    endLine,
+  });
 }
 
 

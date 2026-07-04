@@ -68,6 +68,30 @@ impl GitOperation for ShowCommit {
     }
 }
 
+/// Diff de um único arquivo dentro de um commit (detalhes de commit, M1).
+/// `--first-parent` garante um diff coerente em merges (contra o 1º pai),
+/// alinhado com o cálculo de `list_commit_files`.
+pub struct CommitFileDiff {
+    pub sha: String,
+    pub path: String,
+}
+
+impl GitOperation for CommitFileDiff {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "show".into(),
+                "--no-color".into(),
+                "--format=".into(),
+                "--first-parent".into(),
+                self.sha.clone(),
+                "--".into(),
+                self.path.clone(),
+            ],
+        }
+    }
+}
+
 pub struct RevListAheadBehind {
     pub upstream: String,
 }

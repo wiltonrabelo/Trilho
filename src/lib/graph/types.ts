@@ -14,6 +14,8 @@ export interface GraphEdge {
   toLane: number;
   fromRow: number;
   toRow: number;
+  /** Aresta para o primeiro pai (continuação da linha) vs. merge (2º+ pai). */
+  firstParent?: boolean;
 }
 
 export interface GraphLayout {

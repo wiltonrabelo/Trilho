@@ -1,4 +1,4 @@
-import type { FileChangeDto, FileChangeKind } from "@/types";
+import type { CommitDto, FileChangeDto, FileChangeKind } from "@/types";
 
 interface StatusPanelProps {
   staged: FileChangeDto[];
@@ -7,6 +7,12 @@ interface StatusPanelProps {
   selectedPath: string | null;
   selectedStaged: boolean | null;
   onSelectFile: (path: string, staged: boolean) => void;
+  /** Quando há um commit selecionado, o painel mostra os arquivos DELE
+   *  (detalhes de commit) em vez do status da working tree. */
+  commit: CommitDto | null;
+  commitFiles: FileChangeDto[];
+  selectedCommitFile: string | null;
+  onSelectCommitFile: (path: string) => void;
 }
 
 const KIND_BADGE: Record<
@@ -103,6 +109,51 @@ function FileList({
   );
 }
 
+/** Lista os arquivos de um commit; seleção por caminho (sem staged). */
+function CommitFileList({
+  files,
+  selectedPath,
+  onSelect,
+}: {
+  files: FileChangeDto[];
+  selectedPath: string | null;
+  onSelect: (path: string) => void;
+}) {
+  if (files.length === 0) {
+    return (
+      <p className="px-2 py-4 text-center text-xs text-muted">
+        Nenhum arquivo alterado neste commit
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-0.5">
+      {files.map((f) => {
+        const isSelected = selectedPath === f.path;
+        return (
+          <li key={`${f.kind}-${f.path}`}>
+            <button
+              type="button"
+              onClick={() => onSelect(f.path)}
+              className={`flex w-full items-start gap-2 rounded-md px-2 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
+                isSelected
+                  ? "bg-surface ring-1 ring-border"
+                  : "hover:bg-surface/60"
+              }`}
+              title={f.path}
+            >
+              <KindBadge kind={f.kind} />
+              <span className="min-w-0 flex-1 break-all font-mono text-xs text-text">
+                {f.path}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function StatusPanel({
   staged,
   unstaged,
@@ -110,7 +161,30 @@ export function StatusPanel({
   selectedPath,
   selectedStaged,
   onSelectFile,
+  commit,
+  commitFiles,
+  selectedCommitFile,
+  onSelectCommitFile,
 }: StatusPanelProps) {
+  if (commit) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted">
+          Arquivos do commit{" "}
+          <span className="font-mono text-[10px]">{commit.shortId}</span>
+          {commitFiles.length > 0 ? ` (${commitFiles.length})` : ""}
+        </div>
+        <div className="flex-1 overflow-auto p-2">
+          <CommitFileList
+            files={commitFiles}
+            selectedPath={selectedCommitFile}
+            onSelect={onSelectCommitFile}
+          />
+        </div>
+      </div>
+    );
+  }
+
   const total = staged.length + unstaged.length + untracked.length;
   return (
     <div className="flex h-full flex-col">

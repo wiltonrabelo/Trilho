@@ -1,13 +1,17 @@
 import { GitBranch, TrainFront, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { CommitGraph } from "@/components/CommitGraph";
 import { DetailPanel } from "@/components/DetailPanel";
 import { RepoPicker } from "@/components/RepoPicker";
 import { ResizableColumns } from "@/components/ResizableColumns";
+import { ResizableRows } from "@/components/ResizableRows";
 import { StatusPanel } from "@/components/StatusPanel";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useBlame } from "@/hooks/useBlame";
+import { useBranchOrigin } from "@/hooks/useBranchOrigin";
 import { useCommits } from "@/hooks/useCommits";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
@@ -36,22 +40,46 @@ function App() {
     clearFileSelection,
   } = useRepo();
 
+  const { origin, loading: originLoading, refresh: refreshOrigin } =
+    useBranchOrigin(repo);
+
   const {
+    view,
+    setView,
     commits,
+    trails,
     hasMore,
     loading: commitsLoading,
     selectedCommit,
     commitDiff,
+    commitFiles,
+    selectedCommitFile,
+    commitFileDiff,
     diffLoading,
     refresh: refreshCommits,
     loadMore,
     selectCommit,
+    selectCommitFile,
     clearSelection,
-  } = useCommits(repo);
+  } = useCommits(repo, origin?.candidate ?? null);
+
+  const {
+    source: blameSource,
+    setSource: setBlameSource,
+    lines: blameLines,
+    focusLine: blameFocusLine,
+    loading: blameLoading,
+    error: blameError,
+    selectLine: selectBlameLine,
+  } = useBlame({
+    path: selectedFile?.path ?? selectedCommitFile ?? null,
+    staged: selectedFile?.staged ?? null,
+    commit: selectedCommit,
+  });
 
   const onAfterFetch = useCallback(async () => {
-    await Promise.all([refreshCommits(), refreshStatus()]);
-  }, [refreshCommits, refreshStatus]);
+    await Promise.all([refreshCommits(), refreshStatus(), refreshOrigin()]);
+  }, [refreshCommits, refreshStatus, refreshOrigin]);
 
   const {
     sync,
@@ -64,8 +92,13 @@ function App() {
   } = useSync(repo, setRepo, onAfterFetch);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([refreshCommits(), refreshStatus(), syncRefresh()]);
-  }, [refreshCommits, refreshStatus, syncRefresh]);
+    await Promise.all([
+      refreshCommits(),
+      refreshStatus(),
+      syncRefresh(),
+      refreshOrigin(),
+    ]);
+  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin]);
 
   useRepoChanged(refreshAll);
 
@@ -95,8 +128,18 @@ function App() {
     await selectFile(path, staged);
   }
 
+  async function handleSelectCommitFile(path: string) {
+    clearFileSelection();
+    await selectCommitFile(path);
+  }
+
   const loading = repoLoading || commitsLoading || diffLoading || fileLoading;
-  const diff = selectedCommit ? commitDiff : fileDiff;
+  const detailFilePath = selectedFile?.path ?? selectedCommitFile ?? null;
+  const diff = selectedCommit
+    ? selectedCommitFile
+      ? commitFileDiff
+      : commitDiff
+    : fileDiff;
 
   return (
     <div className="flex h-full flex-col">
@@ -117,6 +160,7 @@ function App() {
               ) : (
                 <span>{repo.branch ?? "—"}</span>
               )}
+              <BranchOriginBadge origin={origin} loading={originLoading} />
             </div>
           )}
         </div>
@@ -157,6 +201,18 @@ function App() {
             Branch <strong>{repo.branch}</strong> sem upstream —
             ahead/behind e fetch remoto dependem de{" "}
             <code className="font-mono">git branch -u</code>.
+          </div>
+        )}
+
+      {origin &&
+        origin.confidence !== "indeterminate" &&
+        origin.candidate &&
+        !repo?.isDetached && (
+          <div
+            className="border-b border-border bg-surface px-5 py-2 text-xs text-muted"
+            title={origin.signals.join(" · ")}
+          >
+            {origin.explanation}
           </div>
         )}
 
@@ -216,6 +272,17 @@ function App() {
                 <CommitGraph
                   commits={commits}
                   selectedId={selectedCommit?.id ?? null}
+                  view={view}
+                  onViewChange={setView}
+                  trails={trails}
+                  divergence={
+                    origin?.mergeBaseId && origin.candidate
+                      ? {
+                          mergeBaseId: origin.mergeBaseId,
+                          baseName: origin.candidate,
+                        }
+                      : null
+                  }
                   onSelect={(c) => void handleSelectCommit(c)}
                   onLoadMore={() => void loadMore()}
                   hasMore={hasMore}
@@ -224,23 +291,41 @@ function App() {
               )
             }
             right={
-              <div className="grid h-full grid-rows-[minmax(0,1fr)_minmax(0,1.2fr)]">
-                <StatusPanel
-                  staged={status?.staged ?? []}
-                  unstaged={status?.unstaged ?? []}
-                  untracked={status?.untracked ?? []}
-                  selectedPath={selectedFile?.path ?? null}
-                  selectedStaged={selectedFile?.staged ?? null}
-                  onSelectFile={(p, s) => void handleSelectFile(p, s)}
-                />
-                <div className="border-t border-border">
+              <ResizableRows
+                storageKey="trilho.rows.right.v1"
+                defaultTop={280}
+                minTop={140}
+                minBottom={200}
+                top={
+                  <StatusPanel
+                    staged={status?.staged ?? []}
+                    unstaged={status?.unstaged ?? []}
+                    untracked={status?.untracked ?? []}
+                    selectedPath={selectedFile?.path ?? null}
+                    selectedStaged={selectedFile?.staged ?? null}
+                    onSelectFile={(p, s) => void handleSelectFile(p, s)}
+                    commit={selectedCommit}
+                    commitFiles={commitFiles}
+                    selectedCommitFile={selectedCommitFile}
+                    onSelectCommitFile={(p) => void handleSelectCommitFile(p)}
+                  />
+                }
+                bottom={
                   <DetailPanel
                     commit={selectedCommit}
+                    filePath={detailFilePath}
                     diff={diff}
                     loading={loading}
+                    blameSource={blameSource}
+                    onBlameSourceChange={setBlameSource}
+                    blameLines={blameLines}
+                    blameFocusLine={blameFocusLine}
+                    blameLoading={blameLoading}
+                    blameError={blameError}
+                    onLineClick={selectBlameLine}
                   />
-                </div>
-              </div>
+                }
+              />
             }
           />
         </main>

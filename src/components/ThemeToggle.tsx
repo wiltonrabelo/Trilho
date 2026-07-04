@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Coffee, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   getStoredPreference,
@@ -9,6 +9,7 @@ import {
 const OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Claro", icon: Sun },
   { value: "dark", label: "Escuro", icon: Moon },
+  { value: "coffee", label: "Café", icon: Coffee },
   { value: "system", label: "Sistema", icon: Monitor },
 ];
 

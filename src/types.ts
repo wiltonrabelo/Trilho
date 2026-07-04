@@ -17,6 +17,8 @@ export interface CommitDto {
   /** SHAs dos commits pais (para layout de lanes no M1-b). */
 
   parentIds: string[];
+  /** Refs apontando p/ o commit (branches locais/remotas, tags). */
+  refs: string[];
 
 }
 
@@ -112,4 +114,34 @@ export interface CredentialStatusDto {
 
 }
 
+export type OriginConfidence = "high" | "medium" | "low" | "indeterminate";
 
+export interface BranchOriginDto {
+  currentBranch: string | null;
+  candidate: string | null;
+  confidence: OriginConfidence;
+  explanation: string;
+  signals: string[];
+  /** Ponto de divergência (merge-base) com a candidata — marca a Trilha. */
+  mergeBaseId: string | null;
+}
+
+/** Linha da trilha dupla a que o commit pertence. */
+export type TrailKindDto = "current" | "base" | "shared";
+
+export interface TrailEntryDto {
+  commit: CommitDto;
+  trail: TrailKindDto;
+}
+
+export type BlameSourceDto = "commit" | "workingTree" | "staging";
+
+export interface BlameLineDto {
+  line: number;
+  commitId: string;
+  shortId: string;
+  author: string;
+  authoredAt: string;
+  summary: string;
+  content: string;
+}

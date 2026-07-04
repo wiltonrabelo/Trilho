@@ -12,6 +12,7 @@ const LINEAR: CommitDto[] = [
     authoredAt: "2026-07-03T10:00:00-03:00",
     isLocalOnly: false,
     parentIds: ["bbb"],
+    refs: [],
   },
   {
     id: "bbb",
@@ -21,6 +22,7 @@ const LINEAR: CommitDto[] = [
     authoredAt: "2026-07-02T10:00:00-03:00",
     isLocalOnly: false,
     parentIds: ["ccc"],
+    refs: [],
   },
   {
     id: "ccc",
@@ -30,6 +32,7 @@ const LINEAR: CommitDto[] = [
     authoredAt: "2026-07-01T10:00:00-03:00",
     isLocalOnly: false,
     parentIds: [],
+    refs: [],
   },
 ];
 
@@ -42,6 +45,7 @@ const MERGE: CommitDto[] = [
     authoredAt: "2026-07-04T10:00:00-03:00",
     isLocalOnly: false,
     parentIds: ["main", "feat"],
+    refs: [],
   },
   {
     id: "main",
@@ -51,6 +55,7 @@ const MERGE: CommitDto[] = [
     authoredAt: "2026-07-03T10:00:00-03:00",
     isLocalOnly: false,
     parentIds: ["base"],
+    refs: [],
   },
   {
     id: "feat",
@@ -60,6 +65,7 @@ const MERGE: CommitDto[] = [
     authoredAt: "2026-07-03T09:00:00-03:00",
     isLocalOnly: false,
     parentIds: ["base"],
+    refs: [],
   },
   {
     id: "base",
@@ -69,6 +75,7 @@ const MERGE: CommitDto[] = [
     authoredAt: "2026-07-01T10:00:00-03:00",
     isLocalOnly: false,
     parentIds: [],
+    refs: [],
   },
 ];
 

@@ -28,9 +28,14 @@ pub fn run() {
             commands::get_repo_status,
             commands::get_file_diff,
             commands::get_commit_diff,
+            commands::list_commit_files,
+            commands::get_commit_file_diff,
             commands::get_sync_info,
             commands::get_credential_status,
             commands::fetch_remote,
+            commands::get_branch_origin,
+            commands::get_dual_trail,
+            commands::get_file_blame,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Trilho");

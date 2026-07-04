@@ -40,9 +40,9 @@ pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
         }
 
         if entry.starts_with("2 ") {
-            let orig_from_next = segments.get(i + 1).and_then(|s| {
-                is_orphan_path_segment(s).then(|| (*s).to_string())
-            });
+            let orig_from_next = segments
+                .get(i + 1)
+                .and_then(|s| is_orphan_path_segment(s).then(|| (*s).to_string()));
             let consumed_extra = orig_from_next.is_some();
             parse_v2_rename_entry(entry, orig_from_next.as_deref(), &mut staged, &mut unstaged);
             i += if consumed_extra { 2 } else { 1 };
@@ -61,10 +61,7 @@ pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
 
 /// Segmento NUL separado — path de origem após registro `2` (formato `-z` do git).
 fn is_orphan_path_segment(s: &str) -> bool {
-    !s.starts_with("1 ")
-        && !s.starts_with("2 ")
-        && !s.starts_with("? ")
-        && !s.starts_with('#')
+    !s.starts_with("1 ") && !s.starts_with("2 ") && !s.starts_with("? ") && !s.starts_with('#')
 }
 
 fn parse_v1_entry(entry: &str, staged: &mut Vec<FileChange>, unstaged: &mut Vec<FileChange>) {

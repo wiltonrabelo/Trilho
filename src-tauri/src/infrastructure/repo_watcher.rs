@@ -102,11 +102,7 @@ fn resolve_git_paths(repo_path: &str) -> Result<(PathBuf, PathBuf), String> {
     Ok((git_dir, worktree))
 }
 
-fn register_selective_watches(
-    watcher: &mut RecommendedWatcher,
-    git_dir: &Path,
-    worktree: &Path,
-) {
+fn register_selective_watches(watcher: &mut RecommendedWatcher, git_dir: &Path, worktree: &Path) {
     for file in ["HEAD", "index", "packed-refs"] {
         let p = git_dir.join(file);
         if p.exists() {
@@ -124,7 +120,10 @@ fn register_selective_watches(
 
 /// Filtra eventos do worktree; metadados em `.git/refs` etc. passam direto.
 pub fn is_relevant_event(event: &Event, worktree: &Path, git_dir: &Path) -> bool {
-    event.paths.iter().any(|p| is_relevant_path(p, worktree, git_dir))
+    event
+        .paths
+        .iter()
+        .any(|p| is_relevant_path(p, worktree, git_dir))
 }
 
 fn is_relevant_path(path: &Path, worktree: &Path, git_dir: &Path) -> bool {

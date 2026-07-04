@@ -47,7 +47,35 @@
 - [x] **DRY upstream** — `infrastructure/upstream.rs` (`resolve_head_upstream`).
 - [x] **Testes de integração Rust** — `git2_reader` (repo temp), `upstream`, `app_state::validate_git_repo`.
 
-## Próxima fase: M2 — Análise
+## M2 — Análise ✅ (encerrado)
 
-- RF-02 origem da branch (heurística + confiança)
-- RF-03 blame (commit / working tree / staging)
+### Escopo entregue
+- **RF-02** origem da branch: heurística com pontuação (merge-base, first-parent, merge messages)
+- Confiança honesta (Alta/Média/Baixa/Indeterminada); reflog só reforça, nunca infla sozinho
+- Badge + banner no header (`BranchOriginBadge`)
+- **RF-03** blame: três fontes (commit/HEAD, working tree, staging via `--contents -`)
+- Parser `--line-porcelain`, painel `BlamePanel`, clique em linha no diff
+- IPC: `get_branch_origin`, `get_file_blame`
+- Testes: `branch_origin`, `blame_parser`, `blame` (repo temp)
+
+## Pós-M2 — Trilha legível em repositório grande (2026-07-03)
+
+- **Visão padrão "Trilha da branch"** (`--first-parent`, RF-01): linha única da branch atual;
+  merges colapsados com badge. Toggle p/ "Grafo completo" (lanes). Motivo: SysPDV (311
+  branches) tornava o grafo completo ilegível.
+- **Divergência visível**: `BranchOrigin.merge_base_id` exposto; Trilha marca commits da
+  branch (cor da lane) vs base (esmaecido), nó âmbar "⑂ divergiu de X" no merge-base.
+- Perf: comandos IPC demorados `async` (sync roda na main thread do Tauri 2 e congela UI);
+  heurística RF-02 com tetos (40 candidatas, walks limitados) + sinal de merge-base recente.
+
+## Enhancement (backlog pós-MVP)
+
+- **Trilha comparada de duas branches** (pedido do stakeholder, 2026-07-03): selecionar duas
+  branches e ver os commits de ambas na trilha, com divergência e convergência. Não coberto
+  pelo PLANO (RF-14 compara **arquivos**, não trilha visual). Primeiro recorte entregue acima
+  (branch atual vs base inferida). Evolução: seletor manual de base + linha da base como
+  segunda lane + marcação dos merges de convergência.
+
+## Próxima fase: M3 — Operações seguras
+
+- RF-08 preview, RF-05 unstage, RF-15 commit, RF-06 uncommit, RF-07 revert, push
