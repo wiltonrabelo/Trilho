@@ -167,7 +167,7 @@ pub fn preview_write(
                 blocked,
             )
         }
-        WriteRequest::Publish { remote_url } => preview_publish(ctx, remote_url.as_deref())?,
+        WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
     Ok(OperationPreview {
@@ -234,7 +234,7 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         WriteRequest::PullFfOnly => {
             ctx.execute_op(&PullFfOnly)?;
         }
-        WriteRequest::Publish { remote_url } => execute_publish(ctx, remote_url.as_deref())?,
+        WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
     Ok(())
 }

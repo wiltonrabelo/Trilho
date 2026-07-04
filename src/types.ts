@@ -168,4 +168,4 @@ export type WriteRequestDto =
   | { kind: "revert"; commitId: string }
   | { kind: "push" }
   | { kind: "pullFfOnly" }
-  | { kind: "publish"; remoteUrl?: string };
+  | { kind: "publish"; url?: string; remoteUrl?: string };

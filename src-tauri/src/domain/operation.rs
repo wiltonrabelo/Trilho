@@ -35,7 +35,29 @@ pub enum WriteRequest {
     Push,
     PullFfOnly,
     Publish {
-        #[serde(default)]
-        remote_url: Option<String>,
+        #[serde(default, alias = "remoteUrl", alias = "remote_url")]
+        url: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publish_deserializa_url_camel_snake() {
+        for json in [
+            r#"{"kind":"publish","url":"https://github.com/u/r.git"}"#,
+            r#"{"kind":"publish","remoteUrl":"https://github.com/u/r.git"}"#,
+            r#"{"kind":"publish","remote_url":"https://github.com/u/r.git"}"#,
+        ] {
+            let req: WriteRequest = serde_json::from_str(json).unwrap();
+            match req {
+                WriteRequest::Publish { url } => {
+                    assert_eq!(url.as_deref(), Some("https://github.com/u/r.git"));
+                }
+                _ => panic!("variant err for {json}"),
+            }
+        }
+    }
 }

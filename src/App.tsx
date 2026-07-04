@@ -151,6 +151,16 @@ function App() {
     }
   }, [repo, writeDisabled, ops]);
 
+  const handlePublishWithUrl = useCallback(
+    (remoteUrl: string) => {
+      const url = remoteUrl.trim();
+      if (!url) return;
+      setPublishOpen(false);
+      void ops.request({ kind: "publish", url, remoteUrl: url });
+    },
+    [ops],
+  );
+
   useEffect(() => {
     setWebOnly(!runningInTauri());
     getAppInfo().then(setInfo);
@@ -162,6 +172,17 @@ function App() {
     setCheckedPaths(new Set());
     clearSelection();
   }, [repo?.path, clearSelection]);
+
+  useEffect(() => {
+    const blocked = ops.preview?.blocked ?? "";
+    if (
+      ops.pending?.kind === "publish" &&
+      blocked.includes("URL do repositório remoto")
+    ) {
+      ops.cancel();
+      setPublishOpen(true);
+    }
+  }, [ops.preview, ops.pending, ops.cancel]);
 
   const toggleCheck = useCallback((path: string, section: FileCheckSection) => {
     const key = fileCheckKey(section, path);
@@ -291,10 +312,7 @@ function App() {
         branch={repo?.branch}
         loading={ops.loading}
         onCancel={() => setPublishOpen(false)}
-        onContinue={(remoteUrl) => {
-          setPublishOpen(false);
-          void ops.request({ kind: "publish", remoteUrl });
-        }}
+        onContinue={handlePublishWithUrl}
       />
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
