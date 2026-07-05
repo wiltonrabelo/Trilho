@@ -142,14 +142,12 @@ function App() {
   const writeDisabled = Boolean(repo?.isDetached);
   const upstreamConfigured = Boolean(repo?.upstream || sync?.upstream);
 
+  // Sempre abre o diálogo com a URL atual editável: quem publicou com a URL
+  // errada (conta sem acesso) corrige aqui — o plano vira `remote set-url` + push.
   const handlePublish = useCallback(() => {
     if (!repo || writeDisabled) return;
-    if (repo.hasRemote) {
-      void ops.requestPublish();
-    } else {
-      ops.cancel();
-      setPublishOpen(true);
-    }
+    ops.cancel();
+    setPublishOpen(true);
   }, [repo, writeDisabled, ops]);
 
   const handlePublishWithUrl = useCallback(
@@ -302,6 +300,7 @@ function App() {
       <PublishDialog
         open={publishOpen}
         branch={repo?.branch}
+        initialUrl={repo?.remoteUrl}
         loading={ops.loading}
         error={publishOpen ? ops.error : null}
         onCancel={() => {

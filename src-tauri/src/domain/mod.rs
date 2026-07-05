@@ -55,6 +55,8 @@ pub struct RepoInfo {
     pub branch: Option<String>,
     pub upstream: Option<String>,
     pub has_remote: bool,
+    /// URL do remoto principal (origin ou o primeiro) — pré-preenche o Publicar.
+    pub remote_url: Option<String>,
     pub is_detached: bool,
     pub has_commits: bool,
 }

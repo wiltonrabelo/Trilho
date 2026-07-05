@@ -44,6 +44,9 @@ export interface RepoInfo {
 
   hasRemote: boolean;
 
+  /** URL do remoto principal — pré-preenche o Publicar. */
+  remoteUrl: string | null;
+
   isDetached: boolean;
 
   hasCommits: boolean;

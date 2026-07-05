@@ -1,9 +1,11 @@
 import { Upload, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface PublishDialogProps {
   open: boolean;
   branch?: string | null;
+  /** URL atual do remoto (se houver) — editável para corrigir conta/repo errado. */
+  initialUrl?: string | null;
   loading?: boolean;
   error?: string | null;
   onCancel: () => void;
@@ -13,12 +15,18 @@ interface PublishDialogProps {
 export function PublishDialog({
   open,
   branch,
+  initialUrl,
   loading,
   error,
   onCancel,
   onContinue,
 }: PublishDialogProps) {
   const [url, setUrl] = useState("");
+
+  // Ao abrir, pré-preenche com a URL do remoto atual (corrigível).
+  useEffect(() => {
+    if (open) setUrl(initialUrl ?? "");
+  }, [open, initialUrl]);
 
   if (!open) return null;
 

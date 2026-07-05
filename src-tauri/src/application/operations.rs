@@ -312,6 +312,29 @@ impl GitOperation for AddRemote {
     }
 }
 
+/// Corrige a URL de um remoto já configurado (ex.: publicação apontou para a
+/// conta errada) — sem isso o usuário fica preso no terminal.
+pub struct SetRemoteUrl {
+    pub name: String,
+    pub url: String,
+}
+
+impl GitOperation for SetRemoteUrl {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "remote".into(),
+                "set-url".into(),
+                self.name.clone(),
+                self.url.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Atualiza a URL do remoto."
+    }
+}
+
 pub struct PushUpstream;
 
 impl GitOperation for PushUpstream {

@@ -278,12 +278,26 @@ pub fn repo_info(repo_path: &str) -> Result<crate::domain::RepoInfo, GitError> {
         .remotes()
         .map(|names| !names.is_empty())
         .unwrap_or(false);
+    // URL do remoto principal: origin, ou o primeiro que existir.
+    let remote_url = repo
+        .find_remote("origin")
+        .ok()
+        .and_then(|r| r.url().map(|u| u.to_string()))
+        .or_else(|| {
+            repo.remotes().ok().and_then(|names| {
+                names
+                    .get(0)
+                    .and_then(|name| repo.find_remote(name).ok())
+                    .and_then(|r| r.url().map(|u| u.to_string()))
+            })
+        });
 
     Ok(crate::domain::RepoInfo {
         path: repo_path.to_string(),
         branch,
         upstream,
         has_remote,
+        remote_url,
         is_detached,
         has_commits,
     })

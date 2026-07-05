@@ -2,7 +2,7 @@
 
 use crate::application::operations::{
     AddRemote, CreateCommit, GitOperation, PullFfOnly, PushSetUpstream, PushUpstream, RevertCommit,
-    Stage, StageAll, StageMany, UncommitSoft, Unstage, UnstageAll, UnstageMany,
+    SetRemoteUrl, Stage, StageAll, StageMany, UncommitSoft, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, RepoContext};
@@ -219,7 +219,9 @@ fn blocked_preview(repo_path: &str, msg: &str) -> OperationPreview {
 }
 
 struct PublishPlan {
-    add_remote: Option<AddRemote>,
+    /// Passo de remoto: `remote add` (1ª publicação) ou `remote set-url`
+    /// (corrigir URL errada) — ambos são `GitOperation`.
+    remote_step: Option<Box<dyn GitOperation>>,
     push: PushSetUpstream,
     description: String,
 }
@@ -254,34 +256,63 @@ fn plan_publish(ctx: &RepoContext, remote_url: Option<&str>) -> Result<PublishPl
         .branch
         .ok_or_else(|| GitError::Git("Sem branch ativa para publicar.".into()))?;
 
-    let (add_remote, remote_name) = if info.has_remote {
-        (None, resolve_primary_remote(ctx)?)
-    } else {
-        let url = match remote_url {
-            Some(url) => validate_remote_url(url)?,
-            None => {
-                return Err(GitError::Git(
-                    "Informe a URL do repositório remoto para publicar.".into(),
-                ));
+    let (remote_step, remote_name, description): (Option<Box<dyn GitOperation>>, String, String) =
+        if info.has_remote {
+            let name = resolve_primary_remote(ctx)?;
+            // URL informada e diferente da atual → corrige o remoto antes do
+            // push (ex.: 1ª publicação apontou para a conta errada).
+            match remote_url {
+                Some(url) => {
+                    let url = validate_remote_url(url)?;
+                    if info.remote_url.as_deref() == Some(url.as_str()) {
+                        (
+                            None,
+                            name,
+                            format!("Publica a branch {branch} no remoto e configura o upstream."),
+                        )
+                    } else {
+                        let step: Box<dyn GitOperation> = Box::new(SetRemoteUrl {
+                            name: name.clone(),
+                            url,
+                        });
+                        (
+                            Some(step),
+                            name,
+                            format!(
+                                "Atualiza a URL do remoto e publica a branch {branch}, \
+                                 configurando o upstream."
+                            ),
+                        )
+                    }
+                }
+                None => (
+                    None,
+                    name,
+                    format!("Publica a branch {branch} no remoto e configura o upstream."),
+                ),
             }
-        };
-        (
-            Some(AddRemote {
+        } else {
+            let url = match remote_url {
+                Some(url) => validate_remote_url(url)?,
+                None => {
+                    return Err(GitError::Git(
+                        "Informe a URL do repositório remoto para publicar.".into(),
+                    ));
+                }
+            };
+            let step: Box<dyn GitOperation> = Box::new(AddRemote {
                 name: "origin".into(),
                 url,
-            }),
-            "origin".to_string(),
-        )
-    };
-
-    let description = if add_remote.is_some() {
-        "Conecta ao remoto e publica a branch pela primeira vez.".to_string()
-    } else {
-        format!("Publica a branch {branch} no remoto e configura o upstream.")
-    };
+            });
+            (
+                Some(step),
+                "origin".to_string(),
+                "Conecta ao remoto e publica a branch pela primeira vez.".to_string(),
+            )
+        };
 
     Ok(PublishPlan {
-        add_remote,
+        remote_step,
         push: PushSetUpstream {
             remote: remote_name,
             branch,
@@ -297,8 +328,8 @@ fn preview_publish(
     match plan_publish(ctx, remote_url) {
         Ok(plan) => {
             let mut commands = Vec::new();
-            if let Some(ref op) = plan.add_remote {
-                commands.extend(ctx.preview_op(op));
+            if let Some(ref op) = plan.remote_step {
+                commands.extend(ctx.preview_op(op.as_ref()));
             }
             commands.extend(ctx.preview_op(&plan.push));
             Ok((commands, plan.description, None))
@@ -314,8 +345,8 @@ fn preview_publish(
 
 fn execute_publish(ctx: &RepoContext, remote_url: Option<&str>) -> Result<(), GitError> {
     let plan = plan_publish(ctx, remote_url)?;
-    if let Some(op) = plan.add_remote {
-        ctx.execute_op(&op)?;
+    if let Some(op) = plan.remote_step {
+        ctx.execute_op(op.as_ref())?;
     }
     ctx.execute_op(&plan.push)?;
     Ok(())
@@ -380,5 +411,58 @@ mod tests {
     fn git_path_from_rename_display() {
         assert_eq!(git_path_from_display("a.ts → b.ts"), "b.ts");
         assert_eq!(git_path_from_display("plain.ts"), "plain.ts");
+    }
+
+    fn init_repo_with_commit(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        for args in [
+            vec!["init"],
+            vec!["config", "user.email", "t@t.com"],
+            vec!["config", "user.name", "T"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(dir)
+                .output()
+                .unwrap();
+        }
+        std::fs::write(dir.join("f.txt"), "x").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "f.txt"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+    }
+
+    /// Regressão: publicação com remoto já configurado e URL NOVA deve
+    /// corrigir a URL (`remote set-url`) antes do push — sem isso, quem
+    /// publicou apontando para a conta errada ficava preso no terminal.
+    #[test]
+    fn publish_com_url_nova_gera_set_url() {
+        let dir = std::env::temp_dir().join(format!("trilho-pub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::process::Command::new("git")
+            .args(["remote", "add", "origin", "git@github.com:errada/repo.git"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let plan = plan_publish(&ctx, Some("git@github.com:certa/repo.git")).expect("plan");
+        let step = plan.remote_step.expect("deve ter passo de remoto");
+        let args = step.command().args;
+        assert!(args.contains(&"set-url".to_string()), "args: {args:?}");
+        assert!(args.contains(&"git@github.com:certa/repo.git".to_string()));
+
+        // Mesma URL → sem passo de remoto (só push).
+        let plan = plan_publish(&ctx, Some("git@github.com:errada/repo.git")).expect("plan");
+        assert!(plan.remote_step.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

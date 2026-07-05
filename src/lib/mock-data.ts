@@ -21,6 +21,7 @@ export const MOCK_REPO: RepoInfo = {
   upstream: null,
 
   hasRemote: false,
+  remoteUrl: null,
 
   isDetached: false,
 
