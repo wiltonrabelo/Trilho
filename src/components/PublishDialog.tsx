@@ -5,6 +5,7 @@ interface PublishDialogProps {
   open: boolean;
   branch?: string | null;
   loading?: boolean;
+  error?: string | null;
   onCancel: () => void;
   onContinue: (remoteUrl: string) => void;
 }
@@ -13,6 +14,7 @@ export function PublishDialog({
   open,
   branch,
   loading,
+  error,
   onCancel,
   onContinue,
 }: PublishDialogProps) {
@@ -73,6 +75,11 @@ export function PublishDialog({
               autoFocus
             />
           </label>
+          {error && (
+            <p className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-xs text-red-500">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-border px-4 py-3">

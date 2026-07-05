@@ -299,6 +299,32 @@ export async function getFileBlame(
   });
 }
 
+export async function previewPublishOperation(
+  remoteUrl?: string | null,
+): Promise<OperationPreviewDto> {
+  if (!isTauri()) {
+    return {
+      commands: [
+        "git -C /mock remote add origin https://github.com/user/repo.git",
+        "git -C /mock push -u origin master",
+      ],
+      description: "Mock — publicar branch.",
+      repoPath: "/mock",
+      blocked: null,
+    };
+  }
+  return invoke<OperationPreviewDto>("preview_publish_operation", {
+    remoteUrl: remoteUrl ?? null,
+  });
+}
+
+export async function executePublishOperation(
+  remoteUrl?: string | null,
+): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("execute_publish_operation", { remoteUrl: remoteUrl ?? null });
+}
+
 export async function previewWriteOperation(
   request: WriteRequestDto,
 ): Promise<OperationPreviewDto> {

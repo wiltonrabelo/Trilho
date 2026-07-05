@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 
-import { executeWriteOperation, previewWriteOperation } from "@/lib/api";
+import {
+  executePublishOperation,
+  executeWriteOperation,
+  previewPublishOperation,
+  previewWriteOperation,
+} from "@/lib/api";
 import type { OperationPreviewDto, WriteRequestDto } from "@/types";
 
 export function useOperations(onSuccess: () => Promise<void>) {
@@ -25,6 +30,31 @@ export function useOperations(onSuccess: () => Promise<void>) {
     }
   }, []);
 
+  const requestPublish = useCallback(
+    async (remoteUrl?: string): Promise<OperationPreviewDto | null> => {
+      setLoading(true);
+      setError(null);
+      const url = remoteUrl?.trim() || undefined;
+      try {
+        const p = await previewPublishOperation(url ?? null);
+        setPreview(p);
+        setPending({ kind: "publish", url, remoteUrl: url });
+        if (p.blocked) {
+          setError(p.blocked);
+        }
+        return p;
+      } catch (e) {
+        setPreview(null);
+        setPending(null);
+        setError(e instanceof Error ? e.message : String(e));
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
   const cancel = useCallback(() => {
     setPreview(null);
     setPending(null);
@@ -36,7 +66,12 @@ export function useOperations(onSuccess: () => Promise<void>) {
     setLoading(true);
     setError(null);
     try {
-      await executeWriteOperation(pending);
+      if (pending.kind === "publish") {
+        const url = pending.url ?? pending.remoteUrl ?? null;
+        await executePublishOperation(url);
+      } else {
+        await executeWriteOperation(pending);
+      }
       setPreview(null);
       setPending(null);
       await onSuccess();
@@ -53,6 +88,7 @@ export function useOperations(onSuccess: () => Promise<void>) {
     loading,
     error,
     request,
+    requestPublish,
     confirm,
     cancel,
   };

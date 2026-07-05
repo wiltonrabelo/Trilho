@@ -31,4 +31,6 @@ commands.allow = [
   "get_file_blame",
   "preview_write_operation",
   "execute_write_operation",
+  "preview_publish_operation",
+  "execute_publish_operation",
 ]

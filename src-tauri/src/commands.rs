@@ -238,6 +238,44 @@ fn parse_blame_source(raw: &str) -> Result<crate::domain::BlameSource, GitError>
 }
 
 #[tauri::command]
+pub fn preview_publish_operation(
+    remote_url: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<OperationPreview, String> {
+    let path = state.repo_path()?;
+    let ctx = repo_context(&state)?;
+    preview_write(
+        &ctx,
+        &path,
+        &WriteRequest::Publish {
+            url: remote_url,
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn execute_publish_operation(
+    remote_url: Option<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let ctx = repo_context(&state)?;
+    state
+        .with_watch_suppressed(&app, || {
+            execute_write(
+                &ctx,
+                WriteRequest::Publish {
+                    url: remote_url,
+                },
+            )
+        })
+        .map_err(|e: GitError| e.to_string())?;
+    let _ = app.emit("repo-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
 pub fn preview_write_operation(
     request: WriteRequest,
     state: State<'_, AppState>,

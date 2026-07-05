@@ -145,18 +145,21 @@ function App() {
   const handlePublish = useCallback(() => {
     if (!repo || writeDisabled) return;
     if (repo.hasRemote) {
-      void ops.request({ kind: "publish" });
+      void ops.requestPublish();
     } else {
+      ops.cancel();
       setPublishOpen(true);
     }
   }, [repo, writeDisabled, ops]);
 
   const handlePublishWithUrl = useCallback(
-    (remoteUrl: string) => {
+    async (remoteUrl: string) => {
       const url = remoteUrl.trim();
       if (!url) return;
-      setPublishOpen(false);
-      void ops.request({ kind: "publish", url, remoteUrl: url });
+      const preview = await ops.requestPublish(url);
+      if (preview && !preview.blocked) {
+        setPublishOpen(false);
+      }
     },
     [ops],
   );
@@ -172,17 +175,6 @@ function App() {
     setCheckedPaths(new Set());
     clearSelection();
   }, [repo?.path, clearSelection]);
-
-  useEffect(() => {
-    const blocked = ops.preview?.blocked ?? "";
-    if (
-      ops.pending?.kind === "publish" &&
-      blocked.includes("URL do repositório remoto")
-    ) {
-      ops.cancel();
-      setPublishOpen(true);
-    }
-  }, [ops.preview, ops.pending, ops.cancel]);
 
   const toggleCheck = useCallback((path: string, section: FileCheckSection) => {
     const key = fileCheckKey(section, path);
@@ -311,8 +303,12 @@ function App() {
         open={publishOpen}
         branch={repo?.branch}
         loading={ops.loading}
-        onCancel={() => setPublishOpen(false)}
-        onContinue={handlePublishWithUrl}
+        error={publishOpen ? ops.error : null}
+        onCancel={() => {
+          setPublishOpen(false);
+          ops.cancel();
+        }}
+        onContinue={(url) => void handlePublishWithUrl(url)}
       />
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
