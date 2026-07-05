@@ -87,7 +87,6 @@ function FileList({
   files: FileChangeDto[];
   staged: boolean;
   checkSection: FileCheckSection;
-  checkSection: FileCheckSection;
   selectedPath: string | null;
   selectedStaged: boolean | null;
   checkedPaths: ReadonlySet<string>;
@@ -280,8 +279,10 @@ export function StatusPanel({
   const canStageMany = stageablePaths.length > 0 && Boolean(onStageMany);
   const canUnstageMany = unstagedPaths.length > 0 && Boolean(onUnstageMany);
 
+  // `selectedPath != null` (e não Boolean(...)) para o TypeScript estreitar
+  // o tipo de string | null nos usos abaixo.
   const canStageSelected =
-    Boolean(selectedPath) &&
+    selectedPath != null &&
     Boolean(onStage) &&
     (unstaged.some((f) => f.path === selectedPath) ||
       untracked.some((f) => f.path === selectedPath)) &&
@@ -289,7 +290,7 @@ export function StatusPanel({
     !checkedPaths.has(fileCheckKey("working", selectedPath));
 
   const canUnstageSelected =
-    Boolean(selectedPath) &&
+    selectedPath != null &&
     Boolean(onUnstage) &&
     staged.some((f) => f.path === selectedPath) &&
     !unstagedPaths.includes(selectedPath) &&

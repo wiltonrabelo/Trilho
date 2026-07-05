@@ -274,7 +274,7 @@ pub fn repo_info(repo_path: &str) -> Result<crate::domain::RepoInfo, GitError> {
 
     let has_commits =
         head.as_ref().and_then(|h| h.target()).is_some() && repo.is_empty().ok() == Some(false);
-    let has_remote = repo.remotes().map(|names| names.len() > 0).unwrap_or(false);
+    let has_remote = repo.remotes().map(|names| !names.is_empty()).unwrap_or(false);
 
     Ok(crate::domain::RepoInfo {
         path: repo_path.to_string(),

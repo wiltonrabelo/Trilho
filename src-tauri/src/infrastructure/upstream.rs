@@ -37,6 +37,7 @@ mod tests {
     use std::fs;
     use std::process::Command;
 
+    #[allow(dead_code)] // util de teste reservado
     fn init_bare_repo(path: &std::path::Path) {
         Command::new("git")
             .args(["init", "--bare"])

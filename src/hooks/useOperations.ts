@@ -34,11 +34,11 @@ export function useOperations(onSuccess: () => Promise<void>) {
     async (remoteUrl?: string): Promise<OperationPreviewDto | null> => {
       setLoading(true);
       setError(null);
-      const url = remoteUrl?.trim() || undefined;
+      const url = remoteUrl?.trim() || null;
       try {
-        const p = await previewPublishOperation(url ?? null);
+        const p = await previewPublishOperation(url);
         setPreview(p);
-        setPending({ kind: "publish", url, remoteUrl: url });
+        setPending({ kind: "publish", url });
         if (p.blocked) {
           setError(p.blocked);
         }
@@ -67,8 +67,7 @@ export function useOperations(onSuccess: () => Promise<void>) {
     setError(null);
     try {
       if (pending.kind === "publish") {
-        const url = pending.url ?? pending.remoteUrl ?? null;
-        await executePublishOperation(url);
+        await executePublishOperation(pending.url);
       } else {
         await executeWriteOperation(pending);
       }

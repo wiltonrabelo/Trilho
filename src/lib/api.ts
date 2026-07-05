@@ -314,9 +314,10 @@ export async function previewPublishOperation(
       blocked: null,
     };
   }
+  // Contrato com o backend: SÓ `url`. Mandar `url` + `remoteUrl` (aliases do
+  // mesmo campo serde) causava `duplicate field 'url'` na deserialização.
   return invoke<OperationPreviewDto>("preview_write_operation", {
-    request: { kind: "publish", url: url ?? undefined, remoteUrl: url ?? undefined },
-    publishUrl: url,
+    request: { kind: "publish", url },
   });
 }
 
@@ -326,8 +327,7 @@ export async function executePublishOperation(
   const url = remoteUrl?.trim() || null;
   if (!isTauri()) return;
   return invoke("execute_write_operation", {
-    request: { kind: "publish", url: url ?? undefined, remoteUrl: url ?? undefined },
-    publishUrl: url,
+    request: { kind: "publish", url },
   });
 }
 
@@ -342,16 +342,13 @@ export async function previewWriteOperation(
       blocked: null,
     };
   }
-  return invoke<OperationPreviewDto>("preview_write_operation", {
-    request,
-    publishUrl: null,
-  });
+  return invoke<OperationPreviewDto>("preview_write_operation", { request });
 }
 
 export async function executeWriteOperation(
   request: WriteRequestDto,
 ): Promise<void> {
   if (!isTauri()) return;
-  return invoke("execute_write_operation", { request, publishUrl: null });
+  return invoke("execute_write_operation", { request });
 }
 
