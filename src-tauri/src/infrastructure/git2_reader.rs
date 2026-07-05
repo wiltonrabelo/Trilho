@@ -1,9 +1,9 @@
 //! Adaptador de leitura via libgit2 (RF-01, RF-04 parcial).
 
 use crate::application::{
-    apply_reflog_hint, infer_branch_origin, GitOperation, RevListAheadBehind, StatusPorcelain,
+    apply_reflog_hint, infer_branch_origin, BlameProvider, GitCommand, GitError, GitOperation,
+    GitReader, RevListAheadBehind, StatusPorcelain, TrailReader,
 };
-use crate::application::{GitCommand, GitError, GitReader};
 use crate::domain::{
     BlameLine, BlameSource, BranchOrigin, Commit, FileChange, FileChangeKind, RepoStatus, SyncInfo,
     TrailEntry, TrailKind,
@@ -35,7 +35,7 @@ impl Git2Reader {
     }
 }
 
-impl GitReader for Git2Reader {
+impl TrailReader for Git2Reader {
     fn list_commits(
         &self,
         limit: usize,
@@ -142,12 +142,6 @@ impl GitReader for Git2Reader {
         Ok(result)
     }
 
-    fn get_status(&self) -> Result<RepoStatus, GitError> {
-        let op = StatusPorcelain;
-        let output = self.cli.run(&op.command())?;
-        status_parser::parse_porcelain_v2(&output)
-    }
-
     fn list_commit_files(&self, sha: &str) -> Result<Vec<FileChange>, GitError> {
         let repo = self.open()?;
         let oid = git2::Oid::from_str(sha).map_err(|e| GitError::Git(e.to_string()))?;
@@ -199,6 +193,14 @@ impl GitReader for Git2Reader {
         files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(files)
     }
+}
+
+impl GitReader for Git2Reader {
+    fn get_status(&self) -> Result<RepoStatus, GitError> {
+        let op = StatusPorcelain;
+        let output = self.cli.run(&op.command())?;
+        status_parser::parse_porcelain_v2(&output)
+    }
 
     fn get_sync_info(&self) -> Result<SyncInfo, GitError> {
         let repo = self.open()?;
@@ -247,7 +249,9 @@ impl GitReader for Git2Reader {
         }
         Ok(origin)
     }
+}
 
+impl BlameProvider for Git2Reader {
     fn get_file_blame(
         &self,
         path: &str,

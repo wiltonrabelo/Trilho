@@ -1,0 +1,84 @@
+# Trilho — CI (M4): lint, testes e auditoria de dependências.
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+defaults:
+  run:
+    working-directory: .
+
+jobs:
+  quality:
+    name: Lint e testes
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Instalar dependências npm
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Vitest
+        run: npm run test
+
+      - name: Clippy + testes Rust
+        run: npm run test:rust
+
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: cargo audit
+        run: |
+          cargo install cargo-audit --locked 2>$null
+          cargo audit --manifest-path src-tauri/Cargo.toml
+        continue-on-error: true
+
+  # Instalador: job separado — mais lento; não bloqueia PRs por padrão em forks sem certificado.
+  build-installer:
+    name: Build instalador (unsigned)
+    runs-on: windows-latest
+    needs: quality
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependências npm
+        run: npm ci
+
+      - name: Build Tauri (NSIS + MSI)
+        run: npm run tauri build
+
+      - name: Upload artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: trilho-installer-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn

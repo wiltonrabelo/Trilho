@@ -17,7 +17,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
-    "test:rust": "npm run test:clippy && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:rust": "npm run test:clippy && cargo test --manifest-path src-tauri/Cargo.toml",
+    "audit": "npm audit --audit-level=high && cargo audit --manifest-path src-tauri/Cargo.toml",
+    "build:win": "npm run tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -18,11 +18,9 @@ pub fn is_commit_on_remote(
             upstream_ref.into(),
         ],
     };
-    match cli.run(&op) {
-        Ok(_) => Ok(true),
-        Err(GitError::Git(_)) => Ok(false),
-        Err(e) => Err(e),
-    }
+    // run_bool distingue "não é ancestral" (exit 1) de ERRO real (exit ≥128):
+    // erro propaga e o gate permanece FECHADO — nunca falha-aberto.
+    cli.run_bool(&op)
 }
 
 /// HEAD ainda não enviado ao upstream (pode amend/uncommit).

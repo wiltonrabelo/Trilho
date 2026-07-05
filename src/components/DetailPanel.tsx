@@ -19,6 +19,8 @@ interface DetailPanelProps {
   onLineClick?: (lineNo: number) => void;
   canUncommit?: boolean;
   canEditMessage?: boolean;
+  /** Por que não dá para editar a mensagem deste commit. */
+  messageEditHint?: string | null;
   onRevert?: () => void;
   onUncommit?: () => void;
   onEditMessage?: () => void;
@@ -44,6 +46,7 @@ export function DetailPanel({
   onLineClick,
   canUncommit,
   canEditMessage,
+  messageEditHint,
   onRevert,
   onUncommit,
   onEditMessage,
@@ -112,6 +115,11 @@ export function DetailPanel({
                 </button>
               )}
             </div>
+          )}
+          {messageEditHint && (
+            <p className="mt-2 text-[10px] leading-snug text-muted">
+              {messageEditHint}
+            </p>
           )}
         </div>
       )}

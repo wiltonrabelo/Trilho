@@ -141,25 +141,20 @@ pub struct GitCommand {
     pub args: Vec<String>,
 }
 
-/// Porta de LEITURA do repositório (grafo, status, blame, ...).
-pub trait GitReader: Send + Sync {
-    /// `first_parent`: trilha da branch atual (`--first-parent`) — visão padrão
-    /// legível em repositórios com muitos merges (RF-01); `false` = grafo completo.
+/// Porta de leitura da trilha de commits (RF-01).
+pub trait TrailReader: Send + Sync {
     fn list_commits(
         &self,
         limit: usize,
         skip: usize,
         first_parent: bool,
     ) -> Result<Vec<Commit>, GitError>;
-    /// Trilha dupla: first-parent da branch atual + first-parent da `base`
-    /// até o merge-base, e o trilho comum abaixo dele (RF-01/RF-02).
     fn get_dual_trail(&self, base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError>;
-    fn get_status(&self) -> Result<RepoStatus, GitError>;
-    /// Arquivos alterados por um commit (diff contra o 1º pai; árvore vazia se
-    /// for o commit raiz) — alimenta os "detalhes de commit" (M1).
     fn list_commit_files(&self, sha: &str) -> Result<Vec<FileChange>, GitError>;
-    fn get_sync_info(&self) -> Result<SyncInfo, GitError>;
-    fn get_branch_origin(&self) -> Result<BranchOrigin, GitError>;
+}
+
+/// Porta de blame por linha (RF-03).
+pub trait BlameProvider: Send + Sync {
     fn get_file_blame(
         &self,
         path: &str,
@@ -168,6 +163,13 @@ pub trait GitReader: Send + Sync {
         start_line: u32,
         end_line: u32,
     ) -> Result<Vec<BlameLine>, GitError>;
+}
+
+/// Porta de LEITURA do repositório — status, sync, origem da branch.
+pub trait GitReader: TrailReader + BlameProvider + Send + Sync {
+    fn get_status(&self) -> Result<RepoStatus, GitError>;
+    fn get_sync_info(&self) -> Result<SyncInfo, GitError>;
+    fn get_branch_origin(&self) -> Result<BranchOrigin, GitError>;
 }
 
 /// Porta de ESCRITA do repositório (commit, restore, reset, revert, push, ...).

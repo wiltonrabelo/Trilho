@@ -69,3 +69,18 @@
     color-scheme: dark;
   }
 }
+
+@layer utilities {
+  .skip-to-main {
+    @apply sr-only;
+  }
+  .skip-to-main:focus {
+    @apply fixed left-4 top-4 z-[100] block rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white;
+    width: auto;
+    height: auto;
+    clip: auto;
+    margin: 0;
+    overflow: visible;
+    white-space: normal;
+  }
+}

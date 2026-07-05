@@ -16,7 +16,7 @@ pub use git_cli::SafeGitCli;
 pub use repo_watcher::RepoWatcher;
 pub use validation::{validate_git_object_id, validate_remote_url, validate_repo_relative_path};
 
-use crate::application::{GitError, GitReader};
+use crate::application::{BlameProvider, GitError, GitReader, TrailReader};
 use crate::domain::{Commit, TrailEntry, TrailKind};
 
 /// Adaptador mock (M0) — mantido para fallback web e testes.
@@ -34,7 +34,7 @@ impl Default for MockGitReader {
     }
 }
 
-impl GitReader for MockGitReader {
+impl TrailReader for MockGitReader {
     fn list_commits(
         &self,
         limit: usize,
@@ -93,14 +93,6 @@ impl GitReader for MockGitReader {
         Ok(sample.into_iter().skip(skip).take(limit).collect())
     }
 
-    fn get_status(&self) -> Result<crate::domain::RepoStatus, GitError> {
-        Ok(crate::domain::RepoStatus {
-            staged: vec![],
-            unstaged: vec![],
-            untracked: vec![],
-        })
-    }
-
     fn list_commit_files(&self, _sha: &str) -> Result<Vec<crate::domain::FileChange>, GitError> {
         use crate::domain::{FileChange, FileChangeKind};
         Ok(vec![
@@ -117,15 +109,6 @@ impl GitReader for MockGitReader {
         ])
     }
 
-    fn get_sync_info(&self) -> Result<crate::domain::SyncInfo, GitError> {
-        Ok(crate::domain::SyncInfo {
-            last_fetch_at: None,
-            upstream: None,
-            ahead: 0,
-            behind: 0,
-        })
-    }
-
     fn get_dual_trail(&self, _base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError> {
         Ok(self
             .list_commits(limit, 0, true)?
@@ -135,6 +118,25 @@ impl GitReader for MockGitReader {
                 trail: TrailKind::Current,
             })
             .collect())
+    }
+}
+
+impl GitReader for MockGitReader {
+    fn get_status(&self) -> Result<crate::domain::RepoStatus, GitError> {
+        Ok(crate::domain::RepoStatus {
+            staged: vec![],
+            unstaged: vec![],
+            untracked: vec![],
+        })
+    }
+
+    fn get_sync_info(&self) -> Result<crate::domain::SyncInfo, GitError> {
+        Ok(crate::domain::SyncInfo {
+            last_fetch_at: None,
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+        })
     }
 
     fn get_branch_origin(&self) -> Result<crate::domain::BranchOrigin, GitError> {
@@ -147,7 +149,9 @@ impl GitReader for MockGitReader {
             merge_base_id: None,
         })
     }
+}
 
+impl BlameProvider for MockGitReader {
     fn get_file_blame(
         &self,
         path: &str,
@@ -173,7 +177,7 @@ impl GitReader for MockGitReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::GitReader;
+    use crate::application::TrailReader;
     use git_cli::defensive_base_args;
 
     #[test]

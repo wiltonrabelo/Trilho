@@ -55,6 +55,22 @@ impl SafeGitCli {
         self.invoke(command)
     }
 
+    /// Comando cuja resposta é booleana via exit code (ex.: `merge-base
+    /// --is-ancestor`): exit 0 → `true`; exit 1 sem stderr → `false`; qualquer
+    /// outra coisa é ERRO e propaga. Nunca use `run()` + "erro = false" para
+    /// gates — falha real viraria resposta e o gate abriria indevidamente.
+    pub fn run_bool(&self, command: &GitCommand) -> Result<bool, GitError> {
+        let output = self.raw_output(command, None)?;
+        if output.status.success() {
+            return Ok(true);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if output.status.code() == Some(1) && stderr.trim().is_empty() {
+            return Ok(false);
+        }
+        Err(GitError::from_git_stderr(&stderr))
+    }
+
     fn invoke(&self, command: &GitCommand) -> Result<String, GitError> {
         self.invoke_with_stdin(command, None)
     }
@@ -68,6 +84,19 @@ impl SafeGitCli {
         command: &GitCommand,
         stdin: Option<&[u8]>,
     ) -> Result<String, GitError> {
+        let output = self.raw_output(command, stdin)?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !output.status.success() {
+            return Err(GitError::from_git_stderr(&stderr));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    fn raw_output(
+        &self,
+        command: &GitCommand,
+        stdin: Option<&[u8]>,
+    ) -> Result<std::process::Output, GitError> {
         let args = self.full_args(command);
         let mut cmd = Command::new("git");
         cmd.args(&args)
@@ -108,11 +137,7 @@ impl SafeGitCli {
             let _ = handle.join();
         }
 
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !output.status.success() {
-            return Err(GitError::from_git_stderr(&stderr));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        Ok(output)
     }
 }
 
@@ -163,6 +188,44 @@ mod tests {
             )
             .expect("hash-object com stdin grande");
         assert_eq!(out.trim().len(), 40);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regressão do gate fail-open: exit 1 = false; ERRO real propaga (nunca
+    /// vira "não é ancestral").
+    #[test]
+    fn run_bool_distingue_nao_de_erro() {
+        let dir = std::env::temp_dir().join(format!("trilho-bool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for args in [
+            vec!["init"],
+            vec!["config", "user.email", "t@t.com"],
+            vec!["config", "user.name", "T"],
+            vec!["commit", "--allow-empty", "-m", "a"],
+            vec!["commit", "--allow-empty", "-m", "b"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+        }
+        let cli = SafeGitCli::new(dir.to_string_lossy());
+        let anc = |a: &str, b: &str| {
+            cli.run_bool(&GitCommand {
+                args: vec![
+                    "merge-base".into(),
+                    "--is-ancestor".into(),
+                    a.into(),
+                    b.into(),
+                ],
+            })
+        };
+        assert_eq!(anc("HEAD~1", "HEAD").unwrap(), true);
+        assert_eq!(anc("HEAD", "HEAD~1").unwrap(), false);
+        // SHA inexistente = erro real → propaga, não vira false.
+        assert!(anc("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "HEAD").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

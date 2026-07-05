@@ -1,10 +1,12 @@
 //! Heurística de origem da branch (RF-02, PLANO §7.3).
 
-use crate::domain::{BranchOrigin, OriginConfidence};
-use git2::{BranchType, Oid, Repository, Sort};
-use std::collections::{HashMap, HashSet};
+mod candidates;
+mod scoring;
 
-struct ScoredCandidate {
+use crate::domain::{BranchOrigin, OriginConfidence};
+use git2::{Oid, Repository};
+
+pub(crate) struct ScoredCandidate {
     name: String,
     score: f64,
     structural: f64,
@@ -16,6 +18,17 @@ struct ScoredCandidate {
     /// mais fundo são pontos do tronco HERDADO (ancestrais do fork real).
     depth: usize,
 }
+
+use candidates::{branch_tip as branch_tip_impl, collect_candidates, limit_candidates};
+
+/// Resolve a ponta de uma branch por nome (local, remota ou rev).
+pub fn branch_tip(repo: &Repository, name: &str) -> Option<Oid> {
+    branch_tip_impl(repo, name)
+}
+use scoring::{
+    apply_merge_base_proximity, classify_confidence, first_parent_depths, name_priority,
+    score_candidate,
+};
 
 /// Infere a branch de origem da branch atual com pontuação e confiança honesta.
 pub fn infer_branch_origin(repo: &Repository) -> BranchOrigin {
@@ -124,312 +137,6 @@ pub fn infer_branch_origin(repo: &Repository) -> BranchOrigin {
         explanation,
         signals: best.signals.clone(),
         merge_base_id: Some(best.merge_base.to_string()),
-    }
-}
-
-fn collect_candidates(repo: &Repository, current: &str) -> Vec<String> {
-    let locals = branch_names(repo, BranchType::Local);
-    let remotes = branch_names(repo, BranchType::Remote);
-
-    let mut names: HashSet<String> = locals
-        .iter()
-        .filter(|n| n.as_str() != current)
-        .cloned()
-        .collect();
-
-    for remote in remotes {
-        if remote.ends_with("/HEAD") {
-            continue;
-        }
-        let base = remote_base_name(&remote);
-        // A contraparte remota da própria branch (origin/feature para feature)
-        // não é origem — é a mesma branch no remoto.
-        if base == current {
-            continue;
-        }
-        // Dedup local × remota da mesma branch (master vs origin/master): sem
-        // isso, as duas empatam em score e o resultado vira "indeterminado" falso.
-        if locals.contains(base) {
-            continue;
-        }
-        names.insert(remote);
-    }
-
-    let mut list: Vec<_> = names.into_iter().collect();
-    list.sort();
-    list
-}
-
-/// Teto de candidatas pontuadas — em repositórios com centenas de branches
-/// (SysPDV: 300+), pontuar todas custa minutos. Mantém as prioritárias
-/// (main/master/develop/...) e as N de commit mais recente.
-const MAX_SCORED_CANDIDATES: usize = 40;
-
-fn limit_candidates(repo: &Repository, candidates: Vec<String>) -> Vec<String> {
-    if candidates.len() <= MAX_SCORED_CANDIDATES {
-        return candidates;
-    }
-    let mut with_time: Vec<(String, i64)> = candidates
-        .into_iter()
-        .map(|name| {
-            let time = branch_tip(repo, &name)
-                .and_then(|oid| repo.find_commit(oid).ok())
-                .map(|c| c.time().seconds())
-                .unwrap_or(0);
-            (name, time)
-        })
-        .collect();
-    // Prioritárias primeiro, depois as mais recentes.
-    with_time.sort_by(|a, b| {
-        name_priority(&b.0)
-            .cmp(&name_priority(&a.0))
-            .then_with(|| b.1.cmp(&a.1))
-    });
-    with_time.truncate(MAX_SCORED_CANDIDATES);
-    with_time.into_iter().map(|(name, _)| name).collect()
-}
-
-fn branch_names(repo: &Repository, kind: BranchType) -> HashSet<String> {
-    let mut names = HashSet::new();
-    if let Ok(branches) = repo.branches(Some(kind)) {
-        for item in branches.flatten() {
-            if let Ok(Some(name)) = item.0.name() {
-                names.insert(name.to_string());
-            }
-        }
-    }
-    names
-}
-
-/// Nome da branch sem o prefixo do remoto ("origin/feature/x" → "feature/x").
-/// O shorthand de remota é sempre `<remote>/<branch>`; o primeiro segmento é o
-/// remoto, o restante (que pode conter '/') é a branch.
-fn remote_base_name(name: &str) -> &str {
-    name.split_once('/').map(|(_, rest)| rest).unwrap_or(name)
-}
-
-/// Cadeia first-parent de `start` como mapa `oid → distância` (com teto).
-fn first_parent_depths(repo: &Repository, start: Oid, cap: usize) -> HashMap<Oid, usize> {
-    let mut map = HashMap::new();
-    let mut cursor = Some(start);
-    let mut depth = 0usize;
-    while let Some(oid) = cursor {
-        if map.len() >= cap || map.contains_key(&oid) {
-            break;
-        }
-        map.insert(oid, depth);
-        depth += 1;
-        cursor = repo.find_commit(oid).ok().and_then(|c| c.parent_id(0).ok());
-    }
-    map
-}
-
-fn score_candidate(
-    repo: &Repository,
-    head_oid: Oid,
-    head_fp_depths: &HashMap<Oid, usize>,
-    candidate: &str,
-) -> Option<ScoredCandidate> {
-    let tip = branch_tip(repo, candidate)?;
-    let merge_base = repo.merge_base(head_oid, tip).ok()?;
-
-    // Fork verdadeiro: o merge-base precisa estar na trilha first-parent da
-    // HEAD. Caso contrário a candidata foi MERGEADA para dentro (convergência),
-    // não é a origem. A distância na trilha é a proximidade do fork.
-    let depth = *head_fp_depths.get(&merge_base)?;
-
-    let mut score = 0.0;
-    let mut structural = 0.0;
-    let mut signals = Vec::new();
-
-    if merge_base == tip {
-        score += 40.0;
-        structural += 40.0;
-        signals.push(format!("merge-base coincide com ponta de «{candidate}»"));
-    }
-
-    let commits_since = count_commits_since(repo, merge_base, head_oid);
-    let recency = (25.0 - commits_since as f64).max(0.0);
-    if recency > 0.0 {
-        score += recency;
-        if recency >= 15.0 {
-            structural += recency;
-            signals.push(format!(
-                "fork recente ({commits_since} commits desde o merge-base)"
-            ));
-        }
-    }
-
-    if first_unique_parent_is_merge_base(repo, head_oid, tip, merge_base) {
-        score += 30.0;
-        structural += 30.0;
-        signals.push("primeiro commit exclusivo tem pai no merge-base".into());
-    }
-
-    score += name_priority(candidate) as f64;
-
-    Some(ScoredCandidate {
-        name: candidate.to_string(),
-        score,
-        structural,
-        signals,
-        merge_base,
-        depth,
-    })
-}
-
-/// Sinal DOMINANTE de proximidade (§7.3): como todos os merge-bases estão na
-/// mesma trilha first-parent da HEAD, eles são totalmente ordenados por
-/// profundidade. O merge-base MAIS PRÓXIMO da HEAD é o ponto de fork real; os
-/// mais fundos são apenas tronco HERDADO (ancestrais desse fork) — jamais a
-/// origem direta. Premia o(s) fork(s) mais recente(s) de forma decisiva; isso
-/// resolve o caso em que uma branch antiga mergeada-e-divergente (cujo merge-base
-/// é o fork ANTIGO dela no tronco) competia com a origem verdadeira.
-///
-/// Desempate no grupo do fork mais próximo: várias branches-IRMÃS nascem do mesmo
-/// ponto do tronco (mesmo merge-base) e empatam. A origem convencional entre elas
-/// é a trilha de INTEGRAÇÃO (nome canônico: development/main/...). Sem esse
-/// desempate o resultado vira «indeterminado» por quase-empate — inútil na prática.
-fn apply_merge_base_proximity(scored: &mut [ScoredCandidate]) {
-    let Some(min_depth) = scored.iter().map(|s| s.depth).min() else {
-        return;
-    };
-
-    for c in scored.iter_mut() {
-        if c.depth == min_depth {
-            c.score += 45.0;
-            c.structural += 45.0;
-            c.signals
-                .push("merge-base mais próximo da HEAD (fork mais recente)".into());
-        }
-    }
-
-    // Dentro do grupo do fork mais próximo, a branch com nome de tronco mais forte
-    // (e ÚNICA nesse posto) é a origem convencional — desempata de forma decisiva.
-    let top_name = scored
-        .iter()
-        .filter(|s| s.depth == min_depth)
-        .map(|s| name_priority(&s.name))
-        .max()
-        .unwrap_or(0);
-    // Prioridade < 2 = nome comum (feature/hotfix/...): ninguém no grupo é trilha
-    // de integração — ambiguidade honesta, sem desempate por nome.
-    if top_name < 2 {
-        return;
-    }
-    let leaders = scored
-        .iter()
-        .filter(|s| s.depth == min_depth && name_priority(&s.name) == top_name)
-        .count();
-    if leaders != 1 {
-        return;
-    }
-    if let Some(best) = scored
-        .iter_mut()
-        .find(|s| s.depth == min_depth && name_priority(&s.name) == top_name)
-    {
-        best.score += 18.0;
-        best.structural += 18.0;
-        best.signals
-            .push("trilha de integração no ponto de fork (desempate por nome)".into());
-    }
-}
-
-/// Resolve a ponta de uma branch por nome (local, remota ou rev). Pública
-/// porque a trilha dupla (RF-01) também precisa localizar a base.
-pub fn branch_tip(repo: &Repository, name: &str) -> Option<Oid> {
-    if let Ok(reference) = repo.find_reference(&format!("refs/heads/{name}")) {
-        return reference.target();
-    }
-    if let Ok(reference) = repo.find_reference(&format!("refs/remotes/{name}")) {
-        return reference.target();
-    }
-    if let Ok(reference) = repo.find_reference(&format!("refs/remotes/origin/{name}")) {
-        return reference.target();
-    }
-    repo.revparse_single(name)
-        .ok()
-        .and_then(|obj| obj.peel_to_commit().ok())
-        .map(|c| c.id())
-}
-
-fn count_commits_since(repo: &Repository, from: Oid, to: Oid) -> usize {
-    let mut revwalk = match repo.revwalk() {
-        Ok(r) => r,
-        Err(_) => return 0,
-    };
-    let _ = revwalk.hide(from);
-    let _ = revwalk.push(to);
-    // A pontuação de recência zera a partir de 25 commits — não há razão para
-    // contar além disso (em repo grande seriam dezenas de milhares).
-    revwalk.take(26).count()
-}
-
-fn first_unique_parent_is_merge_base(
-    repo: &Repository,
-    head: Oid,
-    candidate_tip: Oid,
-    merge_base: Oid,
-) -> bool {
-    let mut revwalk = match repo.revwalk() {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-    let _ = revwalk.hide(candidate_tip);
-    let _ = revwalk.push(head);
-    let _ = revwalk.set_sorting(Sort::TOPOLOGICAL);
-
-    // O revwalk topológico emite do mais novo para o mais antigo; o "primeiro
-    // commit exclusivo" da branch é o ÚLTIMO emitido — é o pai dele que deve
-    // apontar para o merge-base. Teto de 500: além disso o fork é antigo e o
-    // sinal deixa de ser relevante (e o walk completo custa caro em repo grande).
-    const MAX_UNIQUE_WALK: usize = 500;
-    let mut count = 0usize;
-    let mut oldest = None;
-    for oid in revwalk {
-        let Ok(oid) = oid else { continue };
-        count += 1;
-        if count > MAX_UNIQUE_WALK {
-            return false;
-        }
-        oldest = Some(oid);
-    }
-    if let Some(oid) = oldest {
-        if let Ok(commit) = repo.find_commit(oid) {
-            return commit.parent_ids().any(|p| p == merge_base);
-        }
-    }
-    false
-}
-
-/// Prioridade do nome para fins de ORIGEM. Working branches (feature/bugfix/
-/// release) saem quase sempre da trilha de INTEGRAÇÃO — por isso develop/
-/// development têm prioridade MAIOR que main/master aqui (o oposto de
-/// "importância" do branch): num empate de ponto de fork, a origem provável é a
-/// integração, não a linha principal (de onde só hotfix costuma sair).
-fn name_priority(name: &str) -> i32 {
-    let n = name.to_lowercase();
-    let base = n.rsplit('/').next().unwrap_or(&n);
-    match base {
-        "develop" | "development" | "dev" => 3,
-        "main" | "master" | "trunk" => 2,
-        _ => 1,
-    }
-}
-
-fn classify_confidence(best: f64, second: f64, structural: f64) -> OriginConfidence {
-    if best < 15.0 || (second > 0.0 && best - second < 5.0) {
-        return OriginConfidence::Indeterminate;
-    }
-    let gap = best - second;
-    if structural >= 30.0 && best >= 50.0 && gap >= 12.0 {
-        OriginConfidence::High
-    } else if best >= 30.0 && gap >= 5.0 {
-        OriginConfidence::Medium
-    } else if best >= 15.0 {
-        OriginConfidence::Low
-    } else {
-        OriginConfidence::Indeterminate
     }
 }
 

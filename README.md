@@ -10,7 +10,7 @@ diff e sincronização com remoto.
 - Node.js 20+
 - Rust (rustup) + cargo
 - WebView2 (Windows 11 já inclui)
-- Git for Windows (recomendado — inclui GCM para fetch)
+- Git for Windows (recomendado — inclui GCM para fetch/push)
 
 ## Comandos
 
@@ -21,8 +21,12 @@ npm run dev          # app desktop (Tauri)
 npm run dev:web      # browser com mocks
 npm run lint
 npm run test         # Vitest (frontend)
-npm run test:rust    # cargo test
+npm run test:rust    # clippy + cargo test
+npm run audit        # npm audit + cargo audit (M4)
+npm run build:win    # instalador NSIS/MSI (unsigned)
 ```
+
+Artefatos do instalador: `src-tauri\target\release\bundle\`
 
 ## Fases do MVP
 
@@ -31,22 +35,36 @@ npm run test:rust    # cargo test
 | M0 | ✅ | Scaffolding, tema, arquitetura Git, baseline de segurança |
 | M1 + M1-b | ✅ | Leitura, fetch, watcher, grafo com lanes, status/diff |
 | M2 | ✅ | Origem da branch, blame |
-| M3 | ✅ | Operações seguras (preview, unstage, commit, push/pull) |
-| M4 | ⏳ | Instalador assinado, E2E, a11y |
+| M3 | ✅ | Operações seguras (preview, unstage, commit, push/pull, publicar) |
+| M4 | 🚧 | CI, SECURITY.md, a11y, instalador, validação SysPDV |
 
 Documentação completa: `C:\Projetos\SysPDV\Docs\git-trail-viewer\MVP.md`
 
-## Checklist de validação M1 (manual)
+## Checklist de validação M4 (manual)
 
-Validar em repositório real (ex.: SysPDV):
+### Instalador e CI
+- [ ] `npm run build:win` gera `.exe` (NSIS) e/ou `.msi`
+- [ ] CI no GitHub Actions passa (lint, tsc, vitest, clippy, testes Rust)
+- [ ] `SECURITY.md` publicado no repositório
 
-- [ ] Repo picker abre pasta válida e rejeita pasta sem `.git`
-- [ ] Grafo com lanes, HEAD, merge, datas relativas, badge local
-- [ ] Paginação "Carregar mais" em repo grande (>5k commits)
-- [ ] Alterações: staged / unstaged / untracked + badges M/A/D/R/U
-- [ ] Diff lado a lado (arquivo e commit)
-- [ ] Fetch + indicador "última sync" + Conectar em falha de auth
-- [ ] Watcher: editar arquivo externo reflete na UI em < 1s
-- [ ] Banners detached HEAD e branch sem upstream
+### Repositório grande (SysPDV)
+- [ ] Abre em < 3s; grafo paginado fluido com > 5k commits
+- [ ] "Carregar mais" sem travar a UI
 
-Decisões: `DECISIONS.md`
+### Fluxos críticos (E2E manual)
+- [ ] Abrir repo → status → stage → commit → push
+- [ ] Fetch + ahead/behind + pull --ff-only
+- [ ] Publicar branch nova (remote + upstream)
+- [ ] Preview (RF-08) idêntico ao comando executado
+- [ ] Detached HEAD e repo vazio degradam com aviso (sem crash)
+
+### Acessibilidade (básica)
+- [ ] Tab navega botões principais; skip link "Ir para o conteúdo"
+- [ ] Diálogos com `role="dialog"` e foco visível
+- [ ] Contraste tema claro/escuro (AA)
+
+### Segurança
+- [ ] `npm audit` / `cargo audit` sem críticas abertas (ou documentadas)
+- [ ] Code signing EV — *lead time externo*; build unsigned OK para teste interno
+
+Decisões e backlog: `DECISIONS.md` · Segurança: `SECURITY.md`

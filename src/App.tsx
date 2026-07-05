@@ -1,5 +1,5 @@
 import { GitBranch, TrainFront, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { CommitForm } from "@/components/CommitForm";
@@ -16,15 +16,12 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
 import { useBranchOrigin } from "@/hooks/useBranchOrigin";
 import { useCommits } from "@/hooks/useCommits";
+import { useFileSelection } from "@/hooks/useFileSelection";
 import { useOperations } from "@/hooks/useOperations";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useSync } from "@/hooks/useSync";
 import { getAppInfo, getRepoInfo, runningInTauri } from "@/lib/api";
-import {
-  fileCheckKey,
-  type FileCheckSection,
-} from "@/lib/fileCheck";
 import type { AppInfo } from "@/types";
 
 function App() {
@@ -32,7 +29,6 @@ function App() {
   const [webOnly, setWebOnly] = useState(false);
   const [workingCopySelected, setWorkingCopySelected] = useState(true);
   const [amendIntent, setAmendIntent] = useState(0);
-  const [checkedPaths, setCheckedPaths] = useState<Set<string>>(() => new Set());
   const [publishOpen, setPublishOpen] = useState(false);
 
   const {
@@ -105,6 +101,14 @@ function App() {
     refreshCredential,
   } = useSync(repo, setRepo, onAfterFetch);
 
+  const { checkedPaths, clearChecks, toggleCheck, handleSelectFile } =
+    useFileSelection({
+    repoPath: repo?.path,
+    status,
+    selectedFile,
+    onSelectFile: selectFile,
+  });
+
   const refreshAll = useCallback(async () => {
     await Promise.all([
       refreshCommits(),
@@ -125,8 +129,8 @@ function App() {
     }
     clearSelection();
     setWorkingCopySelected(true);
-    setCheckedPaths(new Set());
-  }, [refreshAll, clearSelection, setRepo]);
+    clearChecks();
+  }, [refreshAll, clearSelection, setRepo, clearChecks]);
 
   const ops = useOperations(refreshAfterWrite);
 
@@ -142,6 +146,21 @@ function App() {
     ) && !repo?.isDetached;
   const writeDisabled = Boolean(repo?.isDetached);
   const upstreamConfigured = Boolean(repo?.upstream || sync?.upstream);
+  const amendUnavailableReason =
+    headCommit && !canAmend && !writeDisabled
+      ? "Amend indisponível — o último commit já foi enviado ao remoto. Só é possível alterar a mensagem antes do push."
+      : null;
+  const isSelectedHead = Boolean(
+    selectedCommit && headCommit && selectedCommit.id === headCommit.id,
+  );
+  const messageEditHint =
+    selectedCommit && !workingCopySelected && !writeDisabled
+      ? isSelectedHead && !canAmend
+        ? "Este commit já está no remoto. Para corrigir a mensagem antes de enviar, use Amend em «Alterações locais» (só vale para o último commit local)."
+        : !isSelectedHead
+          ? "Alterar a mensagem de commits antigos (reword) ainda não está no MVP — previsto como RF-16 (pós-MVP)."
+          : null
+      : null;
 
   // Sempre abre o diálogo com a URL atual editável: quem publicou com a URL
   // errada (conta sem acesso) corrige aqui — o plano vira `remote set-url` + push.
@@ -169,6 +188,11 @@ function App() {
     setAmendIntent((n) => n + 1);
   }, [canAmend, writeDisabled]);
 
+  const changeCount =
+    (status?.staged.length ?? 0) +
+    (status?.unstaged.length ?? 0) +
+    (status?.untracked.length ?? 0);
+
   useEffect(() => {
     setWebOnly(!runningInTauri());
     getAppInfo().then(setInfo);
@@ -177,37 +201,9 @@ function App() {
   useEffect(() => {
     if (!repo?.path) return;
     setWorkingCopySelected(true);
-    setCheckedPaths(new Set());
+    clearChecks();
     clearSelection();
-  }, [repo?.path, clearSelection]);
-
-  const toggleCheck = useCallback((path: string, section: FileCheckSection) => {
-    const key = fileCheckKey(section, path);
-    setCheckedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
-
-  const allStageablePaths = useMemo(
-    () => [
-      ...(status?.unstaged ?? []).map((f) => f.path),
-      ...(status?.untracked ?? []).map((f) => f.path),
-    ],
-    [status?.unstaged, status?.untracked],
-  );
-
-  const allStagedPaths = useMemo(
-    () => (status?.staged ?? []).map((f) => f.path),
-    [status?.staged],
-  );
-
-  const changeCount =
-    (status?.staged.length ?? 0) +
-    (status?.unstaged.length ?? 0) +
-    (status?.untracked.length ?? 0);
+  }, [repo?.path, clearSelection, clearChecks]);
 
   function handleSelectWorkingCopy() {
     clearSelection();
@@ -230,36 +226,6 @@ function App() {
     setWorkingCopySelected(false);
     clearFileSelection();
     await selectCommit(commit);
-  }
-
-  async function handleSelectFile(
-    path: string,
-    staged: boolean,
-    meta?: { ctrlKey?: boolean; shiftKey?: boolean },
-  ) {
-    if (meta?.ctrlKey) {
-      toggleCheck(path, staged ? "staged" : "working");
-      return;
-    }
-    if (meta?.shiftKey && selectedFile?.path) {
-      const pool = staged ? allStagedPaths : allStageablePaths;
-      const section: FileCheckSection = staged ? "staged" : "working";
-      const anchor = selectedFile.path;
-      const a = pool.indexOf(anchor);
-      const b = pool.indexOf(path);
-      if (a >= 0 && b >= 0) {
-        const [from, to] = a < b ? [a, b] : [b, a];
-        setCheckedPaths((prev) => {
-          const next = new Set(prev);
-          for (let i = from; i <= to; i++) {
-            next.add(fileCheckKey(section, pool[i]!));
-          }
-          return next;
-        });
-        return;
-      }
-    }
-    await selectFile(path, staged);
   }
 
   async function handleSelectCommitFile(path: string) {
@@ -293,6 +259,9 @@ function App() {
 
   return (
     <div className="flex h-full flex-col">
+      <a href="#trilho-main" className="skip-to-main">
+        Ir para o conteúdo principal
+      </a>
       <OperationDialog
         preview={ops.preview}
         loading={ops.loading}
@@ -407,7 +376,7 @@ function App() {
       )}
 
       {!repo ? (
-        <main className="flex flex-1 items-center justify-center">
+        <main id="trilho-main" className="flex flex-1 items-center justify-center">
           <div className="w-72 rounded-xl border border-border bg-surface p-4 shadow-sm">
             <p className="mb-3 text-center text-sm text-muted">
               Abra um repositório Git para começar
@@ -420,7 +389,7 @@ function App() {
           </div>
         </main>
       ) : (
-        <main className="flex min-h-0 flex-1 flex-col">
+        <main id="trilho-main" className="flex min-h-0 flex-1 flex-col">
           <ResizableColumns
             defaultRight={360}
             left={
@@ -553,6 +522,7 @@ function App() {
                       <div className="shrink-0">
                         <CommitForm
                         canAmend={canAmend}
+                        amendUnavailableReason={amendUnavailableReason}
                         amendSeed={
                           headCommit
                             ? {
@@ -603,6 +573,7 @@ function App() {
                     onEditMessage={
                       canAmend && !writeDisabled ? handleEditMessage : undefined
                     }
+                    messageEditHint={messageEditHint}
                     onRevert={
                       selectedCommit && !writeDisabled
                         ? () =>

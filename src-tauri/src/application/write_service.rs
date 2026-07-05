@@ -108,7 +108,22 @@ pub fn preview_write(
                 amend: *amend,
             };
             let blocked = if *amend { gate_amend(ctx)? } else { None };
-            (ctx.preview_op(&op), op.description().to_string(), blocked)
+            // Honestidade do RF-08: --amend também absorve o que estiver em
+            // staging — a descrição não pode falar só em "mensagem".
+            let description = if *amend {
+                let staged_count = ctx.reader().get_status()?.staged.len();
+                if staged_count > 0 {
+                    format!(
+                        "Altera o último commit (ainda não enviado) e INCLUI o(s) \
+                         {staged_count} arquivo(s) em staging nele."
+                    )
+                } else {
+                    op.description().to_string()
+                }
+            } else {
+                op.description().to_string()
+            };
+            (ctx.preview_op(&op), description, blocked)
         }
         WriteRequest::Uncommit => {
             let op = UncommitSoft;
@@ -121,8 +136,9 @@ pub fn preview_write(
         WriteRequest::Revert { commit_id } => {
             let sha =
                 validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_revert_merge(ctx, &sha)?;
             let op = RevertCommit { sha };
-            (ctx.preview_op(&op), op.description().to_string(), None)
+            (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
         WriteRequest::Push => {
             let op = PushUpstream;
@@ -362,6 +378,25 @@ fn gate_amend(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     }
 }
 
+/// Revert de commit de MERGE exige `-m <pai>` (fora do MVP): sem gate, o
+/// `git revert` falharia com erro críptico depois da confirmação.
+fn gate_revert_merge(ctx: &RepoContext, sha: &str) -> Result<Option<String>, GitError> {
+    let repo = Repository::discover(ctx.repo_path()).map_err(|e| GitError::Io(e.to_string()))?;
+    let oid = git2::Oid::from_str(sha).map_err(|e| GitError::Git(e.to_string()))?;
+    let commit = repo
+        .find_commit(oid)
+        .map_err(|_| GitError::Git("Commit não encontrado no repositório.".into()))?;
+    if commit.parent_count() > 1 {
+        return Ok(Some(
+            "Este é um commit de MERGE — revertê-lo exige escolher qual lado manter \
+             (git revert -m), operação avançada fora do MVP. Reverta os commits \
+             individuais da branch mesclada, se necessário."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
 fn gate_uncommit(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     if head_is_local_only(ctx.reader(), ctx.writer())? {
         Ok(None)
@@ -439,6 +474,80 @@ mod tests {
             .current_dir(dir)
             .output()
             .unwrap();
+    }
+
+    /// Regressão fix 3: revert de merge é bloqueado no preview (não explode
+    /// depois da confirmação com o erro críptico do `git revert`).
+    #[test]
+    fn revert_de_merge_e_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-revmrg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        for args in [
+            vec!["checkout", "-b", "feat"],
+            vec!["commit", "--allow-empty", "-m", "feat work"],
+            vec!["checkout", "-"],
+            vec!["commit", "--allow-empty", "-m", "avanca"],
+            vec!["merge", "--no-ff", "feat", "-m", "merge feat"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+        }
+        let sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Revert { commit_id: sha },
+        )
+        .expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "revert de merge deve vir bloqueado"
+        );
+        assert!(preview.blocked.unwrap().to_lowercase().contains("merge"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regressão fix 2: amend com arquivos em staging avisa que os inclui.
+    #[test]
+    fn preview_do_amend_avisa_staging() {
+        let dir = std::env::temp_dir().join(format!("trilho-amend-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::fs::write(dir.join("extra.txt"), "y").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "extra.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Commit {
+                summary: "msg nova".into(),
+                body: None,
+                amend: true,
+            },
+        )
+        .expect("preview");
+        assert!(
+            preview.description.contains("INCLUI"),
+            "descrição deve avisar staging: {}",
+            preview.description
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Regressão: publicação com remoto já configurado e URL NOVA deve

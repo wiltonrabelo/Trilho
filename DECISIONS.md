@@ -68,7 +68,96 @@
 - Perf: comandos IPC demorados `async` (sync roda na main thread do Tauri 2 e congela UI);
   heurística RF-02 com tetos (40 candidatas, walks limitados) + sinal de merge-base recente.
 
+## Backlog pós-MVP — visão geral
+
+> Itens **fora do MVP** (M0–M4), agrupados por **fluxo de trabalho** (UX). RF-21 por último (F7).
+
+### 1. Entrada e remoto
+| Prioridade | ID | Entrega | Fase |
+|------------|-----|---------|------|
+| Alta | **RF-22** | Clonar repositório remoto | F3 |
+| Alta | **RF-10 completo** | OAuth / PAT / SSH + gestão de contas | F3 |
+
+### 2. Working tree (dia a dia)
+| Prioridade | ID | Entrega | Fase |
+|------------|-----|---------|------|
+| Média-alta | **RF-23** | **Stash** (incl. untracked opcional) | F4 |
+| Média | RF-18 hunk | Descartar por trecho (hunk) | F5 |
+
+### 3. Histórico e metadados
+| Prioridade | ID | Entrega | Fase |
+|------------|-----|---------|------|
+| Média | **RF-24** | **Criar tag** em commit (+ push opcional) | F4 |
+| Média | RF-16 | Reword (editar mensagem de commit antigo) | F5 |
+
+### 4. Operações avançadas
+| Prioridade | ID | Entrega | Fase |
+|------------|-----|---------|------|
+| Média | RF-07 reset, RF-09 force push, RF-13 cherry-pick | Reescrita de histórico | F5 |
+| Média | RF-14, RF-12, RF-20 | Diff branches, PR, conflitos 3-vias | F5 |
+| Baixa | RF-11 | Log de auditoria (7 dias) | F5 |
+
+### 5. Inteligência e enhancements
+| Prioridade | ID | Entrega | Fase |
+|------------|-----|---------|------|
+| Baixa | **RF-21** | Assistente LLM → ações allowlisted | F7 |
+| — | — | Trilha comparada de duas branches | — |
+
+Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §RF-24).
+
 ## Enhancement (backlog pós-MVP)
+
+- **RF-22 — Clonar repositório remoto** (pedido do stakeholder, 2026-07-04): fluxo de entrada
+  complementar ao repo picker, referência **SourceTree → Clone** (URL remota, pasta destino, nome
+  da pasta, branch opcional, avançado colapsável, barra de progresso). Especificação completa em
+  `Docs/git-trail-viewer/PLANO.md` §RF-22.
+
+  **Por que não repetir o Publicar:**
+  - Clone usa `git clone`, que já cria `origin` **e** tracking da branch — não depende de
+    `remote add` + `push -u` manual.
+  - Auth na **1ª vez**: GCM com `GCM_INTERACTIVE=always` durante o clone (mesmo env do
+    `SafeGitCli`); hint proativo se GCM ausente; erros → `GitError::Auth` + botão Conectar.
+  - **Checklist pós-clone:** `hasRemote`, `upstream` e sync ahead/behind OK sem banner "sem
+    upstream"; nunca mensagem `git branch -u`.
+  - **IPC:** um campo `url`; testes serde; registrar comando + rebuild (lições do Publicar).
+
+  **Recorte 1:** URL + destino + nome + progresso + abrir repo. **Recorte 2:** ls-remote p/ branch,
+  shallow, atalhos GitHub/GitLab.
+
+- **RF-23 — Stash (guardar alterações)** (pedido do stakeholder, 2026-07-05): PLANO §RF-23.
+
+  **UX (working tree):** botão **«Guardar (stash)»** no painel **Alterações locais** (junto a
+  stage/unstage); diálogo com mensagem opcional + checkbox **«Incluir não rastreados»** (`-u`,
+  desmarcada por padrão); resumo de quantos arquivos entram; aviso se untracked; preview RF-08.
+  **Recorte 1:** `git stash push` de tudo (staged+unstaged+opcional untracked). **Recorte 2:**
+  listar/aplicar/excluir stashes.
+
+- **RF-24 — Criar tag** (pedido do stakeholder, 2026-07-05): PLANO §RF-24.
+
+  **UX (histórico):** botão **«Criar tag…»** no `DetailPanel` do **commit selecionado**; diálogo
+  com nome, tipo (anotada default / leve), mensagem, checkbox **«Enviar ao remoto»**; preview
+  `git tag` + `git push origin <tag>` se marcado. **Recorte 2:** listar/excluir tags.
+
+- **RF-21 — Assistente LLM (linguagem natural → operações Git no app)** (PLANO §RF-21, fase **F7**):
+  painel de chat onde o usuário pede em português ("desfaz o último commit", "mostra diff deste
+  arquivo", "publica no GitHub") e a LLM **traduz para ações já existentes do Trilho** — **não**
+  executa shell/`git` arbitrário.
+
+  **Modelo de execução (obrigatório):**
+  - Porta `LlmProvider` plugável (OpenAI, Anthropic, **Ollama local**); chave no Credential Manager.
+  - **Tool calling** com allowlist 1:1 → `WriteRequest` / leitura (`list_commits`, `get_status`,
+    `get_file_diff`, `preview_write_operation`, etc.).
+  - **Toda ação passa por RF-08** (preview do comando Git real) + confirmação humana; destrutivas
+    com confirmação reforçada; **default-deny** de reset/force via assistente (opt-in explícito).
+  - Opt-in global, **desligado por padrão**; controle do que vai ao provedor (metadados vs diffs).
+  - Auditoria RF-11: entradas marcadas "originada pelo assistente".
+  - Testes de prompt injection (§11.9 PLANO).
+
+  **Pré-requisitos:** M3 estável (Command pattern + preview fiel); idealmente RF-10 completo e
+  RF-22 antes, para cobrir clone/auth na allowlist.
+
+  **Recorte 1:** chat + allowlist leitura + stage/unstage/commit/fetch. **Recorte 2:** push/pull,
+  revert, cherry-pick quando existirem. **Recorte 3:** contexto de grafo/blame na conversa.
 
 - **Trilha comparada de duas branches** (pedido do stakeholder, 2026-07-03): selecionar duas
   branches e ver os commits de ambas na trilha, com divergência e convergência. Não coberto
@@ -95,26 +184,37 @@
 - Pull bloqueado se `behind == 0`
 - Operações de escrita desabilitadas em detached HEAD
 
-## Próxima fase: M4 — Empacotamento e qualidade
+## M4 — Empacotamento e qualidade 🚧 (em andamento)
 
-## Dívidas técnicas pós-revisão M2 (antes do M3)
+### Escopo (MVP.md §M4 + §7)
+- [x] **CI** — `.github/workflows/ci.yml` (lint, tsc, vitest, clippy, testes Rust; build instalador em push master)
+- [x] **SECURITY.md** — canal de reporte e baseline documentada
+- [x] **Scripts** — `npm run audit`, `npm run build:win`
+- [x] **A11y básica** — skip link, `aria-label` em repo picker / commit / sync; diálogos já tinham `role="dialog"`
+- [x] **Instalador (unsigned)** — `npm run build:win` OK: `Trilho_0.1.0_x64-setup.exe` + `.msi`
+- [ ] **Instalador assinado** — certificado EV (lead time; unsigned para teste interno)
+- [ ] **E2E automatizado** — tauri-driver flaky; checklist manual no README por ora
+- [ ] **Validação SysPDV** — repo >5k commits (checklist README)
+- [x] **Hints amend/reword** — mensagens UX quando amend indisponível / reword RF-16
+- [x] **Fixes revisão 2026-07-05** — `run_bool` fail-closed, preview amend+staging, gate revert merge (+3 testes)
+- [x] **Dívidas SOLID** — `useFileSelection`, ISP `TrailReader`/`BlameProvider`, split `branch_origin/`
 
-> Revisão SOLID/Clean Code (2026-07-04). Camadas saudáveis; itens abaixo são
-> pequenos e não bloqueiam o M3, mas devem ser fechados cedo para não acumular.
+### Próximo passo M4
+1. Rodar `npm run build:win` local e validar instalador
+2. Push para ativar CI no GitHub
+3. Checklist manual README (SysPDV + fluxos críticos)
 
-### 1. ISP — `GitReader` com 7 métodos (prioridade)
-- Ainda coeso (tudo leitura), mas no teto do PLANO §9 (portas focadas).
-- **Ação:** extrair `BlameProvider` (`get_file_blame`) e `TrailReader`
-  (`list_commits`, `get_dual_trail`, `list_commit_files`) antes de crescer no M3.
-- `Git2Reader` implementa as três portas; `RepoContext` compõe.
+## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 
-### 2. `branch_origin.rs` (~900 linhas)
-- Coeso, mas no teto. **Ação:** ao próximo toque, separar coleta de candidatas /
-  scoring / classificação em submódulos (`candidates.rs`, `scoring.rs`, …).
+### 1. ISP — `GitReader` ✅
+- Extraídos `TrailReader` (grafo/trilha) e `BlameProvider` (RF-03).
+- `GitReader: TrailReader + BlameProvider` — status, sync, origem da branch.
 
-### 3. Clippy ✅
-- `npm run test:rust` agora roda `cargo clippy -- -D warnings` antes dos testes.
-- Corrigidos: `strip_prefix`, `needless_borrow`, `redundant_closure`,
-  `unnecessary_sort_by`, escape octal suspeito em teste de rename (`\02foo`).
-- Dead-code pre-M3 (`NoRepositoryOpen`, `GitWriter`) ligados no M3 via `repo_context` /
-  `commands::repo_context` e chamadas via trait `GitWriter`.
+### 2. `branch_origin` ✅
+- Split em `branch_origin/{mod,candidates,scoring}.rs`.
+
+### 3. `App.tsx` ✅
+- Multi-seleção extraída para `hooks/useFileSelection.ts`.
+
+### 4. Clippy ✅
+- `npm run test:rust` inclui clippy `-D warnings`.

@@ -57,12 +57,13 @@ export function SyncIndicator({
   const busy = loading || pushLoading;
 
   return (
-    <div className="flex max-w-md flex-col gap-1 text-xs">
+    <div className="flex max-w-md flex-col gap-1 text-xs" role="region" aria-label="Sincronização com remoto">
       <div className="flex flex-wrap gap-1">
         <button
           type="button"
           onClick={onFetch}
           disabled={busy}
+          aria-label="Sincronizar com o remoto (fetch)"
           className="flex items-center gap-1.5 rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-50"
           title="Sincronizar (fetch)"
         >
@@ -74,8 +75,8 @@ export function SyncIndicator({
             type="button"
             onClick={onPublish}
             disabled={busy}
+            aria-label="Publicar branch no remoto"
             className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title="Publicar branch no remoto pela primeira vez"
           >
             <Upload size={14} />
             Publicar
@@ -86,6 +87,7 @@ export function SyncIndicator({
             type="button"
             onClick={onPull}
             disabled={busy}
+            aria-label={`Puxar ${sync!.behind} commit(s) do remoto`}
             className="flex items-center gap-1 rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-50"
             title="Atualizar com pull --ff-only"
           >
@@ -97,6 +99,7 @@ export function SyncIndicator({
             type="button"
             onClick={onPush}
             disabled={busy}
+            aria-label={`Enviar ${sync!.ahead} commit(s) ao remoto`}
             className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
             title="Enviar commits (push)"
           >
@@ -109,6 +112,7 @@ export function SyncIndicator({
             type="button"
             onClick={onFetch}
             disabled={busy}
+            aria-label="Conectar ou reautenticar no GitHub"
             className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
             title="Reautenticar via Git Credential Manager"
           >

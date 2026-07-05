@@ -2,7 +2,7 @@
 
 use crate::application::{
     execute_write, preview_write, AppState, CommitFileDiff, FetchRemote, FileDiff, GitError,
-    GitReader, RepoContext, ShowCommit,
+    RepoContext, ShowCommit, TrailReader,
 };
 use crate::domain::{Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
