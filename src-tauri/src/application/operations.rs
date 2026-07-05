@@ -202,12 +202,7 @@ pub struct UnstageAll;
 impl GitOperation for UnstageAll {
     fn command(&self) -> GitCommand {
         GitCommand {
-            args: vec![
-                "restore".into(),
-                "--staged".into(),
-                "--".into(),
-                ".".into(),
-            ],
+            args: vec!["restore".into(), "--staged".into(), "--".into(), ".".into()],
         }
     }
     fn description(&self) -> &'static str {
@@ -267,11 +262,7 @@ pub struct RevertCommit {
 impl GitOperation for RevertCommit {
     fn command(&self) -> GitCommand {
         GitCommand {
-            args: vec![
-                "revert".into(),
-                "--no-edit".into(),
-                self.sha.clone(),
-            ],
+            args: vec!["revert".into(), "--no-edit".into(), self.sha.clone()],
         }
     }
     fn description(&self) -> &'static str {
@@ -371,10 +362,7 @@ mod tests {
         let op = StageMany {
             paths: vec!["a.ts".into(), "b.ts".into()],
         };
-        assert_eq!(
-            op.command().args,
-            vec!["add", "--", "a.ts", "b.ts"]
-        );
+        assert_eq!(op.command().args, vec!["add", "--", "a.ts", "b.ts"]);
     }
 
     #[test]
@@ -413,9 +401,6 @@ mod tests {
             remote: "origin".into(),
             branch: "master".into(),
         };
-        assert_eq!(
-            op.command().args,
-            vec!["push", "-u", "origin", "master"]
-        );
+        assert_eq!(op.command().args, vec!["push", "-u", "origin", "master"]);
     }
 }

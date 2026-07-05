@@ -17,11 +17,19 @@ pub struct OperationPreview {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum WriteRequest {
-    Stage { path: String },
-    StageMany { paths: Vec<String> },
+    Stage {
+        path: String,
+    },
+    StageMany {
+        paths: Vec<String>,
+    },
     StageAll,
-    Unstage { path: String },
-    UnstageMany { paths: Vec<String> },
+    Unstage {
+        path: String,
+    },
+    UnstageMany {
+        paths: Vec<String>,
+    },
     UnstageAll,
     Commit {
         summary: String,
@@ -31,7 +39,9 @@ pub enum WriteRequest {
         amend: bool,
     },
     Uncommit,
-    Revert { commit_id: String },
+    Revert {
+        commit_id: String,
+    },
     Push,
     PullFfOnly,
     Publish {

@@ -7,7 +7,9 @@ use crate::application::operations::{
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, RepoContext};
 use crate::domain::{OperationPreview, WriteRequest};
-use crate::infrastructure::{repo_info, validate_git_object_id, validate_remote_url, validate_repo_relative_path};
+use crate::infrastructure::{
+    repo_info, validate_git_object_id, validate_remote_url, validate_repo_relative_path,
+};
 use git2::Repository;
 
 /// Extrai o path Git de um rótulo de rename (`old → new`).
@@ -41,11 +43,7 @@ pub fn preview_write(
             let path = validate_repo_relative_path(git_path_from_display(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let op = Stage { path };
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                None,
-            )
+            (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::StageMany { paths } => {
             let paths = match validate_paths(paths) {
@@ -65,21 +63,13 @@ pub fn preview_write(
         }
         WriteRequest::StageAll => {
             let op = StageAll;
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                None,
-            )
+            (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::Unstage { path } => {
             let path = validate_repo_relative_path(git_path_from_display(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let op = Unstage { path };
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                None,
-            )
+            (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::UnstageMany { paths } => {
             let paths = match validate_paths(paths) {
@@ -99,11 +89,7 @@ pub fn preview_write(
         }
         WriteRequest::UnstageAll => {
             let op = UnstageAll;
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                None,
-            )
+            (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::Commit {
             summary,
@@ -121,16 +107,8 @@ pub fn preview_write(
                 body: body.clone(),
                 amend: *amend,
             };
-            let blocked = if *amend {
-                gate_amend(ctx)?
-            } else {
-                None
-            };
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                blocked,
-            )
+            let blocked = if *amend { gate_amend(ctx)? } else { None };
+            (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
         WriteRequest::Uncommit => {
             let op = UncommitSoft;
@@ -141,14 +119,10 @@ pub fn preview_write(
             )
         }
         WriteRequest::Revert { commit_id } => {
-            let sha = validate_git_object_id(commit_id)
-                .map_err(|e| GitError::Git(e.to_string()))?;
+            let sha =
+                validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
             let op = RevertCommit { sha };
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                None,
-            )
+            (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::Push => {
             let op = PushUpstream;
@@ -161,11 +135,7 @@ pub fn preview_write(
         WriteRequest::PullFfOnly => {
             let op = PullFfOnly;
             let blocked = gate_pull(ctx)?;
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                blocked,
-            )
+            (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
@@ -224,8 +194,8 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             ctx.execute_op(&UncommitSoft)?;
         }
         WriteRequest::Revert { commit_id } => {
-            let sha = validate_git_object_id(&commit_id)
-                .map_err(|e| GitError::Git(e.to_string()))?;
+            let sha =
+                validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&RevertCommit { sha })?;
         }
         WriteRequest::Push => {
@@ -256,9 +226,7 @@ struct PublishPlan {
 
 fn resolve_primary_remote(ctx: &RepoContext) -> Result<String, GitError> {
     let repo = Repository::discover(ctx.repo_path()).map_err(|e| GitError::Io(e.to_string()))?;
-    let remotes = repo
-        .remotes()
-        .map_err(|e| GitError::Io(e.to_string()))?;
+    let remotes = repo.remotes().map_err(|e| GitError::Io(e.to_string()))?;
     for i in 0..remotes.len() {
         if remotes.get(i) == Some("origin") {
             return Ok("origin".into());
@@ -397,7 +365,9 @@ fn gate_pull(ctx: &RepoContext) -> Result<Option<String>, GitError> {
         return Ok(Some("Branch sem upstream configurado.".into()));
     }
     if sync.behind == 0 {
-        return Ok(Some("Já está em dia com o remoto (nada para puxar).".into()));
+        return Ok(Some(
+            "Já está em dia com o remoto (nada para puxar).".into(),
+        ));
     }
     Ok(None)
 }

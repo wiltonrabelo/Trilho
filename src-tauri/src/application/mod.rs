@@ -69,10 +69,31 @@ fn is_auth_failure(lower: &str) -> bool {
         || lower.contains("access denied")
         || lower.contains("permission denied (publickey)")
         || lower.contains("support for password authentication was removed")
+        // GitHub via SSH: "ERROR: Permission to owner/repo.git denied to user."
+        || (lower.contains("permission to") && lower.contains("denied"))
 }
 
 /// Mensagem acionável para RF-10 parcial (MVP §4).
 fn auth_action_message(lower: &str) -> String {
+    // "Permission to owner/repo denied to user": autenticou, mas com a conta
+    // errada — problema de ACESSO, não de credencial ausente.
+    if lower.contains("permission to") && lower.contains("denied to") {
+        let account = lower
+            .split("denied to ")
+            .nth(1)
+            .and_then(|rest| rest.split_whitespace().next())
+            .map(|s| s.trim_end_matches('.').to_string());
+        return match account {
+            Some(user) => format!(
+                "Sem permissão no repositório remoto: você está autenticado como \
+                 «{user}», que não tem acesso a esse repositório. Confira se a URL \
+                 aponta para a conta certa ou conceda acesso no GitHub."
+            ),
+            None => "Sem permissão no repositório remoto — a conta autenticada não \
+                     tem acesso. Confira a URL ou conceda acesso no GitHub."
+                .into(),
+        };
+    }
     if lower.contains("terminal prompts disabled") {
         return "Credencial ausente ou expirada. Clique em «Conectar / Reautenticar» — \
                 o Git Credential Manager (GCM) abrirá a janela de login. \
@@ -161,9 +182,7 @@ mod tests {
 
     #[test]
     fn blame_de_arquivo_novo_vira_mensagem_amigavel() {
-        let err = GitError::from_git_stderr(
-            "fatal: no such path 'Docs/novo.md' in HEAD\n",
-        );
+        let err = GitError::from_git_stderr("fatal: no such path 'Docs/novo.md' in HEAD\n");
         let msg = err.to_string();
         assert!(!msg.contains("fatal"), "não deve vazar 'fatal:' cru: {msg}");
         assert!(!msg.contains("HEAD"), "não deve vazar termos crus: {msg}");
@@ -180,5 +199,24 @@ mod tests {
     fn falha_de_auth_e_classificada() {
         let err = GitError::from_git_stderr("fatal: Authentication failed for 'https://...'");
         assert!(err.is_auth());
+    }
+
+    /// Regressão: negação de acesso do GitHub via SSH não pode vazar crua.
+    #[test]
+    fn permissao_negada_no_remoto_vira_mensagem_acionavel() {
+        let err = GitError::from_git_stderr(
+            "ERROR: Permission to wiltonrabelo/Trilho.git denied to wiltonlopesrabelo.\n\
+             fatal: Could not read from remote repository.",
+        );
+        assert!(err.is_auth());
+        let msg = err.to_string();
+        assert!(
+            msg.contains("wiltonlopesrabelo"),
+            "deve dizer QUAL conta autenticou: {msg}"
+        );
+        assert!(
+            !msg.starts_with("ERROR"),
+            "não deve vazar stderr cru: {msg}"
+        );
     }
 }

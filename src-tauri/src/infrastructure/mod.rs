@@ -97,10 +97,7 @@ impl GitReader for MockGitReader {
         })
     }
 
-    fn list_commit_files(
-        &self,
-        _sha: &str,
-    ) -> Result<Vec<crate::domain::FileChange>, GitError> {
+    fn list_commit_files(&self, _sha: &str) -> Result<Vec<crate::domain::FileChange>, GitError> {
         use crate::domain::{FileChange, FileChangeKind};
         Ok(vec![
             FileChange {
