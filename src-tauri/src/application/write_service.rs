@@ -376,7 +376,7 @@ fn gate_push(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     let sync = ctx.reader().get_sync_info()?;
     if sync.upstream.is_none() {
         return Ok(Some(
-            "Branch sem upstream — configure com git branch -u antes do push.".into(),
+            "Branch sem upstream — use «Publicar» no Trilho para enviar esta branch.".into(),
         ));
     }
     if sync.ahead == 0 {
@@ -393,7 +393,9 @@ fn gate_push(ctx: &RepoContext) -> Result<Option<String>, GitError> {
 fn gate_pull(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     let sync = ctx.reader().get_sync_info()?;
     if sync.upstream.is_none() {
-        return Ok(Some("Branch sem upstream configurado.".into()));
+        return Ok(Some(
+            "Branch sem upstream — use «Publicar» no Trilho antes de puxar.".into(),
+        ));
     }
     if sync.behind == 0 {
         return Ok(Some(

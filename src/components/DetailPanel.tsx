@@ -18,8 +18,10 @@ interface DetailPanelProps {
   blameError?: string | null;
   onLineClick?: (lineNo: number) => void;
   canUncommit?: boolean;
+  canEditMessage?: boolean;
   onRevert?: () => void;
   onUncommit?: () => void;
+  onEditMessage?: () => void;
   /** Working tree: arquivo selecionado pode ir p/ stage ou sair do stage. */
   workingTreeFile?: boolean;
   showStageFile?: boolean;
@@ -41,8 +43,10 @@ export function DetailPanel({
   blameError,
   onLineClick,
   canUncommit,
+  canEditMessage,
   onRevert,
   onUncommit,
+  onEditMessage,
   workingTreeFile,
   showStageFile,
   showUnstageFile,
@@ -71,8 +75,24 @@ export function DetailPanel({
             {" · "}
             {new Date(commit.authoredAt).toLocaleString("pt-BR")}
           </p>
-          {(onRevert || (canUncommit && onUncommit)) && (
+          {commit.body && (
+            <p className="mt-2 whitespace-pre-wrap text-xs text-text">
+              {commit.body}
+            </p>
+          )}
+          {(onRevert ||
+            (canUncommit && onUncommit) ||
+            (canEditMessage && onEditMessage)) && (
             <div className="mt-2 flex flex-wrap gap-2">
+              {canEditMessage && onEditMessage && (
+                <button
+                  type="button"
+                  onClick={onEditMessage}
+                  className="rounded border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] text-accent hover:bg-accent/20"
+                >
+                  Editar mensagem
+                </button>
+              )}
               {onRevert && (
                 <button
                   type="button"
@@ -121,7 +141,8 @@ export function DetailPanel({
             )}
           </div>
         </div>
-      )}      {showBlame ? (
+      )}
+      {showBlame ? (
         <ResizableRows
           storageKey="trilho.rows.detail.v1"
           defaultTop={220}

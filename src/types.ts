@@ -8,6 +8,9 @@ export interface CommitDto {
 
   summary: string;
 
+  /** Corpo da mensagem (linhas após o resumo), se houver. */
+  body?: string | null;
+
   authorName: string;
 
   authoredAt: string;

@@ -31,6 +31,7 @@ function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [webOnly, setWebOnly] = useState(false);
   const [workingCopySelected, setWorkingCopySelected] = useState(true);
+  const [amendIntent, setAmendIntent] = useState(0);
   const [checkedPaths, setCheckedPaths] = useState<Set<string>>(() => new Set());
   const [publishOpen, setPublishOpen] = useState(false);
 
@@ -161,6 +162,12 @@ function App() {
     },
     [ops],
   );
+
+  const handleEditMessage = useCallback(() => {
+    if (!canAmend || writeDisabled) return;
+    setWorkingCopySelected(true);
+    setAmendIntent((n) => n + 1);
+  }, [canAmend, writeDisabled]);
 
   useEffect(() => {
     setWebOnly(!runningInTauri());
@@ -546,6 +553,15 @@ function App() {
                       <div className="shrink-0">
                         <CommitForm
                         canAmend={canAmend}
+                        amendSeed={
+                          headCommit
+                            ? {
+                                summary: headCommit.summary,
+                                body: headCommit.body ?? "",
+                              }
+                            : null
+                        }
+                        amendIntent={amendIntent}
                         busy={ops.loading && ops.pending?.kind === "commit"}
                         onCommit={(summary, body, amend) => {
                           void ops.request({
@@ -576,6 +592,17 @@ function App() {
                     blameError={blameError}
                     onLineClick={selectBlameLine}
                     canUncommit={canUncommit}
+                    canEditMessage={
+                      Boolean(
+                        selectedCommit &&
+                          headCommit &&
+                          selectedCommit.id === headCommit.id &&
+                          canAmend,
+                      ) && !writeDisabled
+                    }
+                    onEditMessage={
+                      canAmend && !writeDisabled ? handleEditMessage : undefined
+                    }
                     onRevert={
                       selectedCommit && !writeDisabled
                         ? () =>

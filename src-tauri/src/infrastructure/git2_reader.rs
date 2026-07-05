@@ -333,6 +333,19 @@ fn collect_ref_map(repo: &Repository) -> std::collections::HashMap<git2::Oid, Ve
     map
 }
 
+/// Corpo da mensagem (tudo após a primeira linha), sem linhas em branco nas pontas.
+fn commit_body(message: &str) -> Option<String> {
+    let mut lines = message.lines();
+    lines.next();
+    let rest: String = lines.collect::<Vec<_>>().join("\n");
+    let trimmed = rest.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 /// Monta o DTO de commit (comum a list_commits e à trilha dupla).
 fn build_commit(
     repo: &Repository,
@@ -353,7 +366,8 @@ fn build_commit(
                     .unwrap_or(true)
             }
         }
-        None => false,
+        // Sem upstream: alinhado com head_is_local_only — trata como local.
+        None => true,
     };
 
     let parent_ids: Vec<String> = (0..commit.parent_count())
@@ -361,6 +375,7 @@ fn build_commit(
         .collect();
 
     let summary = commit.summary().unwrap_or("(sem mensagem)").to_string();
+    let body = commit_body(commit.message().unwrap_or(""));
     let author_name = commit.author().name().unwrap_or("Desconhecido").to_string();
     let authored_at = oid_time_to_iso(&commit);
 
@@ -368,6 +383,7 @@ fn build_commit(
         id: oid.to_string(),
         short_id: format!("{:.7}", oid),
         summary,
+        body,
         author_name,
         authored_at,
         is_local_only,

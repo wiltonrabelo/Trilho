@@ -1,16 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+interface AmendSeed {
+  summary: string;
+  body: string;
+}
 
 interface CommitFormProps {
   canAmend: boolean;
+  /** Pré-preenche amend com a mensagem do HEAD. */
+  amendSeed?: AmendSeed | null;
+  /** Incrementa para abrir amend a partir de «Editar mensagem». */
+  amendIntent?: number;
   /** Só durante preview/execução de commit — não bloqueia por stage/unstage. */
   busy?: boolean;
   onCommit: (summary: string, body: string, amend: boolean) => void;
 }
 
-export function CommitForm({ canAmend, busy, onCommit }: CommitFormProps) {
+export function CommitForm({
+  canAmend,
+  amendSeed,
+  amendIntent = 0,
+  busy,
+  onCommit,
+}: CommitFormProps) {
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
   const [amend, setAmend] = useState(false);
+
+  function applyAmendSeed() {
+    if (!amendSeed) return;
+    setSummary(amendSeed.summary);
+    setBody(amendSeed.body);
+  }
+
+  useEffect(() => {
+    if (amendIntent > 0 && canAmend && amendSeed) {
+      setAmend(true);
+      applyAmendSeed();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage ao intent explícito
+  }, [amendIntent]);
+
+  function toggleAmend(checked: boolean) {
+    setAmend(checked);
+    if (checked && amendSeed) {
+      applyAmendSeed();
+    }
+  }
 
   function submit() {
     if (!summary.trim()) return;
@@ -49,7 +85,7 @@ export function CommitForm({ canAmend, busy, onCommit }: CommitFormProps) {
             <input
               type="checkbox"
               checked={amend}
-              onChange={(e) => setAmend(e.target.checked)}
+              onChange={(e) => toggleAmend(e.target.checked)}
               disabled={busy}
               className="rounded border-border"
             />

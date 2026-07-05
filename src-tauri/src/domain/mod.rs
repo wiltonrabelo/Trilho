@@ -16,6 +16,9 @@ pub struct Commit {
     pub id: String,
     pub short_id: String,
     pub summary: String,
+    /// Corpo da mensagem (linhas após o resumo), se houver.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
     pub author_name: String,
     /// Data/hora de autoria em ISO 8601.
     pub authored_at: String,
