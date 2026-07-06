@@ -7,6 +7,7 @@ interface AmendSeed {
 
 interface CommitFormProps {
   canAmend: boolean;
+  stagedCount: number;
   /** Explica por que amend não aparece (commit já enviado, etc.). */
   amendUnavailableReason?: string | null;
   /** Pré-preenche amend com a mensagem do HEAD. */
@@ -20,6 +21,7 @@ interface CommitFormProps {
 
 export function CommitForm({
   canAmend,
+  stagedCount,
   amendUnavailableReason,
   amendSeed,
   amendIntent = 0,
@@ -53,6 +55,7 @@ export function CommitForm({
 
   function submit() {
     if (!summary.trim()) return;
+    if (!amend && stagedCount === 0) return;
     onCommit(summary.trim(), body.trim(), amend);
     if (!amend) {
       setSummary("");
@@ -60,6 +63,9 @@ export function CommitForm({
     }
     setAmend(false);
   }
+
+  const canSubmit =
+    Boolean(summary.trim()) && (amend || stagedCount > 0);
 
   return (
     <div className="border-t border-border bg-surface px-3 py-2">
@@ -103,12 +109,20 @@ export function CommitForm({
           <button
             type="button"
             onClick={submit}
-            disabled={busy || !summary.trim()}
+            disabled={busy || !canSubmit}
             className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             {amend ? "Amend" : "Commit"}
           </button>
         </div>
+        {!amend && stagedCount === 0 && (
+          <p className="text-[10px] leading-snug text-muted">
+            Nenhum arquivo em stage — adicione alterações antes de commitar.
+            {canAmend
+              ? " Ou marque Amend para alterar só a mensagem do último commit."
+              : ""}
+          </p>
+        )}
         {!canAmend && amendUnavailableReason && (
           <p className="text-[10px] leading-snug text-muted">
             {amendUnavailableReason}

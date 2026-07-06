@@ -683,6 +683,7 @@ function App() {
                       <div className="shrink-0">
                         <CommitForm
                         canAmend={canAmend}
+                        stagedCount={status?.staged.length ?? 0}
                         amendUnavailableReason={amendUnavailableReason}
                         amendSeed={
                           headCommit

@@ -109,6 +109,15 @@ pub fn preview_write(
                 amend: *amend,
             };
             let blocked = if *amend { gate_amend(ctx)? } else { None };
+            if !*amend {
+                let staged_count = ctx.reader().get_status()?.staged.len();
+                if staged_count == 0 {
+                    return Ok(blocked_preview(
+                        repo_path,
+                        "Nenhum arquivo em stage — adicione alterações antes de commitar.",
+                    ));
+                }
+            }
             // Honestidade do RF-08: --amend também absorve o que estiver em
             // staging — a descrição não pode falar só em "mensagem".
             let description = if *amend {
@@ -568,6 +577,30 @@ mod tests {
             preview.description.contains("INCLUI"),
             "descrição deve avisar staging: {}",
             preview.description
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn commit_sem_stage_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-commit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Commit {
+                summary: "vazio".into(),
+                body: None,
+                amend: false,
+            },
+        )
+        .expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "commit sem stage deve bloquear preview"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
