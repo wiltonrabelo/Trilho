@@ -6,7 +6,7 @@ import {
   previewCloneRemote,
   runningInTauri,
 } from "@/lib/api";
-import type { CloneRequestDto, OperationPreviewDto, RepoInfo } from "@/types";
+import type { CloneFormValues, CloneRequestDto, OperationPreviewDto, RepoInfo } from "@/types";
 
 export function useClone(onSuccess: (info: RepoInfo) => Promise<void>) {
   const [cloneOpen, setCloneOpen] = useState(false);
@@ -43,10 +43,16 @@ export function useClone(onSuccess: (info: RepoInfo) => Promise<void>) {
   }, [loading]);
 
   const requestClone = useCallback(
-    async (url: string, parentDir: string, folderName: string) => {
+    async (values: CloneFormValues) => {
       setLoading(true);
       setError(null);
-      const request: CloneRequestDto = { url, parentDir, folderName };
+      const request: CloneRequestDto = {
+        url: values.url,
+        parentDir: values.parentDir,
+        folderName: values.folderName,
+        branch: values.branch,
+        depth: values.depth,
+      };
       try {
         const p = await previewCloneRemote(request);
         setPreview(p);

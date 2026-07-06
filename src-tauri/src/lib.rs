@@ -24,6 +24,7 @@ pub fn run() {
             commands::close_repo,
             commands::get_repo_info,
             commands::get_recent_repos,
+            commands::remove_recent_repo,
             commands::list_commits,
             commands::get_repo_status,
             commands::get_file_diff,
@@ -39,6 +40,7 @@ pub fn run() {
             commands::preview_write_operation,
             commands::execute_write_operation,
             commands::preview_clone_remote,
+            commands::list_clone_remote_branches,
             commands::execute_clone_remote,
         ])
         .run(tauri::generate_context!())

@@ -54,6 +54,9 @@ export interface RepoInfo {
 
   hasCommits: boolean;
 
+  /** Clone raso — histórico incompleto até completar. */
+  isShallow: boolean;
+
 }
 
 
@@ -174,10 +177,21 @@ export type WriteRequestDto =
   | { kind: "revert"; commitId: string }
   | { kind: "push" }
   | { kind: "pullFfOnly" }
+  | { kind: "unshallowHistory" }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {
   url: string;
   parentDir: string;
   folderName: string;
+  branch?: string | null;
+  depth?: number | null;
+}
+
+export interface CloneFormValues {
+  url: string;
+  parentDir: string;
+  folderName: string;
+  branch: string | null;
+  depth: number | null;
 }

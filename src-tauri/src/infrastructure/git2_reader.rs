@@ -337,6 +337,7 @@ pub fn repo_info(repo_path: &str) -> Result<crate::domain::RepoInfo, GitError> {
         remote_url,
         is_detached,
         has_commits,
+        is_shallow: repo.is_shallow(),
     })
 }
 

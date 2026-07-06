@@ -4,14 +4,40 @@ import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { useDialogA11y } from "@/hooks/useDialogA11y";
-import { repoNameFromUrl, runningInTauri } from "@/lib/api";
+import {
+  listCloneRemoteBranches,
+  repoNameFromUrl,
+  runningInTauri,
+} from "@/lib/api";
+
+import type { CloneFormValues } from "@/types";
 
 interface CloneDialogProps {
   open: boolean;
   loading?: boolean;
   error?: string | null;
   onCancel: () => void;
-  onContinue: (url: string, parentDir: string, folderName: string) => void;
+  onContinue: (values: CloneFormValues) => void;
+}
+
+const HOST_TEMPLATES = {
+  github: "https://github.com/usuario/repositorio.git",
+  gitlab: "https://gitlab.com/usuario/repositorio.git",
+} as const;
+
+function looksLikeRemoteUrl(url: string): boolean {
+  const u = url.trim();
+  return u.startsWith("https://") || u.startsWith("git@");
+}
+
+/** Modelo dos atalhos — ainda não é URL real; não dispara ls-remote. */
+function isHostTemplateUrl(url: string): boolean {
+  const u = url.trim().toLowerCase();
+  return (
+    u === HOST_TEMPLATES.github.toLowerCase() ||
+    u === HOST_TEMPLATES.gitlab.toLowerCase() ||
+    u.includes("/usuario/repositorio")
+  );
 }
 
 export function CloneDialog({
@@ -24,6 +50,12 @@ export function CloneDialog({
   const [url, setUrl] = useState("");
   const [parentDir, setParentDir] = useState("");
   const [folderName, setFolderName] = useState("");
+  const [branch, setBranch] = useState<string | null>(null);
+  const [shallow, setShallow] = useState(false);
+  const [depth, setDepth] = useState("1");
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
   const folderTouched = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -34,6 +66,11 @@ export function CloneDialog({
       setUrl("");
       setParentDir("");
       setFolderName("");
+      setBranch(null);
+      setShallow(false);
+      setDepth("1");
+      setBranches([]);
+      setBranchesError(null);
       folderTouched.current = false;
     }
   }, [isOpen]);
@@ -43,6 +80,38 @@ export function CloneDialog({
       setFolderName(repoNameFromUrl(url));
     }
   }, [url]);
+
+  useEffect(() => {
+    if (
+      !isOpen ||
+      !runningInTauri() ||
+      !looksLikeRemoteUrl(url) ||
+      isHostTemplateUrl(url)
+    ) {
+      setBranches([]);
+      setBranchesError(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setBranchesLoading(true);
+      setBranchesError(null);
+      void listCloneRemoteBranches(url.trim())
+        .then((list) => {
+          setBranches(list);
+          setBranch((current) =>
+            current && list.includes(current) ? current : null,
+          );
+        })
+        .catch((e) => {
+          setBranches([]);
+          setBranchesError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => setBranchesLoading(false));
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [isOpen, url]);
 
   if (!isOpen) return null;
 
@@ -61,13 +130,37 @@ export function CloneDialog({
     }
   }
 
+  function applyHostTemplate(template: string) {
+    setUrl(template);
+    folderTouched.current = false;
+  }
+
   function submit() {
     const u = url.trim();
     const p = parentDir.trim();
     const f = folderName.trim();
     if (!u || !p || !f) return;
-    onContinue(u, p, f);
+
+    let depthValue: number | null = null;
+    if (shallow) {
+      const parsed = Number.parseInt(depth, 10);
+      if (!Number.isFinite(parsed) || parsed < 1) return;
+      depthValue = parsed;
+    }
+
+    onContinue({
+      url: u,
+      parentDir: p,
+      folderName: f,
+      branch,
+      depth: depthValue,
+    });
   }
+
+  const depthInvalid =
+    shallow &&
+    (!Number.isFinite(Number.parseInt(depth, 10)) ||
+      Number.parseInt(depth, 10) < 1);
 
   return (
     <div
@@ -86,11 +179,38 @@ export function CloneDialog({
           </h2>
         </div>
 
-        <div className="space-y-3 px-4 py-3 text-sm">
+        <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-3 text-sm">
           <p className="text-xs text-muted">
             Baixe um repositório remoto e abra-o no Trilho. Na primeira vez pode
             abrir o login do GitHub (GCM).
           </p>
+
+          <div>
+            <div className="mb-1.5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => applyHostTemplate(HOST_TEMPLATES.github)}
+                disabled={loading}
+                title="Preenche o modelo de URL do GitHub"
+                className="rounded border border-border px-2 py-1 text-[11px] text-muted hover:bg-bg hover:text-text disabled:opacity-50"
+              >
+                GitHub
+              </button>
+              <button
+                type="button"
+                onClick={() => applyHostTemplate(HOST_TEMPLATES.gitlab)}
+                disabled={loading}
+                title="Preenche o modelo de URL do GitLab"
+                className="rounded border border-border px-2 py-1 text-[11px] text-muted hover:bg-bg hover:text-text disabled:opacity-50"
+              >
+                GitLab
+              </button>
+            </div>
+            <p className="text-[11px] text-muted">
+              Atalhos só preenchem o modelo — edite usuário e repositório na URL.
+            </p>
+          </div>
+
           <label className="block text-xs text-muted">
             URL do repositório
             <input
@@ -103,6 +223,35 @@ export function CloneDialog({
               autoFocus
             />
           </label>
+
+          <label className="block text-xs text-muted">
+            Branch inicial
+            <select
+              value={branch ?? ""}
+              onChange={(e) =>
+                setBranch(e.target.value ? e.target.value : null)
+              }
+              disabled={loading || branchesLoading || !looksLikeRemoteUrl(url)}
+              className="mt-1 w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-accent/40 disabled:opacity-50"
+            >
+              <option value="">
+                {branchesLoading
+                  ? "Carregando branches…"
+                  : "Padrão do remoto"}
+              </option>
+              {branches.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+            {branchesError && !isHostTemplateUrl(url) && (
+              <span className="mt-1 block text-[11px] text-amber-600">
+                Não foi possível listar branches — será usada a branch padrão.
+              </span>
+            )}
+          </label>
+
           <label className="block text-xs text-muted">
             Pasta de destino
             <div className="mt-1 flex gap-2">
@@ -124,6 +273,7 @@ export function CloneDialog({
               </button>
             </div>
           </label>
+
           <label className="block text-xs text-muted">
             Nome da pasta
             <input
@@ -137,6 +287,38 @@ export function CloneDialog({
               className="mt-1 w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 disabled:opacity-50"
             />
           </label>
+
+          <details className="rounded border border-border px-2 py-2 text-xs">
+            <summary className="cursor-pointer font-medium text-muted">
+              Avançado
+            </summary>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-center gap-2 text-muted">
+                <input
+                  type="checkbox"
+                  checked={shallow}
+                  onChange={(e) => setShallow(e.target.checked)}
+                  disabled={loading}
+                  className="rounded border-border"
+                />
+                Clone raso (shallow)
+              </label>
+              {shallow && (
+                <label className="block text-muted">
+                  Profundidade
+                  <input
+                    type="number"
+                    min={1}
+                    value={depth}
+                    onChange={(e) => setDepth(e.target.value)}
+                    disabled={loading}
+                    className="mt-1 w-full rounded border border-border bg-bg px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-accent/40 disabled:opacity-50"
+                  />
+                </label>
+              )}
+            </div>
+          </details>
+
           {error && (
             <p className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-xs text-red-500">
               {error}
@@ -156,7 +338,13 @@ export function CloneDialog({
           <button
             type="button"
             onClick={submit}
-            disabled={loading || !url.trim() || !parentDir.trim() || !folderName.trim()}
+            disabled={
+              loading ||
+              !url.trim() ||
+              !parentDir.trim() ||
+              !folderName.trim() ||
+              depthInvalid
+            }
             className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             <Download size={14} />

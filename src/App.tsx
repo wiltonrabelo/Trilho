@@ -44,6 +44,8 @@ function App() {
     open,
     close,
     refreshStatus,
+    refreshRecents,
+    removeRecent,
     selectedFile,
     fileDiff,
     fileLoading,
@@ -140,10 +142,24 @@ function App() {
   const onCloneSuccess = useCallback(
     async (info: Awaited<ReturnType<typeof getRepoInfo>>) => {
       setRepo(info);
-      await Promise.all([refreshCommits(), refreshStatus(), syncRefresh(), refreshOrigin()]);
+      await Promise.all([
+        refreshCommits(),
+        refreshStatus(),
+        syncRefresh(),
+        refreshOrigin(),
+        refreshRecents(),
+      ]);
       refreshCredential();
     },
-    [setRepo, refreshCommits, refreshStatus, syncRefresh, refreshOrigin, refreshCredential],
+    [
+      setRepo,
+      refreshCommits,
+      refreshStatus,
+      syncRefresh,
+      refreshOrigin,
+      refreshRecents,
+      refreshCredential,
+    ],
   );
 
   const clone = useClone(onCloneSuccess);
@@ -298,7 +314,9 @@ function App() {
             ? "Confirmar clone"
             : ops.pending?.kind === "publish"
               ? "Confirmar publicação"
-              : undefined
+              : ops.pending?.kind === "unshallowHistory"
+                ? "Completar histórico"
+                : undefined
         }
       />
       <CloneDialog
@@ -306,9 +324,7 @@ function App() {
         loading={clone.loading}
         error={clone.error}
         onCancel={clone.cancelCloneDialog}
-        onContinue={(url, parentDir, folderName) =>
-          void clone.requestClone(url, parentDir, folderName)
-        }
+        onContinue={(values) => void clone.requestClone(values)}
       />
       <PublishDialog
         open={publishOpen}
@@ -356,6 +372,7 @@ function App() {
               branch={repo.branch}
               hasRemote={repo.hasRemote}
               upstreamConfigured={Boolean(repo.upstream || sync?.upstream)}
+              isShallow={repo.isShallow}
               writeDisabled={writeDisabled}
               onFetch={fetch}
               onPublish={
@@ -370,6 +387,11 @@ function App() {
                 writeDisabled
                   ? undefined
                   : () => void ops.request({ kind: "pullFfOnly" })
+              }
+              onUnshallow={
+                writeDisabled
+                  ? undefined
+                  : () => void ops.request({ kind: "unshallowHistory" })
               }
               loading={fetchLoading}
               pushLoading={ops.loading}
@@ -421,6 +443,9 @@ function App() {
             <RepoPicker
               recentRepos={recentRepos}
               onOpen={handleOpenRepo}
+              onRemoveRecent={
+                runningInTauri() ? (path) => void removeRecent(path) : undefined
+              }
               onClone={runningInTauri() ? clone.openClone : undefined}
               loading={repoLoading}
             />
@@ -435,6 +460,11 @@ function App() {
                 <RepoPicker
                   recentRepos={recentRepos}
                   onOpen={handleOpenRepo}
+                  onRemoveRecent={
+                    runningInTauri()
+                      ? (path) => void removeRecent(path)
+                      : undefined
+                  }
                   onClone={runningInTauri() ? clone.openClone : undefined}
                   loading={repoLoading}
                 />

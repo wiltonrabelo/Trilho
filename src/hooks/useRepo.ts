@@ -6,6 +6,7 @@ import {
   getRecentRepos,
   getRepoStatus,
   openRepo,
+  removeRecentRepo,
 } from "@/lib/api";
 import type { RepoInfo, RepoStatusDto } from "@/types";
 
@@ -88,6 +89,18 @@ export function useRepo() {
     setStatus(await getRepoStatus());
   }, [repo]);
 
+  const refreshRecents = useCallback(async () => {
+    setRecentRepos(await getRecentRepos());
+  }, []);
+
+  const removeRecent = useCallback(
+    async (path: string) => {
+      await removeRecentRepo(path);
+      await refreshRecents();
+    },
+    [refreshRecents],
+  );
+
   async function open(path: string) {
     setLoading(true);
     setError(null);
@@ -96,12 +109,12 @@ export function useRepo() {
       setRepo(repoInfo);
       setSelectedFile(null);
       setFileDiff(null);
-      const recents = await getRecentRepos();
-      setRecentRepos(recents);
+      await refreshRecents();
       setStatus(await getRepoStatus());
       return repoInfo;
     } catch (e) {
       setError(String(e));
+      await refreshRecents();
       throw e;
     } finally {
       setLoading(false);
@@ -153,6 +166,8 @@ export function useRepo() {
     open,
     close,
     refreshStatus,
+    refreshRecents,
+    removeRecent,
     selectedFile,
     fileDiff,
     fileLoading,

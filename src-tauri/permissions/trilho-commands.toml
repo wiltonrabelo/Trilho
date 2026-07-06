@@ -17,6 +17,7 @@ commands.allow = [
   "close_repo",
   "get_repo_info",
   "get_recent_repos",
+  "remove_recent_repo",
   "list_commits",
   "get_repo_status",
   "get_file_diff",
@@ -32,5 +33,6 @@ commands.allow = [
   "preview_write_operation",
   "execute_write_operation",
   "preview_clone_remote",
+  "list_clone_remote_branches",
   "execute_clone_remote",
 ]

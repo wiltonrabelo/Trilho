@@ -2,7 +2,8 @@
 
 use crate::application::operations::{
     AddRemote, CreateCommit, GitOperation, PullFfOnly, PushSetUpstream, PushUpstream, RevertCommit,
-    SetRemoteUrl, Stage, StageAll, StageMany, UncommitSoft, Unstage, UnstageAll, UnstageMany,
+    SetRemoteUrl, Stage, StageAll, StageMany, UncommitSoft, UnshallowRemote, Unstage, UnstageAll,
+    UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, RepoContext};
@@ -153,6 +154,11 @@ pub fn preview_write(
             let blocked = gate_pull(ctx)?;
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
+        WriteRequest::UnshallowHistory => {
+            let op = UnshallowRemote;
+            let blocked = gate_unshallow(ctx)?;
+            (ctx.preview_op(&op), op.description().to_string(), blocked)
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -219,6 +225,9 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         }
         WriteRequest::PullFfOnly => {
             ctx.execute_op(&PullFfOnly)?;
+        }
+        WriteRequest::UnshallowHistory => {
+            ctx.execute_op(&UnshallowRemote)?;
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -436,6 +445,19 @@ fn gate_pull(ctx: &RepoContext) -> Result<Option<String>, GitError> {
         return Ok(Some(
             "Já está em dia com o remoto (nada para puxar).".into(),
         ));
+    }
+    Ok(None)
+}
+
+fn gate_unshallow(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    let info = repo_info(ctx.repo_path())?;
+    if !info.has_remote {
+        return Ok(Some(
+            "Sem remoto configurado — não é possível completar o histórico.".into(),
+        ));
+    }
+    if !info.is_shallow {
+        return Ok(Some("O histórico local já está completo.".into()));
     }
     Ok(None)
 }

@@ -62,6 +62,8 @@ pub struct RepoInfo {
     pub remote_url: Option<String>,
     pub is_detached: bool,
     pub has_commits: bool,
+    /// Clone raso (`git clone --depth`) — histórico incompleto até `fetch --unshallow`.
+    pub is_shallow: bool,
 }
 
 /// Classificação de alteração de arquivo (RF-04).

@@ -1,4 +1,4 @@
-import { Download, FolderOpen, History } from "lucide-react";
+import { Download, FolderOpen, History, X } from "lucide-react";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -7,6 +7,7 @@ import { runningInTauri } from "@/lib/api";
 interface RepoPickerProps {
   recentRepos: string[];
   onOpen: (path: string) => void;
+  onRemoveRecent?: (path: string) => void;
   onClone?: () => void;
   loading?: boolean;
 }
@@ -14,6 +15,7 @@ interface RepoPickerProps {
 export function RepoPicker({
   recentRepos,
   onOpen,
+  onRemoveRecent,
   onClone,
   loading,
 }: RepoPickerProps) {
@@ -65,20 +67,35 @@ export function RepoPicker({
             Recentes
           </div>
           <ul className="space-y-1">
-            {recentRepos.map((path) => (
-              <li key={path}>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => onOpen(path)}
-                  aria-label={`Abrir repositório ${path}`}
-                  className="w-full truncate rounded px-2 py-1.5 text-left text-xs hover:bg-surface"
-                  title={path}
-                >
-                  {path.split(/[/\\]/).pop() ?? path}
-                </button>
-              </li>
-            ))}
+            {recentRepos.map((path) => {
+              const name = path.split(/[/\\]/).pop() ?? path;
+              return (
+                <li key={path} className="group flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => onOpen(path)}
+                    aria-label={`Abrir repositório ${path}`}
+                    className="min-w-0 flex-1 truncate rounded px-2 py-1.5 text-left text-xs hover:bg-surface"
+                    title={path}
+                  >
+                    {name}
+                  </button>
+                  {onRemoveRecent && (
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => onRemoveRecent(path)}
+                      aria-label={`Remover ${name} dos recentes`}
+                      title="Remover dos recentes"
+                      className="shrink-0 rounded p-1 text-muted hover:bg-surface hover:text-red-500 disabled:opacity-50"
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

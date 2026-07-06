@@ -8,7 +8,7 @@ mod repo_context;
 mod write_gates;
 mod write_service;
 
-pub use clone_service::{execute_clone, preview_clone};
+pub use clone_service::{execute_clone, list_clone_remote_branches, preview_clone};
 pub use app_state::AppState;
 pub use branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};
 pub use operations::{
@@ -53,6 +53,9 @@ impl GitError {
         if is_auth_failure(&lower) {
             return GitError::Auth(auth_action_message(&lower));
         }
+        if is_network_failure(&lower) {
+            return GitError::Git(network_action_message());
+        }
         GitError::Git(map_git_stderr(stderr))
     }
 
@@ -73,6 +76,29 @@ fn is_auth_failure(lower: &str) -> bool {
         || lower.contains("support for password authentication was removed")
         // GitHub via SSH: "ERROR: Permission to owner/repo.git denied to user."
         || (lower.contains("permission to") && lower.contains("denied"))
+}
+
+fn is_network_failure(lower: &str) -> bool {
+    lower.contains("could not resolve host")
+        || lower.contains("failed to resolve")
+        || lower.contains("name or service not known")
+        || lower.contains("no address associated with hostname")
+        || lower.contains("temporary failure in name resolution")
+        || lower.contains("connection refused")
+        || lower.contains("failed to connect")
+        || lower.contains("unable to connect")
+        || lower.contains("network is unreachable")
+        || lower.contains("connection timed out")
+        || lower.contains("operation timed out")
+        || lower.contains("curl: (6)")
+        || lower.contains("curl: (7)")
+        || lower.contains("curl: (28)")
+}
+
+fn network_action_message() -> String {
+    "Sem conexão com a internet ou o servidor Git está inacessível. \
+     Verifique sua rede e tente «Fetch» novamente quando estiver online."
+        .into()
 }
 
 /// Mensagem acionável para RF-10 parcial (MVP §4).
@@ -197,6 +223,23 @@ mod tests {
     fn stderr_generico_perde_prefixo_tecnico() {
         let err = GitError::from_git_stderr("fatal: bad revision 'zzz'\n");
         assert_eq!(err.to_string(), "bad revision 'zzz'");
+    }
+
+    #[test]
+    fn falha_de_rede_vira_mensagem_acionavel() {
+        let err = GitError::from_git_stderr(
+            "fatal: unable to access 'https://github.com/u/r.git/': \
+             Could not resolve host: github.com\n",
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("internet") || msg.contains("rede"),
+            "deve orientar sobre rede: {msg}"
+        );
+        assert!(
+            !msg.contains("resolve host"),
+            "não deve vazar stderr cru: {msg}"
+        );
     }
 
     #[test]

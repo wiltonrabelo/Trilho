@@ -20,6 +20,12 @@ pub struct CloneRequest {
     pub url: String,
     pub parent_dir: String,
     pub folder_name: String,
+    /// Branch inicial (`git clone --branch`). `None` = padrão do remoto.
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// Profundidade shallow (`git clone --depth`). `None` = clone completo.
+    #[serde(default)]
+    pub depth: Option<u32>,
 }
 
 /// Pedido de operação de escrita — espelha o frontend.
@@ -49,10 +55,13 @@ pub enum WriteRequest {
     },
     Uncommit,
     Revert {
+        #[serde(rename = "commitId")]
         commit_id: String,
     },
     Push,
     PullFfOnly,
+    /// Completa clone raso (`git fetch --unshallow`).
+    UnshallowHistory,
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o
@@ -65,6 +74,20 @@ pub enum WriteRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revert_deserializa_commit_id_camel_case() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"revert","commitId":"abcdef0123456789abcdef0123456789abcdef01"}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::Revert { commit_id } => {
+                assert_eq!(commit_id.len(), 40);
+            }
+            _ => panic!("variant errada"),
+        }
+    }
 
     #[test]
     fn publish_deserializa_url() {

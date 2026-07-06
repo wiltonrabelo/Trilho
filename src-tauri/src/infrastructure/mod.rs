@@ -15,7 +15,8 @@ pub use git2_reader::{repo_info, Git2Reader};
 pub use git_cli::{defensive_config_args, SafeGitCli};
 pub use repo_watcher::RepoWatcher;
 pub use validation::{
-    repo_name_from_url, validate_clone_destination, validate_folder_name, validate_git_object_id,
+    repo_name_from_url, validate_clone_branch, validate_clone_depth, validate_clone_destination,
+    validate_folder_name, validate_git_object_id,
     validate_remote_url, validate_repo_relative_path,
 };
 

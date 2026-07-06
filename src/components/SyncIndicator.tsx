@@ -7,11 +7,13 @@ interface SyncIndicatorProps {
   branch?: string | null;
   hasRemote?: boolean;
   upstreamConfigured?: boolean;
+  isShallow?: boolean;
   writeDisabled?: boolean;
   onFetch: () => void;
   onPublish?: () => void;
   onPush?: () => void;
   onPull?: () => void;
+  onUnshallow?: () => void;
   loading?: boolean;
   pushLoading?: boolean;
   error?: string | null;
@@ -34,11 +36,13 @@ export function SyncIndicator({
   branch,
   hasRemote = false,
   upstreamConfigured = false,
+  isShallow = false,
   writeDisabled,
   onFetch,
   onPublish,
   onPush,
   onPull,
+  onUnshallow,
   loading,
   pushLoading,
   error,
@@ -94,6 +98,19 @@ export function SyncIndicator({
             Pull ↓{sync!.behind}
           </button>
         )}
+        {isShallow && onUnshallow && (
+          <button
+            type="button"
+            onClick={onUnshallow}
+            disabled={busy}
+            aria-label="Completar histórico do clone raso"
+            className="flex items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-300"
+            title="git fetch --unshallow — baixa todo o histórico"
+          >
+            <RefreshCw size={14} />
+            Completar histórico
+          </button>
+        )}
         {showPush && (
           <button
             type="button"
@@ -134,6 +151,12 @@ export function SyncIndicator({
           ? `Baseado na última sync: ${lastSync}`
           : "Ainda não sincronizado — status local"}
       </span>
+      {isShallow && (
+        <span className="text-amber-600 dark:text-amber-400">
+          Clone raso — só parte do histórico está local. Use «Completar histórico»
+          para baixar o restante.
+        </span>
+      )}
       {needsPublish && (
         <span className="text-amber-600 dark:text-amber-400">
           {hasRemote

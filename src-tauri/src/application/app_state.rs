@@ -23,7 +23,11 @@ impl AppState {
         let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
         let recents_file = data_dir.join("recent_repos.json");
-        let recent_repos = load_recents(&recents_file);
+        let loaded = load_recents(&recents_file);
+        let recent_repos = prune_recents_list(loaded.clone());
+        if recent_repos.len() != loaded.len() {
+            let _ = save_recents_file(&recents_file, &recent_repos);
+        }
 
         Ok(Self {
             repo_path: Mutex::new(None),
@@ -85,10 +89,29 @@ impl AppState {
     }
 
     pub fn recent_repos(&self) -> Vec<String> {
-        self.recent_repos
+        let Ok(mut recents) = self.recent_repos.lock() else {
+            return Vec::new();
+        };
+        let before = recents.len();
+        recents.retain(|p| validate_git_repo(p).is_ok());
+        if recents.len() != before {
+            let _ = save_recents_file(&self.recents_file, &recents);
+        }
+        recents.clone()
+    }
+
+    pub fn remove_recent(&self, path: &str) -> Result<(), String> {
+        let mut recents = self
+            .recent_repos
             .lock()
-            .map(|r| r.clone())
-            .unwrap_or_default()
+            .map_err(|_| "Estado indisponível.".to_string())?;
+        let before = recents.len();
+        recents.retain(|p| p != path);
+        if recents.len() != before {
+            drop(recents);
+            self.save_recents()?;
+        }
+        Ok(())
     }
 
     pub fn validate_path(path: &str) -> Result<(), String> {
@@ -135,8 +158,7 @@ impl AppState {
             .recent_repos
             .lock()
             .map_err(|_| "Estado indisponível.".to_string())?;
-        let json = serde_json::to_string_pretty(&*recents).map_err(|e| e.to_string())?;
-        std::fs::write(&self.recents_file, json).map_err(|e| e.to_string())
+        save_recents_file(&self.recents_file, &recents)
     }
 }
 
@@ -145,6 +167,18 @@ fn load_recents(path: &PathBuf) -> Vec<String> {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn prune_recents_list(recents: Vec<String>) -> Vec<String> {
+    recents
+        .into_iter()
+        .filter(|p| validate_git_repo(p).is_ok())
+        .collect()
+}
+
+fn save_recents_file(path: &PathBuf, recents: &[String]) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(recents).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
 }
 
 fn validate_git_repo(path: &str) -> Result<(), String> {
@@ -173,5 +207,19 @@ mod tests {
         let err = validate_git_repo(dir.to_str().unwrap()).expect_err("sem git");
         assert!(err.contains("repositório Git"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prune_recents_remove_pasta_inexistente() {
+        let valid = std::env::temp_dir().join(format!("trilho-valid-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(valid.join(".git"));
+        let recents = vec![
+            valid.to_string_lossy().into_owned(),
+            format!("C:\\Projetos\\GitTeste-apagado-{}", std::process::id()),
+        ];
+        let pruned = prune_recents_list(recents);
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(pruned[0], valid.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&valid);
     }
 }

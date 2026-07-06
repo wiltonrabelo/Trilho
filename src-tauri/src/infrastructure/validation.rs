@@ -85,6 +85,28 @@ pub fn validate_folder_name(name: &str) -> Result<String, GitError> {
     Ok(trimmed.to_string())
 }
 
+/// Branch inicial do clone (`--branch`).
+pub fn validate_clone_branch(branch: Option<&str>) -> Result<Option<String>, GitError> {
+    match branch.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(None),
+        Some(b) if b.contains("..") || b.contains('\\') || b.contains(' ') || b.starts_with('-') => {
+            Err(GitError::Git("Nome de branch inválido.".into()))
+        }
+        Some(b) => Ok(Some(b.to_string())),
+    }
+}
+
+/// Profundidade shallow (`--depth`).
+pub fn validate_clone_depth(depth: Option<u32>) -> Result<Option<u32>, GitError> {
+    match depth {
+        None => Ok(None),
+        Some(0) => Err(GitError::Git(
+            "Profundidade do clone deve ser pelo menos 1.".into(),
+        )),
+        Some(d) => Ok(Some(d)),
+    }
+}
+
 /// Destino do clone: não pode existir ou deve ser diretório vazio.
 pub fn validate_clone_destination(path: &std::path::Path) -> Result<(), GitError> {
     if !path.exists() {

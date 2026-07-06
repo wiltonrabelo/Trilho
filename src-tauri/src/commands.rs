@@ -1,8 +1,9 @@
 //! Comandos IPC expostos ao frontend — fachada fina sobre casos de uso.
 
 use crate::application::{
-    execute_clone, execute_write, preview_clone, preview_write, AppState, CommitFileDiff,
-    FetchRemote, FileDiff, GitError, RepoContext, ShowCommit, TrailReader,
+    execute_clone, execute_write, list_clone_remote_branches as fetch_clone_remote_branches,
+    preview_clone, preview_write, AppState, CommitFileDiff, FetchRemote, FileDiff, GitError,
+    RepoContext, ShowCommit, TrailReader,
 };
 use crate::domain::{CloneRequest, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
@@ -56,7 +57,10 @@ pub async fn open_repo(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
-    state.set_repo(path.clone(), &app)?;
+    if let Err(e) = state.set_repo(path.clone(), &app) {
+        let _ = state.remove_recent(&path);
+        return Err(e);
+    }
     repo_info(&path).map_err(|e| e.to_string())
 }
 
@@ -75,6 +79,11 @@ pub fn get_repo_info(state: State<AppState>) -> Result<RepoInfo, String> {
 #[tauri::command]
 pub fn get_recent_repos(state: State<AppState>) -> Vec<String> {
     state.recent_repos()
+}
+
+#[tauri::command]
+pub fn remove_recent_repo(path: String, state: State<AppState>) -> Result<(), String> {
+    state.remove_recent(&path)
 }
 
 #[tauri::command]
@@ -263,6 +272,15 @@ pub async fn execute_write_operation(
         .map_err(|e: GitError| e.to_string())?;
     let _ = app.emit("repo-changed", ());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_clone_remote_branches(url: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_clone_remote_branches(&url).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Listagem de branches interrompida: {e}"))?
 }
 
 #[tauri::command]

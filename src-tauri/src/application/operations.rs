@@ -361,9 +361,36 @@ impl GitOperation for PullFfOnly {
     }
 }
 
+/// Completa clone raso — baixa todo o histórico do remoto (RF-22).
+pub struct UnshallowRemote;
+
+impl GitOperation for UnshallowRemote {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "fetch".into(),
+                "--unshallow".into(),
+                "--prune".into(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Baixa o histórico completo do remoto (completa clone raso)."
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unshallow_preview_estavel() {
+        let op = UnshallowRemote;
+        assert_eq!(
+            op.command().args,
+            vec!["fetch", "--unshallow", "--prune"]
+        );
+    }
 
     #[test]
     fn fetch_preview_estavel() {

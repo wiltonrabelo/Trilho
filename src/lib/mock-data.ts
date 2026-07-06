@@ -27,6 +27,8 @@ export const MOCK_REPO: RepoInfo = {
 
   hasCommits: true,
 
+  isShallow: false,
+
 };
 
 

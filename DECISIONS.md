@@ -207,10 +207,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 1. Checklist README — SysPDV >5k commits + fluxos críticos
 2. Certificado EV para instalador assinado
 
-## Backlog F3 — RF-22 Clone remoto 🚧 (recorte 1 em andamento)
+## Backlog F3 — RF-22 Clone remoto 🚧
 
 - [x] **Recorte 1** — URL + destino + nome + `git clone --progress` + preview RF-08 + abrir repo + progresso (`clone-progress`)
-- [ ] **Recorte 2** — seletor de branch (`ls-remote`), shallow clone
+- [x] **Recorte 2** — seletor de branch (`ls-remote`), shallow clone, atalhos GitHub/GitLab
+- [x] **Completar histórico** — `fetch --unshallow` na barra de sync (clone raso)
 - [ ] **Checklist pós-clone** — validar upstream/hasRemote em clone real (anti-regressão Publicar)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)

@@ -104,6 +104,11 @@ export async function getRecentRepos(): Promise<string[]> {
 
 }
 
+export async function removeRecentRepo(path: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("remove_recent_repo", { path });
+}
+
 
 
 export async function listCommits(
@@ -351,6 +356,13 @@ export function repoNameFromUrl(url: string): string {
   const segment = trimmed.split(/[/:]/).pop() ?? "";
   const name = segment.replace(/\.git$/i, "");
   return name || "repositorio";
+}
+
+export async function listCloneRemoteBranches(url: string): Promise<string[]> {
+  if (!isTauri()) {
+    return ["main", "develop"];
+  }
+  return invoke<string[]>("list_clone_remote_branches", { url });
 }
 
 export async function previewCloneRemote(
