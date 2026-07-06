@@ -5,6 +5,8 @@ interface SyncIndicatorProps {
   sync: SyncInfoDto | null;
   credential: CredentialStatusDto | null;
   branch?: string | null;
+  remoteUrl?: string | null;
+  sshUsername?: string | null;
   hasRemote?: boolean;
   upstreamConfigured?: boolean;
   isShallow?: boolean;
@@ -14,6 +16,7 @@ interface SyncIndicatorProps {
   onPush?: () => void;
   onPull?: () => void;
   onUnshallow?: () => void;
+  onConnect?: () => void;
   loading?: boolean;
   pushLoading?: boolean;
   error?: string | null;
@@ -34,6 +37,8 @@ export function SyncIndicator({
   sync,
   credential,
   branch,
+  remoteUrl,
+  sshUsername,
   hasRemote = false,
   upstreamConfigured = false,
   isShallow = false,
@@ -43,6 +48,7 @@ export function SyncIndicator({
   onPush,
   onPull,
   onUnshallow,
+  onConnect,
   loading,
   pushLoading,
   error,
@@ -54,11 +60,16 @@ export function SyncIndicator({
   const needsCredentialSetup = Boolean(
     credential?.hint && !credential.gcmAvailable,
   );
+  const showConnect = Boolean(onConnect);
   const needsPublish =
     Boolean(branch) && !writeDisabled && !upstreamConfigured;
   const showPull = Boolean(sync?.upstream && sync.behind > 0 && onPull);
   const showPush = Boolean(sync?.upstream && sync.ahead > 0 && onPush);
   const busy = loading || pushLoading;
+  const usesSshRemote =
+    remoteUrl?.startsWith("git@") || remoteUrl?.startsWith("ssh://");
+  const usesHttpsRemote =
+    remoteUrl?.startsWith("https://") || remoteUrl?.startsWith("http://");
 
   return (
     <div className="flex max-w-md flex-col gap-1 text-xs" role="region" aria-label="Sincronização com remoto">
@@ -124,7 +135,20 @@ export function SyncIndicator({
             Push ↑{sync!.ahead}
           </button>
         )}
-        {authError && (
+        {showConnect && onConnect && (
+          <button
+            type="button"
+            onClick={onConnect}
+            disabled={busy}
+            aria-label="Conectar conta GitHub"
+            className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
+            title="Assistente de conexão GitHub"
+          >
+            <KeyRound size={14} />
+            {credential?.githubConnected ? "Conta" : "Conectar"}
+          </button>
+        )}
+        {authError && !onConnect && (
           <button
             type="button"
             onClick={onFetch}
@@ -160,14 +184,30 @@ export function SyncIndicator({
       {needsPublish && (
         <span className="text-amber-600 dark:text-amber-400">
           {hasRemote
-            ? "Branch ainda não publicada — use Publicar para enviar ao remoto e habilitar Push."
+            ? "Branch sem rastreamento remoto — faça Fetch ou use Publicar para vincular ao GitHub."
             : "Repositório só local — use Publicar para conectar ao GitHub e enviar a branch."}
+        </span>
+      )}
+      {usesSshRemote && sshUsername && (
+        <span className="text-muted">GitHub SSH: @{sshUsername}</span>
+      )}
+      {usesHttpsRemote &&
+        credential?.githubConnected &&
+        credential.githubUsername &&
+        credential.githubUsername !== "git" && (
+        <span className="text-muted">
+          GitHub HTTPS: @{credential.githubUsername}
+        </span>
+      )}
+      {!usesSshRemote && !usesHttpsRemote && credential?.githubConnected && credential.githubUsername && (
+        <span className="text-muted">
+          GitHub: @{credential.githubUsername}
         </span>
       )}
       {needsCredentialSetup && (
         <span className="text-amber-600 dark:text-amber-400">
-          Conta Git ainda não configurada neste PC — na primeira publicação ou
-          sync, o Trilho abrirá o login do GitHub (Git Credential Manager).
+          Conta Git ainda não configurada — use «Conectar» para abrir o assistente
+          (GCM ou token).
         </span>
       )}
       {error && (

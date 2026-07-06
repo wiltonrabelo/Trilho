@@ -7,8 +7,8 @@ use crate::application::{
 };
 use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
-    detect_credential_status, repo_info, validate_git_object_id, validate_repo_relative_path,
-    CredentialStatus, MockGitReader,
+    detect_credential_status, ensure_gcm_configured, repo_info, sync_upstream_remote_ref,
+    validate_git_object_id, validate_repo_relative_path, CredentialStatus, MockGitReader,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -175,10 +175,39 @@ pub fn get_credential_status() -> CredentialStatus {
 }
 
 #[tauri::command]
+pub fn configure_gcm_helper() -> Result<(), String> {
+    ensure_gcm_configured()
+}
+
+#[tauri::command]
+pub fn trigger_github_login(remote_url: Option<String>) -> Result<(), String> {
+    crate::infrastructure::trigger_github_login(remote_url.as_deref())
+}
+
+#[tauri::command]
+pub fn store_github_pat(pat: String) -> Result<(), String> {
+    crate::infrastructure::store_github_pat(&pat)
+}
+
+#[tauri::command]
+pub fn test_github_ssh() -> crate::infrastructure::SshTestResult {
+    crate::infrastructure::test_github_ssh()
+}
+
+#[tauri::command]
+pub fn get_ssh_public_key(name: String) -> Result<String, String> {
+    crate::infrastructure::read_ssh_public_key(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn fetch_remote(app: AppHandle, state: State<'_, AppState>) -> Result<SyncInfo, String> {
     let ctx = repo_context(&state)?;
     state
-        .with_watch_suppressed(&app, || ctx.execute(&FetchRemote))
+        .with_watch_suppressed(&app, || {
+            ctx.execute(&FetchRemote)?;
+            sync_upstream_remote_ref(ctx.repo_path())?;
+            Ok(String::new())
+        })
         .map_err(|e: GitError| e.to_string())?;
 
     let now = Utc::now().to_rfc3339();

@@ -15,6 +15,7 @@ import type {
   SyncInfoDto,
 
   CredentialStatusDto,
+  SshTestResultDto,
   BranchOriginDto,
   BlameLineDto,
   BlameSourceDto,
@@ -248,12 +249,47 @@ export async function getCredentialStatus(): Promise<CredentialStatusDto> {
 
       hint: null,
 
+      githubConnected: false,
+
+      githubUsername: null,
+
+      sshKeys: [],
+
     };
 
   }
 
   return invoke<CredentialStatusDto>("get_credential_status");
 
+}
+
+export async function configureGcmHelper(): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("configure_gcm_helper");
+}
+
+export async function triggerGithubLogin(
+  remoteUrl?: string | null,
+): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("trigger_github_login", { remoteUrl: remoteUrl ?? null });
+}
+
+export async function storeGithubPat(pat: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("store_github_pat", { pat });
+}
+
+export async function testGithubSsh(): Promise<SshTestResultDto> {
+  if (!isTauri()) {
+    return { success: false, username: null, message: "Modo navegador — mock." };
+  }
+  return invoke<SshTestResultDto>("test_github_ssh");
+}
+
+export async function getSshPublicKey(name: string): Promise<string> {
+  if (!isTauri()) return "ssh-ed25519 AAAA... mock";
+  return invoke<string>("get_ssh_public_key", { name });
 }
 
 export async function getBranchOrigin(): Promise<BranchOriginDto> {

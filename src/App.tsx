@@ -1,7 +1,8 @@
-import { GitBranch, TrainFront, X } from "lucide-react";
+import { GitBranch, KeyRound, TrainFront, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
+import { ConnectDialog } from "@/components/ConnectDialog";
 import { CloneDialog } from "@/components/CloneDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
@@ -17,6 +18,7 @@ import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
 import { useBranchOrigin } from "@/hooks/useBranchOrigin";
+import { useConnect } from "@/hooks/useConnect";
 import { useClone } from "@/hooks/useClone";
 import { useCommits } from "@/hooks/useCommits";
 import { useFileSelection } from "@/hooks/useFileSelection";
@@ -110,6 +112,8 @@ function App() {
     fetch,
     refreshCredential,
   } = useSync(repo, setRepo, onAfterFetch);
+
+  const connect = useConnect(repo?.remoteUrl, refreshCredential);
 
   const { checkedPaths, clearChecks, toggleCheck, handleSelectFile } =
     useFileSelection({
@@ -345,6 +349,21 @@ function App() {
         }}
         onContinue={(url) => void handlePublishWithUrl(url)}
       />
+      <ConnectDialog
+        open={connect.open}
+        credential={credential}
+        remoteUrl={repo?.remoteUrl}
+        loading={connect.loading}
+        error={connect.error}
+        sshTest={connect.sshTest}
+        copyHint={connect.copyHint}
+        onCancel={connect.cancel}
+        onGcmLogin={() => void connect.loginGcm(repo?.remoteUrl)}
+        onSavePat={(pat) => void connect.savePat(pat)}
+        onConfigureGcm={() => void connect.configureGcm()}
+        onTestSsh={() => void connect.testSsh()}
+        onCopyPublicKey={(name) => void connect.copyPublicKey(name)}
+      />
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
           {ops.error}
@@ -377,6 +396,10 @@ function App() {
               sync={sync}
               credential={credential}
               branch={repo.branch}
+              remoteUrl={repo.remoteUrl}
+              sshUsername={
+                connect.sshTest?.success ? connect.sshTest.username : null
+              }
               hasRemote={repo.hasRemote}
               upstreamConfigured={Boolean(repo.upstream || sync?.upstream)}
               isShallow={repo.isShallow}
@@ -403,7 +426,19 @@ function App() {
               loading={fetchLoading}
               pushLoading={ops.loading}
               error={fetchError}
+              onConnect={connect.openDialog}
             />
+          )}
+          {!repo && !webOnly && (
+            <button
+              type="button"
+              onClick={connect.openDialog}
+              className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              title="Conectar conta GitHub"
+            >
+              <KeyRound size={14} />
+              GitHub
+            </button>
           )}
           <ThemeToggle />
         </div>

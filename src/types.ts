@@ -123,6 +123,23 @@ export interface CredentialStatusDto {
 
   hint: string | null;
 
+  githubConnected: boolean;
+
+  githubUsername: string | null;
+
+  sshKeys: SshKeyInfoDto[];
+
+}
+
+export interface SshKeyInfoDto {
+  name: string;
+  hasPublic: boolean;
+}
+
+export interface SshTestResultDto {
+  success: boolean;
+  username: string | null;
+  message: string;
 }
 
 export type OriginConfidence = "high" | "medium" | "low" | "indeterminate";

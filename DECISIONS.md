@@ -78,26 +78,32 @@
 | Alta | **RF-22** | Clonar repositório remoto | F3 |
 | Alta | **RF-10 completo** | OAuth / PAT / SSH + gestão de contas | F3 |
 
-### 2. Working tree (dia a dia)
+### 2. Navegação e refs (dia a dia)
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
+| Alta | **Checkout branch** | Trocar de branch (`git switch`) com preview RF-08 | F4 |
+| Média-alta | **Painel Refs** | Sidebar estilo SourceTree: Ramos, Remotos, Tags, Stashes | F4 |
 | Média-alta | **RF-23** | **Stash** (incl. untracked opcional) | F4 |
+
+### 3. Working tree
+| Prioridade | ID | Entrega | Fase |
+|------------|-----|---------|------|
 | Média | RF-18 hunk | Descartar por trecho (hunk) | F5 |
 
-### 3. Histórico e metadados
+### 4. Histórico e metadados
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
 | Média | **RF-24** | **Criar tag** em commit (+ push opcional) | F4 |
 | Média | RF-16 | Reword (editar mensagem de commit antigo) | F5 |
 
-### 4. Operações avançadas
+### 5. Operações avançadas
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
 | Média | RF-07 reset, RF-09 force push, RF-13 cherry-pick | Reescrita de histórico | F5 |
 | Média | RF-14, RF-12, RF-20 | Diff branches, PR, conflitos 3-vias | F5 |
 | Baixa | RF-11 | Log de auditoria (7 dias) | F5 |
 
-### 5. Inteligência e enhancements
+### 6. Inteligência e enhancements
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
 | Baixa | **RF-21** | Assistente LLM → ações allowlisted | F7 |
@@ -165,6 +171,31 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
   (branch atual vs base inferida). Evolução: seletor manual de base + linha da base como
   segunda lane + marcação dos merges de convergência.
 
+- **Checkout branch** (pedido do stakeholder, 2026-07-06): trocar a branch ativa sem sair do
+  Trilho. Referência **SourceTree → Ramos** (duplo-clique / menu → Checkout).
+
+  **Comando:** `git switch <branch>` (PLANO §7.7 — não `checkout` sobrecarregado).
+  **Gates:** working tree suja → aviso; preview RF-08; detached HEAD ao trocar para commit.
+  **Recorte 1:** lista de branches locais + checkout. **Recorte 2:** checkout de
+  `origin/<branch>` (cria tracking local se necessário).
+
+- **Painel Refs — organização estilo SourceTree** (referência UX, 2026-07-06): na barra lateral
+  esquerda, **abaixo do repo picker**, seções colapsáveis com campo **Pesquisar** no topo:
+
+  | SourceTree (PT) | Conteúdo | Trilho (proposto) |
+  |-----------------|----------|-------------------|
+  | **RAMOS** | Branches locais; checkout ao selecionar | Lista `refs/heads/*`; destaque na branch atual (HEAD) |
+  | **REMOTOS** | Agrupado por remoto (`origin/…`) | `refs/remotes/origin/*`; hint se só `main` no fetch refspec |
+  | **TAGS** | Tags locais e remotas | `refs/tags/*`; clique → seleciona commit no grafo |
+  | **PILHAS** | Stashes salvos | Lista `git stash list` (RF-23 recorte 2) |
+
+  **WORKSPACE SourceTree** (tabs Status / History / Search) **não** copiar literalmente — o Trilho
+  já separa: **Alterações locais** (status) + **Trilha de commits** (history). O painel Refs
+  complementa o header (hoje só mostra o nome da branch) e os chips de ref no grafo.
+
+  **Ordem sugerida de implementação:** checkout (recorte 1) → painel Ramos/Remotos → RF-23
+  (Pilhas) → RF-24 (Tags no painel + criar tag no commit).
+
 ## M3 — Operações seguras ✅ (encerrado)
 
 ### Escopo entregue
@@ -207,12 +238,30 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 1. Checklist README — SysPDV >5k commits + fluxos críticos
 2. Certificado EV para instalador assinado
 
-## Backlog F3 — RF-22 Clone remoto 🚧
+## Backlog F3 — RF-22 Clone remoto ✅
 
 - [x] **Recorte 1** — URL + destino + nome + `git clone --progress` + preview RF-08 + abrir repo + progresso (`clone-progress`)
 - [x] **Recorte 2** — seletor de branch (`ls-remote`), shallow clone, atalhos GitHub/GitLab
 - [x] **Completar histórico** — `fetch --unshallow` na barra de sync (clone raso)
 - [x] **Checklist pós-clone** — validar upstream/hasRemote após clone (`validate_post_clone` + teste + aviso na UI)
+
+## Backlog F3 — RF-10 Conexão GitHub 🚧
+
+- [x] **Recorte 1** — `ConnectDialog` (login GCM + PAT), `configure_gcm_helper`, status `githubConnected` / `githubUsername`, botão «Conectar» no sync e header
+- [x] **Recorte 2** — detecção de chaves `~/.ssh`, aba SSH no assistente, copiar `.pub`, `test_github_ssh` (`ssh -T git@github.com`)
+- [ ] **Recorte 3** — gestão de múltiplas contas / troca de credencial
+
+## Backlog F4 — Navegação e refs 🚧
+
+- [ ] **Checkout branch — recorte 1** — listar branches locais + `git switch` + preview RF-08 + gate WT suja
+- [ ] **Checkout branch — recorte 2** — checkout de branch remota (`git switch -c` / tracking)
+- [ ] **Painel Refs — recorte 1** — sidebar colapsável: Ramos + Remotos + pesquisa (estilo SourceTree)
+- [ ] **Painel Refs — recorte 2** — seções Tags e Pilhas (depende RF-23/RF-24)
+
+## Backlog F4 — RF-23 Stash ⏳
+
+- [ ] **Recorte 1** — `git stash push` (mensagem, `-u` opcional, preview RF-08) no painel Alterações
+- [ ] **Recorte 2** — listar/aplicar/excluir stashes (seção **Pilhas** no painel Refs)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

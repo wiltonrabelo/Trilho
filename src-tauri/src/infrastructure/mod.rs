@@ -6,11 +6,19 @@ mod credential;
 mod git2_reader;
 mod git_cli;
 mod repo_watcher;
+mod ssh_keys;
 mod status_parser;
 mod upstream;
 mod validation;
 
-pub use credential::{detect_credential_status, CredentialStatus};
+pub use ssh_keys::{read_ssh_public_key, test_github_ssh, SshKeyInfo, SshTestResult};
+
+pub use upstream::sync_upstream_remote_ref;
+
+pub use credential::{
+    detect_credential_status, ensure_gcm_configured, store_github_pat, trigger_github_login,
+    CredentialStatus,
+};
 pub use git2_reader::{repo_info, Git2Reader};
 pub use git_cli::{defensive_config_args, SafeGitCli};
 pub use repo_watcher::RepoWatcher;
