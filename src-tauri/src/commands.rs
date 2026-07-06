@@ -2,10 +2,10 @@
 
 use crate::application::{
     execute_clone, execute_write, list_clone_remote_branches as fetch_clone_remote_branches,
-    preview_clone, preview_write, AppState, CommitFileDiff, FetchRemote, FileDiff, GitError,
-    RepoContext, ShowCommit, TrailReader,
+    preview_clone, preview_write, validate_post_clone, AppState, CommitFileDiff, FetchRemote,
+    FileDiff, GitError, RepoContext, ShowCommit, TrailReader,
 };
-use crate::domain::{CloneRequest, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
+use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
     detect_credential_status, repo_info, validate_git_object_id, validate_repo_relative_path,
     CredentialStatus, MockGitReader,
@@ -293,13 +293,15 @@ pub async fn execute_clone_remote(
     request: CloneRequest,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<RepoInfo, String> {
+) -> Result<CloneResult, String> {
     let app_clone = app.clone();
     let path = tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
         .await
         .map_err(|e| format!("Clone interrompido: {e}"))?
         .map_err(|e| e.to_string())?;
+    let warning = validate_post_clone(&path).err().map(|e| e.to_string());
     state.set_repo(path.clone(), &app)?;
     let _ = app.emit("repo-changed", ());
-    repo_info(&path).map_err(|e| e.to_string())
+    let repo = repo_info(&path).map_err(|e| e.to_string())?;
+    Ok(CloneResult { repo, warning })
 }

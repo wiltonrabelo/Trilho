@@ -26,6 +26,12 @@ function reconcileStagedFlag(
   return null;
 }
 
+function sameRepoPath(a: string, b: string): boolean {
+  const norm = (p: string) =>
+    p.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+  return norm(a) === norm(b);
+}
+
 export function useRepo() {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [recentRepos, setRecentRepos] = useState<string[]>([]);
@@ -95,10 +101,17 @@ export function useRepo() {
 
   const removeRecent = useCallback(
     async (path: string) => {
+      if (repo && sameRepoPath(repo.path, path)) {
+        await closeRepo();
+        setRepo(null);
+        setStatus(null);
+        setSelectedFile(null);
+        setFileDiff(null);
+      }
       await removeRecentRepo(path);
       await refreshRecents();
     },
-    [refreshRecents],
+    [repo, refreshRecents],
   );
 
   async function open(path: string) {

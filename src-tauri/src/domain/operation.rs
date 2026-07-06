@@ -28,6 +28,15 @@ pub struct CloneRequest {
     pub depth: Option<u32>,
 }
 
+/// Resultado de clone remoto — repo aberto + aviso opcional do checklist pós-clone.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneResult {
+    pub repo: super::RepoInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
 /// Pedido de operação de escrita — espelha o frontend.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]

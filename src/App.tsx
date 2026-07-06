@@ -25,7 +25,7 @@ import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useSync } from "@/hooks/useSync";
 import { getAppInfo, getRepoInfo, runningInTauri } from "@/lib/api";
-import type { AppInfo } from "@/types";
+import type { AppInfo, RepoInfo } from "@/types";
 
 function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -33,6 +33,7 @@ function App() {
   const [workingCopySelected, setWorkingCopySelected] = useState(true);
   const [amendIntent, setAmendIntent] = useState(0);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
     repo,
@@ -52,6 +53,10 @@ function App() {
     selectFile,
     clearFileSelection,
   } = useRepo();
+
+  useEffect(() => {
+    if (!repo) setCloneSetupWarning(null);
+  }, [repo]);
 
   const { origin, loading: originLoading, refresh: refreshOrigin } =
     useBranchOrigin(repo);
@@ -140,8 +145,9 @@ function App() {
   const ops = useOperations(refreshAfterWrite);
 
   const onCloneSuccess = useCallback(
-    async (info: Awaited<ReturnType<typeof getRepoInfo>>) => {
+    async (info: RepoInfo, warning: string | null) => {
       setRepo(info);
+      setCloneSetupWarning(warning);
       await Promise.all([
         refreshCommits(),
         refreshStatus(),
@@ -253,6 +259,7 @@ function App() {
   }
 
   async function handleOpenRepo(path: string) {
+    setCloneSetupWarning(null);
     try {
       await open(path);
       await refreshCommits();
@@ -427,6 +434,12 @@ function App() {
             {origin.explanation}
           </div>
         )}
+
+      {cloneSetupWarning && (
+        <div className="border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-sm text-amber-700 dark:text-amber-300">
+          {cloneSetupWarning}
+        </div>
+      )}
 
       {error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">

@@ -8,7 +8,9 @@ import {
 } from "@/lib/api";
 import type { CloneFormValues, CloneRequestDto, OperationPreviewDto, RepoInfo } from "@/types";
 
-export function useClone(onSuccess: (info: RepoInfo) => Promise<void>) {
+export function useClone(
+  onSuccess: (info: RepoInfo, warning: string | null) => Promise<void>,
+) {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [preview, setPreview] = useState<OperationPreviewDto | null>(null);
   const [pending, setPending] = useState<CloneRequestDto | null>(null);
@@ -87,11 +89,11 @@ export function useClone(onSuccess: (info: RepoInfo) => Promise<void>) {
     setError(null);
     setProgress("Iniciando clone…");
     try {
-      const info = await executeCloneRemote(pending);
+      const result = await executeCloneRemote(pending);
       setPreview(null);
       setPending(null);
       setProgress(null);
-      await onSuccess(info);
+      await onSuccess(result.repo, result.warning ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

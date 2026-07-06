@@ -195,3 +195,8 @@ export interface CloneFormValues {
   branch: string | null;
   depth: number | null;
 }
+
+export interface CloneResultDto {
+  repo: RepoInfo;
+  warning?: string | null;
+}

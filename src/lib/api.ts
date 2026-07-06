@@ -20,6 +20,7 @@ import type {
   BlameSourceDto,
   TrailEntryDto,
   CloneRequestDto,
+  CloneResultDto,
   OperationPreviewDto,
   WriteRequestDto,
 } from "@/types";
@@ -381,10 +382,10 @@ export async function previewCloneRemote(
 
 export async function executeCloneRemote(
   request: CloneRequestDto,
-): Promise<RepoInfo> {
+): Promise<CloneResultDto> {
   if (!isTauri()) {
-    return MOCK_REPO;
+    return { repo: MOCK_REPO, warning: null };
   }
-  return invoke<RepoInfo>("execute_clone_remote", { request });
+  return invoke<CloneResultDto>("execute_clone_remote", { request });
 }
 

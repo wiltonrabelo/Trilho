@@ -1,5 +1,6 @@
 //! Camada de Aplicação — portas (traits) e estado compartilhado.
 
+mod clone_post_check;
 mod clone_service;
 mod app_state;
 mod branch_origin;
@@ -8,6 +9,7 @@ mod repo_context;
 mod write_gates;
 mod write_service;
 
+pub use clone_post_check::validate_post_clone;
 pub use clone_service::{execute_clone, list_clone_remote_branches, preview_clone};
 pub use app_state::AppState;
 pub use branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};

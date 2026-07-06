@@ -212,7 +212,7 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — URL + destino + nome + `git clone --progress` + preview RF-08 + abrir repo + progresso (`clone-progress`)
 - [x] **Recorte 2** — seletor de branch (`ls-remote`), shallow clone, atalhos GitHub/GitLab
 - [x] **Completar histórico** — `fetch --unshallow` na barra de sync (clone raso)
-- [ ] **Checklist pós-clone** — validar upstream/hasRemote em clone real (anti-regressão Publicar)
+- [x] **Checklist pós-clone** — validar upstream/hasRemote após clone (`validate_post_clone` + teste + aviso na UI)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

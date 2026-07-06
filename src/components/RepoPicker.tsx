@@ -86,7 +86,7 @@ export function RepoPicker({
                       type="button"
                       disabled={loading}
                       onClick={() => onRemoveRecent(path)}
-                      aria-label={`Remover ${name} dos recentes`}
+                      aria-label={`Remover ${name} dos recentes e fechar se estiver aberto`}
                       title="Remover dos recentes"
                       className="shrink-0 rounded p-1 text-muted hover:bg-surface hover:text-red-500 disabled:opacity-50"
                     >
