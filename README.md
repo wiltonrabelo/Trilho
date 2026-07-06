@@ -21,6 +21,7 @@ npm run dev          # app desktop (Tauri)
 npm run dev:web      # browser com mocks
 npm run lint
 npm run test         # Vitest (frontend)
+npm run test:e2e     # Playwright smoke (dev:web + mocks)
 npm run test:rust    # clippy + cargo test
 npm run audit        # npm audit + cargo audit (M4)
 npm run build:win    # instalador NSIS/MSI (unsigned)
@@ -36,7 +37,7 @@ Artefatos do instalador: `src-tauri\target\release\bundle\`
 | M1 + M1-b | ✅ | Leitura, fetch, watcher, grafo com lanes, status/diff |
 | M2 | ✅ | Origem da branch, blame |
 | M3 | ✅ | Operações seguras (preview, unstage, commit, push/pull, publicar) |
-| M4 | 🚧 | CI, SECURITY.md, a11y, instalador, validação SysPDV |
+| M4 | 🚧 | CI, E2E, paginação cursor, a11y, instalador |
 
 Documentação completa: `C:\Projetos\SysPDV\Docs\git-trail-viewer\MVP.md`
 

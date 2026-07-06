@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
+import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
@@ -422,30 +423,74 @@ function App() {
                   Repositório sem commits
                 </div>
               ) : (
-                <CommitGraph
-                  commits={commits}
-                  selectedId={
-                    workingCopySelected ? null : selectedCommit?.id ?? null
+                <ResizableRows
+                  storageKey="trilho.rows.center.v1"
+                  defaultTop={360}
+                  minTop={140}
+                  minBottom={120}
+                  top={
+                    <CommitGraph
+                      commits={commits}
+                      selectedId={
+                        workingCopySelected ? null : selectedCommit?.id ?? null
+                      }
+                      view={view}
+                      onViewChange={setView}
+                      trails={trails}
+                      divergence={
+                        origin?.mergeBaseId && origin.candidate
+                          ? {
+                              mergeBaseId: origin.mergeBaseId,
+                              baseName: origin.candidate,
+                            }
+                          : null
+                      }
+                      workingCopySelected={workingCopySelected}
+                      changeCount={changeCount}
+                      stagedCount={status?.staged.length ?? 0}
+                      onSelectWorkingCopy={handleSelectWorkingCopy}
+                      onSelect={(c) => void handleSelectCommit(c)}
+                      onLoadMore={() => void loadMore()}
+                      hasMore={hasMore}
+                      loading={commitsLoading}
+                    />
                   }
-                  view={view}
-                  onViewChange={setView}
-                  trails={trails}
-                  divergence={
-                    origin?.mergeBaseId && origin.candidate
-                      ? {
-                          mergeBaseId: origin.mergeBaseId,
-                          baseName: origin.candidate,
-                        }
-                      : null
+                  bottom={
+                    <CommitSummaryPanel
+                      commit={
+                        workingCopySelected ? null : selectedCommit
+                      }
+                      canUncommit={canUncommit}
+                      canEditMessage={
+                        Boolean(
+                          selectedCommit &&
+                            headCommit &&
+                            selectedCommit.id === headCommit.id &&
+                            canAmend,
+                        ) && !writeDisabled
+                      }
+                      onEditMessage={
+                        canAmend && !writeDisabled
+                          ? handleEditMessage
+                          : undefined
+                      }
+                      messageEditHint={messageEditHint}
+                      onRevert={
+                        selectedCommit && !writeDisabled
+                          ? () =>
+                              void ops.request({
+                                kind: "revert",
+                                commitId: selectedCommit.id,
+                              })
+                          : undefined
+                      }
+                      onUncommit={
+                        canUncommit && !writeDisabled
+                          ? () => void ops.request({ kind: "uncommit" })
+                          : undefined
+                      }
+                    />
                   }
-                  workingCopySelected={workingCopySelected}
-                  changeCount={changeCount}
-                  stagedCount={status?.staged.length ?? 0}
-                  onSelectWorkingCopy={handleSelectWorkingCopy}
-                  onSelect={(c) => void handleSelectCommit(c)}
-                  onLoadMore={() => void loadMore()}
-                  hasMore={hasMore}
-                  loading={commitsLoading}
                 />
               )
             }
@@ -561,33 +606,6 @@ function App() {
                     blameLoading={blameLoading}
                     blameError={blameError}
                     onLineClick={selectBlameLine}
-                    canUncommit={canUncommit}
-                    canEditMessage={
-                      Boolean(
-                        selectedCommit &&
-                          headCommit &&
-                          selectedCommit.id === headCommit.id &&
-                          canAmend,
-                      ) && !writeDisabled
-                    }
-                    onEditMessage={
-                      canAmend && !writeDisabled ? handleEditMessage : undefined
-                    }
-                    messageEditHint={messageEditHint}
-                    onRevert={
-                      selectedCommit && !writeDisabled
-                        ? () =>
-                            void ops.request({
-                              kind: "revert",
-                              commitId: selectedCommit.id,
-                            })
-                        : undefined
-                    }
-                    onUncommit={
-                      canUncommit && !writeDisabled
-                        ? () => void ops.request({ kind: "uncommit" })
-                        : undefined
-                    }
                     workingTreeFile={Boolean(
                       selectedFile &&
                         (fileInStaged || fileInUnstaged || fileInUntracked),

@@ -38,7 +38,7 @@ pub fn get_app_info() -> AppInfo {
 #[tauri::command]
 pub fn list_commits_mock() -> Result<Vec<Commit>, String> {
     MockGitReader::new()
-        .list_commits(50, 0, false)
+        .list_commits(50, None, false)
         .map_err(|e| e.to_string())
 }
 
@@ -80,13 +80,17 @@ pub fn get_recent_repos(state: State<AppState>) -> Vec<String> {
 #[tauri::command]
 pub async fn list_commits(
     limit: usize,
-    skip: usize,
+    after: Option<String>,
     first_parent: bool,
     state: State<'_, AppState>,
 ) -> Result<Vec<Commit>, String> {
     let ctx = repo_context(&state)?;
     ctx.reader()
-        .list_commits(limit.min(500), skip, first_parent)
+        .list_commits(
+            limit.min(500),
+            after.as_deref(),
+            first_parent,
+        )
         .map_err(|e| e.to_string())
 }
 

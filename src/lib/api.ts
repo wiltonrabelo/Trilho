@@ -106,19 +106,12 @@ export async function getRecentRepos(): Promise<string[]> {
 
 
 export async function listCommits(
-
   limit = 100,
-
-  skip = 0,
-
+  after: string | null = null,
   firstParent = true,
-
 ): Promise<CommitDto[]> {
-
   if (!isTauri()) return MOCK_COMMITS;
-
-  return invoke<CommitDto[]>("list_commits", { limit, skip, firstParent });
-
+  return invoke<CommitDto[]>("list_commits", { limit, after, firstParent });
 }
 
 

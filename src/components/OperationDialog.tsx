@@ -1,6 +1,7 @@
 import { Copy, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { useDialogA11y } from "@/hooks/useDialogA11y";
 import type { OperationPreviewDto } from "@/types";
 
 interface OperationDialogProps {
@@ -19,6 +20,9 @@ export function OperationDialog({
   title = "Confirmar operação",
 }: OperationDialogProps) {
   const [copied, setCopied] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useDialogA11y(Boolean(preview), onCancel, panelRef);
 
   if (!preview) return null;
 
@@ -37,7 +41,10 @@ export function OperationDialog({
       aria-modal="true"
       aria-labelledby="op-dialog-title"
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface shadow-lg">
+      <div
+        ref={panelRef}
+        className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface shadow-lg"
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 id="op-dialog-title" className="text-sm font-semibold">
             {title}

@@ -18,6 +18,8 @@
     "test:watch": "vitest",
     "test:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
     "test:rust": "npm run test:clippy && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
     "audit": "npm audit --audit-level=high && cargo audit --manifest-path src-tauri/Cargo.toml",
     "build:win": "npm run tauri build"
   },
@@ -45,6 +47,7 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.2",
     "vite": "^6.0.7",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@playwright/test": "^1.49.1"
   }
 }

@@ -146,7 +146,7 @@ pub trait TrailReader: Send + Sync {
     fn list_commits(
         &self,
         limit: usize,
-        skip: usize,
+        after: Option<&str>,
         first_parent: bool,
     ) -> Result<Vec<Commit>, GitError>;
     fn get_dual_trail(&self, base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError>;

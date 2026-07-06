@@ -36,6 +36,9 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      - name: rustfmt
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
       - name: Vitest
         run: npm run test
 
@@ -44,13 +47,32 @@ jobs:
 
       - name: npm audit (high+)
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: cargo audit
         run: |
           cargo install cargo-audit --locked 2>$null
           cargo audit --manifest-path src-tauri/Cargo.toml
-        continue-on-error: true
+
+  e2e:
+    name: E2E smoke (web)
+    runs-on: windows-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Instalar dependências npm
+        run: npm ci
+
+      - name: Instalar Chromium (Playwright)
+        run: npx playwright install chromium --with-deps
+
+      - name: E2E smoke
+        run: npm run test:e2e
 
   # Instalador: job separado — mais lento; não bloqueia PRs por padrão em forks sem certificado.
   build-installer:

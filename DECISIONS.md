@@ -193,16 +193,19 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **A11y básica** — skip link, `aria-label` em repo picker / commit / sync; diálogos já tinham `role="dialog"`
 - [x] **Instalador (unsigned)** — `npm run build:win` OK: `Trilho_0.1.0_x64-setup.exe` + `.msi`
 - [ ] **Instalador assinado** — certificado EV (lead time; unsigned para teste interno)
-- [ ] **E2E automatizado** — tauri-driver flaky; checklist manual no README por ora
-- [ ] **Validação SysPDV** — repo >5k commits (checklist README)
+- [x] **E2E smoke (web)** — Playwright `e2e/smoke.spec.ts` + job CI (`npm run test:e2e`)
+- [ ] **E2E desktop** — tauri-driver (opcional pós-MVP)
+- [ ] **Validação SysPDV** — repo >5k commits (checklist README — manual)
 - [x] **Hints amend/reword** — mensagens UX quando amend indisponível / reword RF-16
 - [x] **Fixes revisão 2026-07-05** — `run_bool` fail-closed, preview amend+staging, gate revert merge (+3 testes)
-- [x] **Dívidas SOLID** — `useFileSelection`, ISP `TrailReader`/`BlameProvider`, split `branch_origin/`
+- [x] **Paginação por cursor** — `list_commits(after)` + cache de refs (M4 perf >5k)
+- [x] **A11y diálogos** — Escape, foco inicial, `useDialogA11y`
+- [x] **Dependabot** — `.github/dependabot.yml`
+- [x] **CI rustfmt + audit obrigatório**
 
-### Próximo passo M4
-1. Rodar `npm run build:win` local e validar instalador
-2. Push para ativar CI no GitHub
-3. Checklist manual README (SysPDV + fluxos críticos)
+### Próximo passo M4 (manual / processo)
+1. Checklist README — SysPDV >5k commits + fluxos críticos
+2. Certificado EV para instalador assinado
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

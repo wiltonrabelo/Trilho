@@ -1,5 +1,7 @@
 import { Upload, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { useDialogA11y } from "@/hooks/useDialogA11y";
 
 interface PublishDialogProps {
   open: boolean;
@@ -22,6 +24,9 @@ export function PublishDialog({
   onContinue,
 }: PublishDialogProps) {
   const [url, setUrl] = useState("");
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useDialogA11y(open, onCancel, panelRef);
 
   // Ao abrir, pré-preenche com a URL do remoto atual (corrigível).
   useEffect(() => {
@@ -45,7 +50,10 @@ export function PublishDialog({
       aria-modal="true"
       aria-labelledby="publish-dialog-title"
     >
-      <div className="w-full max-w-md rounded-xl border border-border bg-surface shadow-lg">
+      <div
+        ref={panelRef}
+        className="w-full max-w-md rounded-xl border border-border bg-surface shadow-lg"
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 id="publish-dialog-title" className="text-sm font-semibold">
             Publicar branch

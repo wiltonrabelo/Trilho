@@ -23,7 +23,6 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   const [commits, setCommits] = useState<CommitDto[]>([]);
   // Paralelo a `commits` na trilha dupla: linha de cada commit (current/base/shared).
   const [trails, setTrails] = useState<TrailKindDto[] | null>(null);
-  const [commitSkip, setCommitSkip] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedCommit, setSelectedCommit] = useState<CommitDto | null>(null);
@@ -52,15 +51,13 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
       if (repoRef.current !== reqRepo) return;
       setCommits(entries.map((e) => e.commit));
       setTrails(entries.map((e) => e.trail));
-      setCommitSkip(0);
       setHasMore(false);
       return;
     }
-    const list = await listCommits(PAGE_SIZE, 0, view === "trail");
+    const list = await listCommits(PAGE_SIZE, null, view === "trail");
     if (repoRef.current !== reqRepo) return;
     setCommits(list);
     setTrails(null);
-    setCommitSkip(0);
     setHasMore(list.length >= PAGE_SIZE);
   }, [repo, view, baseBranch]);
 
@@ -69,7 +66,6 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   useEffect(() => {
     setCommits([]);
     setTrails(null);
-    setCommitSkip(0);
     setHasMore(false);
     setSelectedCommit(null);
     setCommitDiff(null);
@@ -84,15 +80,14 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   }, [repo, refresh]);
 
   async function loadMore() {
-    if (!repo) return;
+    if (!repo || commits.length === 0) return;
     const reqRepo = repo;
-    const nextSkip = commitSkip + PAGE_SIZE;
+    const after = commits[commits.length - 1]!.id;
     setLoading(true);
     try {
-      const more = await listCommits(PAGE_SIZE, nextSkip, view === "trail");
+      const more = await listCommits(PAGE_SIZE, after, view === "trail");
       if (repoRef.current !== reqRepo) return;
       setCommits((prev) => [...prev, ...more]);
-      setCommitSkip(nextSkip);
       setHasMore(more.length >= PAGE_SIZE);
     } finally {
       setLoading(false);

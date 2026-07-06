@@ -52,12 +52,13 @@ export function CommitGraph({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-xs font-medium text-muted">Trilha de commits</span>
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5" role="group" aria-label="Visão do grafo">
           {VIEWS.map(({ value, label, hint }) => (
             <button
               key={value}
               type="button"
               title={hint}
+              aria-label={label}
               aria-pressed={view === value}
               onClick={() => onViewChange(value)}
               className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
@@ -92,9 +93,11 @@ export function CommitGraph({
             type="button"
             onClick={onLoadMore}
             disabled={loading}
+            aria-busy={loading}
+            aria-label="Carregar mais commits"
             className="w-full rounded py-1.5 text-xs text-accent hover:bg-surface disabled:opacity-50"
           >
-            Carregar mais
+            {loading ? "Carregando…" : "Carregar mais"}
           </button>
         </div>
       )}

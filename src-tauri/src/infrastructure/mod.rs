@@ -38,7 +38,7 @@ impl TrailReader for MockGitReader {
     fn list_commits(
         &self,
         limit: usize,
-        skip: usize,
+        after: Option<&str>,
         _first_parent: bool,
     ) -> Result<Vec<Commit>, GitError> {
         let sample = vec![
@@ -90,7 +90,15 @@ impl TrailReader for MockGitReader {
                 refs: vec![],
             },
         ];
-        Ok(sample.into_iter().skip(skip).take(limit).collect())
+        let start = match after {
+            None => 0,
+            Some(id) => sample
+                .iter()
+                .position(|c| c.id == id)
+                .map(|i| i + 1)
+                .unwrap_or(sample.len()),
+        };
+        Ok(sample.into_iter().skip(start).take(limit).collect())
     }
 
     fn list_commit_files(&self, _sha: &str) -> Result<Vec<crate::domain::FileChange>, GitError> {
@@ -111,7 +119,7 @@ impl TrailReader for MockGitReader {
 
     fn get_dual_trail(&self, _base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError> {
         Ok(self
-            .list_commits(limit, 0, true)?
+            .list_commits(limit, None, true)?
             .into_iter()
             .map(|commit| TrailEntry {
                 commit,
@@ -183,7 +191,7 @@ mod tests {
     #[test]
     fn mock_reader_respeita_limite() {
         let reader = MockGitReader::new();
-        let commits = reader.list_commits(2, 0, false).expect("deve listar");
+        let commits = reader.list_commits(2, None, false).expect("deve listar");
         assert_eq!(commits.len(), 2);
     }
 

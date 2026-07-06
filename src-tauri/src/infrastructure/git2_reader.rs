@@ -11,14 +11,19 @@ use crate::domain::{
 use crate::infrastructure::blame::blame_file;
 use crate::infrastructure::git_cli::SafeGitCli;
 use crate::infrastructure::status_parser;
+use crate::infrastructure::validation::validate_git_object_id;
 use crate::infrastructure::upstream::resolve_head_upstream;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use git2::{Repository, Sort};
+use git2::{Oid, Repository, Sort};
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 pub struct Git2Reader {
     repo_path: String,
     cli: SafeGitCli,
+    /// Refs por commit — recalculado uma vez por sessão do reader (M4 perf).
+    refs_cache: Mutex<Option<HashMap<Oid, Vec<String>>>>,
 }
 
 impl Git2Reader {
@@ -27,11 +32,22 @@ impl Git2Reader {
         Ok(Self {
             repo_path: repo_path.to_string(),
             cli: SafeGitCli::new(repo_path),
+            refs_cache: Mutex::new(None),
         })
     }
 
     fn open(&self) -> Result<Repository, GitError> {
         Repository::discover(&self.repo_path).map_err(|e| GitError::Io(e.to_string()))
+    }
+
+    fn ref_map(&self, repo: &Repository) -> HashMap<Oid, Vec<String>> {
+        let mut guard = self.refs_cache.lock().expect("refs_cache");
+        if let Some(ref map) = *guard {
+            return map.clone();
+        }
+        let map = collect_ref_map(repo);
+        *guard = Some(map.clone());
+        map
     }
 }
 
@@ -39,12 +55,25 @@ impl TrailReader for Git2Reader {
     fn list_commits(
         &self,
         limit: usize,
-        skip: usize,
+        after: Option<&str>,
         first_parent: bool,
     ) -> Result<Vec<Commit>, GitError> {
         let repo = self.open()?;
         let upstream_oid = resolve_head_upstream(&repo).and_then(|u| u.upstream_oid);
-        let refs_by_oid = collect_ref_map(&repo);
+        let refs_by_oid = self.ref_map(&repo);
+
+        let after_oid = match after {
+            None => None,
+            Some(id) => {
+                let id = validate_git_object_id(id)?;
+                let oid = git2::Oid::from_str(&id)
+                    .map_err(|e| GitError::Git(format!("Commit «{id}» inválido: {e}")))?;
+                repo.find_commit(oid).map_err(|_| {
+                    GitError::Git(format!("Commit «{id}» não encontrado neste repositório."))
+                })?;
+                Some(oid)
+            }
+        };
 
         let mut revwalk = repo.revwalk().map_err(|e| GitError::Io(e.to_string()))?;
         revwalk
@@ -58,15 +87,19 @@ impl TrailReader for Git2Reader {
         }
         revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME).ok();
 
+        let mut passed_cursor = after_oid.is_none();
         let mut commits = Vec::with_capacity(limit.min(256));
-        for (idx, oid) in revwalk.enumerate() {
-            if idx < skip {
+        for oid in revwalk {
+            let oid = oid.map_err(|e| GitError::Io(e.to_string()))?;
+            if !passed_cursor {
+                if after_oid == Some(oid) {
+                    passed_cursor = true;
+                }
                 continue;
             }
             if commits.len() >= limit {
                 break;
             }
-            let oid = oid.map_err(|e| GitError::Io(e.to_string()))?;
             commits.push(build_commit(&repo, oid, upstream_oid, &refs_by_oid)?);
         }
         Ok(commits)
@@ -75,7 +108,7 @@ impl TrailReader for Git2Reader {
     fn get_dual_trail(&self, base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError> {
         let repo = self.open()?;
         let upstream_oid = resolve_head_upstream(&repo).and_then(|u| u.upstream_oid);
-        let refs_by_oid = collect_ref_map(&repo);
+        let refs_by_oid = self.ref_map(&repo);
 
         let head_oid = repo
             .head()
@@ -308,10 +341,9 @@ pub fn repo_info(repo_path: &str) -> Result<crate::domain::RepoInfo, GitError> {
 }
 
 /// Refs (branches locais/remotas e tags) por commit apontado — calculado uma
-/// vez por chamada e consultado por commit (chips de ref na UI).
-fn collect_ref_map(repo: &Repository) -> std::collections::HashMap<git2::Oid, Vec<String>> {
-    let mut map: std::collections::HashMap<git2::Oid, Vec<String>> =
-        std::collections::HashMap::new();
+/// vez por sessão do reader e consultado por commit (chips de ref na UI).
+fn collect_ref_map(repo: &Repository) -> HashMap<Oid, Vec<String>> {
+    let mut map: HashMap<Oid, Vec<String>> = HashMap::new();
     if let Ok(refs) = repo.references() {
         for reference in refs.flatten() {
             let Some(name) = reference.shorthand().map(|s| s.to_string()) else {
@@ -494,11 +526,53 @@ mod integration_tests {
         init_repo_with_commit(&dir);
         let path = dir.to_string_lossy();
         let reader = Git2Reader::new(&path).expect("reader");
-        let commits = reader.list_commits(10, 0, false).expect("commits");
+        let commits = reader.list_commits(10, None, false).expect("commits");
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].summary, "init");
         let info = repo_info(&path).expect("info");
         assert!(info.has_commits);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn add_commit(path: &std::path::Path, file: &str, msg: &str) {
+        fs::write(path.join(file), msg).unwrap();
+        Command::new("git")
+            .args(["add", file])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", msg])
+            .current_dir(path)
+            .output()
+            .expect("git commit");
+    }
+
+    #[test]
+    fn paginacao_por_cursor_nao_repete_commits() {
+        let dir = std::env::temp_dir().join(format!("trilho-page-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        for i in 2..=5 {
+            add_commit(&dir, &format!("f{i}.txt"), &format!("commit {i}"));
+        }
+        let path = dir.to_string_lossy();
+        let reader = Git2Reader::new(&path).expect("reader");
+        let page1 = reader.list_commits(2, None, false).expect("page1");
+        assert_eq!(page1.len(), 2);
+        let page2 = reader
+            .list_commits(2, Some(&page1[1].id), false)
+            .expect("page2");
+        assert_eq!(page2.len(), 2);
+        assert_ne!(page1[0].id, page2[0].id);
+        assert_ne!(page1[1].id, page2[0].id);
+        let all_ids: Vec<_> = page1
+            .iter()
+            .chain(page2.iter())
+            .map(|c| c.id.as_str())
+            .collect();
+        let unique: std::collections::HashSet<_> = all_ids.iter().copied().collect();
+        assert_eq!(unique.len(), all_ids.len());
         let _ = fs::remove_dir_all(&dir);
     }
 
