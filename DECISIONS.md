@@ -184,7 +184,7 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - Pull bloqueado se `behind == 0`
 - Operações de escrita desabilitadas em detached HEAD
 
-## M4 — Empacotamento e qualidade 🚧 (em andamento)
+## M4 — Empacotamento e qualidade ✅ (código; validação manual pendente)
 
 ### Escopo (MVP.md §M4 + §7)
 - [x] **CI** — `.github/workflows/ci.yml` (lint, tsc, vitest, clippy, testes Rust; build instalador em push master)
@@ -206,6 +206,12 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 ### Próximo passo M4 (manual / processo)
 1. Checklist README — SysPDV >5k commits + fluxos críticos
 2. Certificado EV para instalador assinado
+
+## Backlog F3 — RF-22 Clone remoto 🚧 (recorte 1 em andamento)
+
+- [x] **Recorte 1** — URL + destino + nome + `git clone --progress` + preview RF-08 + abrir repo + progresso (`clone-progress`)
+- [ ] **Recorte 2** — seletor de branch (`ls-remote`), shallow clone
+- [ ] **Checklist pós-clone** — validar upstream/hasRemote em clone real (anti-regressão Publicar)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

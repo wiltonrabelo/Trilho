@@ -12,9 +12,12 @@ mod validation;
 
 pub use credential::{detect_credential_status, CredentialStatus};
 pub use git2_reader::{repo_info, Git2Reader};
-pub use git_cli::SafeGitCli;
+pub use git_cli::{defensive_config_args, SafeGitCli};
 pub use repo_watcher::RepoWatcher;
-pub use validation::{validate_git_object_id, validate_remote_url, validate_repo_relative_path};
+pub use validation::{
+    repo_name_from_url, validate_clone_destination, validate_folder_name, validate_git_object_id,
+    validate_remote_url, validate_repo_relative_path,
+};
 
 use crate::application::{BlameProvider, GitError, GitReader, TrailReader};
 use crate::domain::{Commit, TrailEntry, TrailKind};

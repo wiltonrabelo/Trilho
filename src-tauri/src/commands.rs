@@ -1,10 +1,10 @@
 //! Comandos IPC expostos ao frontend — fachada fina sobre casos de uso.
 
 use crate::application::{
-    execute_write, preview_write, AppState, CommitFileDiff, FetchRemote, FileDiff, GitError,
-    RepoContext, ShowCommit, TrailReader,
+    execute_clone, execute_write, preview_clone, preview_write, AppState, CommitFileDiff,
+    FetchRemote, FileDiff, GitError, RepoContext, ShowCommit, TrailReader,
 };
-use crate::domain::{Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
+use crate::domain::{CloneRequest, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
     detect_credential_status, repo_info, validate_git_object_id, validate_repo_relative_path,
     CredentialStatus, MockGitReader,
@@ -263,4 +263,25 @@ pub async fn execute_write_operation(
         .map_err(|e: GitError| e.to_string())?;
     let _ = app.emit("repo-changed", ());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn preview_clone_remote(request: CloneRequest) -> Result<OperationPreview, String> {
+    preview_clone(&request).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn execute_clone_remote(
+    request: CloneRequest,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RepoInfo, String> {
+    let app_clone = app.clone();
+    let path = tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
+        .await
+        .map_err(|e| format!("Clone interrompido: {e}"))?
+        .map_err(|e| e.to_string())?;
+    state.set_repo(path.clone(), &app)?;
+    let _ = app.emit("repo-changed", ());
+    repo_info(&path).map_err(|e| e.to_string())
 }

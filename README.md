@@ -37,7 +37,7 @@ Artefatos do instalador: `src-tauri\target\release\bundle\`
 | M1 + M1-b | ✅ | Leitura, fetch, watcher, grafo com lanes, status/diff |
 | M2 | ✅ | Origem da branch, blame |
 | M3 | ✅ | Operações seguras (preview, unstage, commit, push/pull, publicar) |
-| M4 | 🚧 | CI, E2E, paginação cursor, a11y, instalador |
+| M4 | ✅ | CI, E2E, paginação cursor, a11y, instalador (unsigned) |
 
 Documentação completa: `C:\Projetos\SysPDV\Docs\git-trail-viewer\MVP.md`
 

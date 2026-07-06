@@ -13,6 +13,15 @@ pub struct OperationPreview {
     pub blocked: Option<String>,
 }
 
+/// Pedido de clone remoto (RF-22) — não exige repositório aberto.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneRequest {
+    pub url: String,
+    pub parent_dir: String,
+    pub folder_name: String,
+}
+
 /// Pedido de operação de escrita — espelha o frontend.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]

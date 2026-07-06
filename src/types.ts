@@ -175,3 +175,9 @@ export type WriteRequestDto =
   | { kind: "push" }
   | { kind: "pullFfOnly" }
   | { kind: "publish"; url: string | null };
+
+export interface CloneRequestDto {
+  url: string;
+  parentDir: string;
+  folderName: string;
+}

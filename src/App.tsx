@@ -2,6 +2,7 @@ import { GitBranch, TrainFront, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
+import { CloneDialog } from "@/components/CloneDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
 import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
@@ -16,6 +17,7 @@ import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
 import { useBranchOrigin } from "@/hooks/useBranchOrigin";
+import { useClone } from "@/hooks/useClone";
 import { useCommits } from "@/hooks/useCommits";
 import { useFileSelection } from "@/hooks/useFileSelection";
 import { useOperations } from "@/hooks/useOperations";
@@ -134,6 +136,28 @@ function App() {
   }, [refreshAll, clearSelection, setRepo, clearChecks]);
 
   const ops = useOperations(refreshAfterWrite);
+
+  const onCloneSuccess = useCallback(
+    async (info: Awaited<ReturnType<typeof getRepoInfo>>) => {
+      setRepo(info);
+      await Promise.all([refreshCommits(), refreshStatus(), syncRefresh(), refreshOrigin()]);
+      refreshCredential();
+    },
+    [setRepo, refreshCommits, refreshStatus, syncRefresh, refreshOrigin, refreshCredential],
+  );
+
+  const clone = useClone(onCloneSuccess);
+
+  const activePreview = clone.preview ?? ops.preview;
+  const activeLoading = ops.loading || clone.loading;
+  const confirmOperation = useCallback(() => {
+    if (clone.pending) void clone.confirmClone();
+    else void ops.confirm();
+  }, [clone, ops]);
+  const cancelOperation = useCallback(() => {
+    if (clone.pending) clone.cancelPreview();
+    else ops.cancel();
+  }, [clone, ops]);
 
   const headCommit = commits[0] ?? null;
   const canAmend =
@@ -264,14 +288,26 @@ function App() {
         Ir para o conteúdo principal
       </a>
       <OperationDialog
-        preview={ops.preview}
-        loading={ops.loading}
-        onConfirm={() => void ops.confirm()}
-        onCancel={ops.cancel}
+        preview={activePreview}
+        loading={activeLoading}
+        onConfirm={confirmOperation}
+        onCancel={cancelOperation}
+        progressLine={clone.progress}
         title={
-          ops.pending?.kind === "publish"
-            ? "Confirmar publicação"
-            : undefined
+          clone.pending
+            ? "Confirmar clone"
+            : ops.pending?.kind === "publish"
+              ? "Confirmar publicação"
+              : undefined
+        }
+      />
+      <CloneDialog
+        open={clone.cloneOpen}
+        loading={clone.loading}
+        error={clone.error}
+        onCancel={clone.cancelCloneDialog}
+        onContinue={(url, parentDir, folderName) =>
+          void clone.requestClone(url, parentDir, folderName)
         }
       />
       <PublishDialog
@@ -385,6 +421,7 @@ function App() {
             <RepoPicker
               recentRepos={recentRepos}
               onOpen={handleOpenRepo}
+              onClone={runningInTauri() ? clone.openClone : undefined}
               loading={repoLoading}
             />
           </div>
@@ -398,6 +435,7 @@ function App() {
                 <RepoPicker
                   recentRepos={recentRepos}
                   onOpen={handleOpenRepo}
+                  onClone={runningInTauri() ? clone.openClone : undefined}
                   loading={repoLoading}
                 />
                 <button

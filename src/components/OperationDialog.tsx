@@ -10,6 +10,8 @@ interface OperationDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   title?: string;
+  /** Linha de progresso (ex.: git clone --progress). */
+  progressLine?: string | null;
 }
 
 export function OperationDialog({
@@ -18,6 +20,7 @@ export function OperationDialog({
   onConfirm,
   onCancel,
   title = "Confirmar operação",
+  progressLine,
 }: OperationDialogProps) {
   const [copied, setCopied] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -64,6 +67,12 @@ export function OperationDialog({
 
           {preview.description && (
             <p className="text-text">{preview.description}</p>
+          )}
+
+          {progressLine && (
+            <p className="truncate font-mono text-[10px] text-muted" title={progressLine}>
+              {progressLine}
+            </p>
           )}
 
           {blocked ? (

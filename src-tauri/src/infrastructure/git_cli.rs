@@ -3,11 +3,9 @@
 use crate::application::{GitCommand, GitError, GitWriter};
 use std::process::{Command, Stdio};
 
-/// Argumentos-base defensivos aplicados a TODA invocação do Git (PLANO §7.7/§11.5).
-pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
+/// Config defensiva sem `-C` (ex.: `git clone` fora de um repo aberto).
+pub fn defensive_config_args() -> Vec<String> {
     vec![
-        "-C".into(),
-        repo_path.into(),
         "-c".into(),
         "core.fsmonitor=false".into(),
         "-c".into(),
@@ -25,6 +23,14 @@ pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
         "-c".into(),
         "filter.lfs.smudge=".into(),
     ]
+}
+
+/// Argumentos-base defensivos aplicados a TODA invocação do Git (PLANO §7.7/§11.5).
+pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
+    let mut args = defensive_config_args();
+    args.insert(0, repo_path.into());
+    args.insert(0, "-C".into());
+    args
 }
 
 /// Adaptador Git CLI vinculado a um repositório — honra `GitWriter` (LSP).

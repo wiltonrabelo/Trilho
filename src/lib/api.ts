@@ -19,6 +19,7 @@ import type {
   BlameLineDto,
   BlameSourceDto,
   TrailEntryDto,
+  CloneRequestDto,
   OperationPreviewDto,
   WriteRequestDto,
 } from "@/types";
@@ -343,5 +344,35 @@ export async function executeWriteOperation(
 ): Promise<void> {
   if (!isTauri()) return;
   return invoke("execute_write_operation", { request });
+}
+
+export function repoNameFromUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/$/, "");
+  const segment = trimmed.split(/[/:]/).pop() ?? "";
+  const name = segment.replace(/\.git$/i, "");
+  return name || "repositorio";
+}
+
+export async function previewCloneRemote(
+  request: CloneRequestDto,
+): Promise<OperationPreviewDto> {
+  if (!isTauri()) {
+    return {
+      commands: [`git clone --progress ${request.url} ${request.parentDir}\\${request.folderName}`],
+      description: "Mock — clonar repositório.",
+      repoPath: request.parentDir,
+      blocked: null,
+    };
+  }
+  return invoke<OperationPreviewDto>("preview_clone_remote", { request });
+}
+
+export async function executeCloneRemote(
+  request: CloneRequestDto,
+): Promise<RepoInfo> {
+  if (!isTauri()) {
+    return MOCK_REPO;
+  }
+  return invoke<RepoInfo>("execute_clone_remote", { request });
 }
 

@@ -67,6 +67,59 @@ pub fn validate_remote_url(url: &str) -> Result<String, GitError> {
     }
 }
 
+/// Nome de pasta seguro no Windows (destino do clone).
+pub fn validate_folder_name(name: &str) -> Result<String, GitError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::Git("Nome da pasta vazio.".into()));
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err(GitError::Git("Nome de pasta inválido.".into()));
+    }
+    const INVALID: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    if trimmed.chars().any(|c| INVALID.contains(&c) || c.is_control()) {
+        return Err(GitError::Git(
+            "Nome da pasta contém caracteres inválidos no Windows.".into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Destino do clone: não pode existir ou deve ser diretório vazio.
+pub fn validate_clone_destination(path: &std::path::Path) -> Result<(), GitError> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if !path.is_dir() {
+        return Err(GitError::Git(
+            "Já existe um arquivo com esse nome no destino.".into(),
+        ));
+    }
+    let mut entries = std::fs::read_dir(path)
+        .map_err(|e| GitError::Io(format!("Não foi possível ler o destino: {e}")))?;
+    if entries.next().is_some() {
+        return Err(GitError::Git(
+            "A pasta de destino já existe e não está vazia.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Extrai nome do repositório a partir da URL (último segmento, sem `.git`).
+pub fn repo_name_from_url(url: &str) -> Option<String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    let segment = trimmed
+        .rsplit(['/', ':'])
+        .next()
+        .filter(|s| !s.is_empty())?;
+    let name = segment.strip_suffix(".git").unwrap_or(segment);
+    if name.is_empty() {
+        None
+    } else {
+        validate_folder_name(name).ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +148,23 @@ mod tests {
     #[test]
     fn rejeita_url_invalida() {
         assert!(validate_remote_url("not-a-url").is_err());
+    }
+
+    #[test]
+    fn extrai_nome_do_repo_da_url() {
+        assert_eq!(
+            repo_name_from_url("https://github.com/user/Trilho.git").as_deref(),
+            Some("Trilho")
+        );
+    }
+
+    #[test]
+    fn rejeita_destino_nao_vazio() {
+        let dir = std::env::temp_dir().join(format!("trilho-dest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("x.txt"), "a").unwrap();
+        assert!(validate_clone_destination(&dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

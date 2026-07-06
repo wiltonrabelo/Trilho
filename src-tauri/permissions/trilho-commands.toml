@@ -31,4 +31,6 @@ commands.allow = [
   "get_file_blame",
   "preview_write_operation",
   "execute_write_operation",
+  "preview_clone_remote",
+  "execute_clone_remote",
 ]
