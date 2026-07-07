@@ -379,23 +379,23 @@ impl GitOperation for RevertCommit {
     }
 }
 
-/// RF-13 — aplica commit em outra branch no topo da branch atual.
+/// RF-13 — aplica um ou mais commits no topo da branch atual.
 pub struct CherryPickCommit {
-    pub sha: String,
+    pub shas: Vec<String>,
+    pub record_origin: bool,
 }
 
 impl GitOperation for CherryPickCommit {
     fn command(&self) -> GitCommand {
-        GitCommand {
-            args: vec![
-                "cherry-pick".into(),
-                "--no-edit".into(),
-                self.sha.clone(),
-            ],
+        let mut args = vec!["cherry-pick".into(), "--no-edit".into()];
+        if self.record_origin {
+            args.push("-x".into());
         }
+        args.extend(self.shas.iter().cloned());
+        GitCommand { args }
     }
     fn description(&self) -> &'static str {
-        "Aplica as alterações do commit selecionado no topo da branch atual."
+        "Aplica as alterações do(s) commit(s) selecionado(s) no topo da branch atual."
     }
 }
 
@@ -838,11 +838,24 @@ mod tests {
     #[test]
     fn cherry_pick_usa_no_edit() {
         let op = CherryPickCommit {
-            sha: "abc123".into(),
+            shas: vec!["abc123".into()],
+            record_origin: false,
         };
         assert_eq!(
             op.command().args,
             vec!["cherry-pick", "--no-edit", "abc123"]
+        );
+    }
+
+    #[test]
+    fn cherry_pick_multiplos_com_record_origin() {
+        let op = CherryPickCommit {
+            shas: vec!["aaa".into(), "bbb".into()],
+            record_origin: true,
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["cherry-pick", "--no-edit", "-x", "aaa", "bbb"]
         );
     }
 

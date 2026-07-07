@@ -9,6 +9,8 @@ interface ResizableRowsProps {
   defaultTop?: number;
   minTop?: number;
   minBottom?: number;
+  /** Teto opcional (px) do painel superior — útil em cherry-pick/revert. */
+  topMaxHeight?: number;
 }
 
 function loadHeight(key: string, fallback: number): number {
@@ -33,6 +35,7 @@ export function ResizableRows({
   defaultTop = 240,
   minTop = 120,
   minBottom = 120,
+  topMaxHeight,
 }: ResizableRowsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [topHeight, setTopHeight] = useState(() =>
@@ -40,6 +43,24 @@ export function ResizableRows({
   );
   const dragging = useRef(false);
   const lastY = useRef(0);
+
+  const clampTop = useCallback(
+    (value: number, containerH: number) => {
+      let max = Math.max(minTop, containerH - minBottom - 6);
+      if (topMaxHeight !== undefined) {
+        max = Math.min(max, topMaxHeight);
+      }
+      return Math.min(Math.max(value, minTop), max);
+    },
+    [minTop, minBottom, topMaxHeight],
+  );
+
+  useEffect(() => {
+    if (topMaxHeight === undefined) return;
+    const containerH = containerRef.current?.clientHeight ?? 0;
+    if (containerH <= 0) return;
+    setTopHeight((prev) => clampTop(prev, containerH));
+  }, [topMaxHeight, clampTop]);
 
   useEffect(() => {
     localStorage.setItem(storageKey, String(topHeight));
@@ -58,10 +79,9 @@ export function ResizableRows({
       if (!dragging.current) return;
       const delta = e.clientY - lastY.current;
       lastY.current = e.clientY;
-      const containerH = containerRef.current?.clientHeight ?? 0;
       setTopHeight((prev) => {
-        const max = Math.max(minTop, containerH - minBottom - 6);
-        return Math.min(Math.max(prev + delta, minTop), max);
+        const containerH = containerRef.current?.clientHeight ?? 0;
+        return clampTop(prev + delta, containerH);
       });
     }
     function onUp() {
@@ -76,7 +96,7 @@ export function ResizableRows({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [minTop, minBottom]);
+  }, [minTop, minBottom, clampTop]);
 
   return (
     <div ref={containerRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">

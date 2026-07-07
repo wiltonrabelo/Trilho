@@ -228,7 +228,12 @@ export type WriteRequestDto =
   | { kind: "commit"; summary: string; body?: string; amend?: boolean }
   | { kind: "uncommit" }
   | { kind: "revert"; commitId: string }
-  | { kind: "cherryPick"; commitId: string }
+  | {
+      kind: "cherryPick";
+      commitId?: string;
+      commitIds?: string[];
+      recordOrigin?: boolean;
+    }
   | { kind: "push" }
   | { kind: "pullFfOnly" }
   | { kind: "unshallowHistory" }

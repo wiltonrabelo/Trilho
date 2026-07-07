@@ -67,11 +67,18 @@ pub enum WriteRequest {
         #[serde(rename = "commitId")]
         commit_id: String,
     },
-    /// RF-13 — aplica commit no topo da branch atual (`git cherry-pick`).
+    /// RF-13 — aplica um ou mais commits no topo da branch atual (`git cherry-pick`).
     #[serde(rename = "cherryPick")]
     CherryPick {
-        #[serde(rename = "commitId")]
-        commit_id: String,
+        /// Compatível com recorte 1 (um commit).
+        #[serde(rename = "commitId", default)]
+        commit_id: Option<String>,
+        /// Vários commits — aplicados do mais antigo ao mais recente.
+        #[serde(rename = "commitIds", default)]
+        commit_ids: Vec<String>,
+        /// Anexa «(cherry picked from commit …)» na mensagem (`-x`).
+        #[serde(rename = "recordOrigin", default)]
+        record_origin: bool,
     },
     Push,
     PullFfOnly,
@@ -200,8 +207,27 @@ mod tests {
         )
         .unwrap();
         match req {
-            WriteRequest::CherryPick { commit_id } => {
-                assert_eq!(commit_id.len(), 40);
+            WriteRequest::CherryPick { commit_id, .. } => {
+                assert_eq!(commit_id.as_deref().unwrap().len(), 40);
+            }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn cherry_pick_deserializa_multiplos_com_record_origin() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"cherryPick","commitIds":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"recordOrigin":true}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::CherryPick {
+                commit_ids,
+                record_origin,
+                ..
+            } => {
+                assert_eq!(commit_ids.len(), 2);
+                assert!(record_origin);
             }
             _ => panic!("variant errada"),
         }

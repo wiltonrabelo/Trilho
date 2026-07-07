@@ -280,10 +280,10 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — `git stash push` (mensagem, `-u` opcional, preview RF-08) no painel Alterações
 - [x] **Recorte 2** — listar/aplicar/excluir stashes (seção **Pilhas** no painel Refs)
 
-## Backlog F5 — RF-13 Cherry-pick 🚧
+## Backlog F5 — RF-13 Cherry-pick ✅
 
 - [x] **Recorte 1** — cherry-pick de um commit no painel do commit + preview RF-08 + gates (WT limpa, não-HEAD, não merge) + conflitos via continue/abort existentes
-- [ ] **Recorte 2** — cherry-pick múltiplo + flag `-x`
+- [x] **Recorte 2** — cherry-pick múltiplo (visão exclusiva de branch) + flag `-x` (registrar origem)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

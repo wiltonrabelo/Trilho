@@ -15,6 +15,8 @@ interface BlamePanelProps {
   loading?: boolean;
   error?: string | null;
   showSourcePicker?: boolean;
+  /** Sem borda superior quando embutido em abas do DetailPanel. */
+  embedded?: boolean;
 }
 
 export function BlamePanel({
@@ -26,13 +28,16 @@ export function BlamePanel({
   loading,
   error,
   showSourcePicker = true,
+  embedded = false,
 }: BlamePanelProps) {
   if (!path && lines.length === 0 && !loading) {
     return null;
   }
 
   return (
-    <div className="flex h-full flex-col border-t border-border">
+    <div
+      className={`flex h-full flex-col ${embedded ? "" : "border-t border-border"}`}
+    >
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="truncate text-xs font-medium">
           Blame {path ? `· ${path}` : ""}

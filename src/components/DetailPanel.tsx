@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { BlamePanel } from "@/components/BlamePanel";
 import { DiffOverlay } from "@/components/DiffOverlay";
 import { DiffViewer } from "@/components/DiffViewer";
-import { ResizableRows } from "@/components/ResizableRows";
 import { extractHunks } from "@/lib/diff-hunks";
 import type { BlameLineDto, BlameSourceDto, CommitDto } from "@/types";
+
+type DetailTab = "diff" | "blame";
 
 interface DetailPanelProps {
   commit: CommitDto | null;
@@ -45,7 +46,8 @@ function DiffDetailBody({
   blameLoading,
   blameError,
   onLineClick,
-  rowsStorageKey,
+  detailTab,
+  onDetailTabChange,
 }: {
   filePath: string | null;
   showBlame: boolean;
@@ -59,36 +61,51 @@ function DiffDetailBody({
   blameLoading?: boolean;
   blameError?: string | null;
   onLineClick?: (lineNo: number) => void;
-  rowsStorageKey: string;
+  detailTab: DetailTab;
+  onDetailTabChange: (tab: DetailTab) => void;
 }) {
   if (showBlame) {
     return (
-      <ResizableRows
-        storageKey={rowsStorageKey}
-        defaultTop={220}
-        minTop={100}
-        minBottom={120}
-        top={
-          <DiffViewer
-            diff={diff}
-            loading={loading}
-            onLineClick={filePath ? onLineClick : undefined}
-            selectedLine={blameFocusLine}
-          />
-        }
-        bottom={
-          <BlamePanel
-            path={filePath}
-            source={blameSource}
-            onSourceChange={onBlameSourceChange}
-            lines={blameLines}
-            focusLine={blameFocusLine}
-            loading={blameLoading}
-            error={blameError}
-            showSourcePicker={!commit}
-          />
-        }
-      />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 gap-0.5 border-b border-border px-2 py-1">
+          {(["diff", "blame"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => onDetailTabChange(tab)}
+              className={`rounded px-2.5 py-0.5 text-[11px] font-medium ${
+                detailTab === tab
+                  ? "bg-accent text-white"
+                  : "text-muted hover:bg-surface hover:text-text"
+              }`}
+            >
+              {tab === "diff" ? "Diff" : "Blame"}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {detailTab === "diff" ? (
+            <DiffViewer
+              diff={diff}
+              loading={loading}
+              onLineClick={filePath ? onLineClick : undefined}
+              selectedLine={blameFocusLine}
+            />
+          ) : (
+            <BlamePanel
+              path={filePath}
+              source={blameSource}
+              onSourceChange={onBlameSourceChange}
+              lines={blameLines}
+              focusLine={blameFocusLine}
+              loading={blameLoading}
+              error={blameError}
+              showSourcePicker={!commit}
+              embedded
+            />
+          )}
+        </div>
+      </div>
     );
   }
 
@@ -128,6 +145,7 @@ export function DetailPanel({
   onDiscardHunk,
 }: DetailPanelProps) {
   const [diffExpanded, setDiffExpanded] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>("diff");
   const showBlame = Boolean(filePath);
   const hasDiffContent = Boolean(diff || loading || filePath);
   const hunks = useMemo(
@@ -137,6 +155,7 @@ export function DetailPanel({
 
   useEffect(() => {
     setDiffExpanded(false);
+    setDetailTab("diff");
   }, [filePath, commit?.id]);
 
   if (!commit && !diff && !loading && !showBlame) {
@@ -259,7 +278,8 @@ export function DetailPanel({
             blameLoading={blameLoading}
             blameError={blameError}
             onLineClick={onLineClick}
-            rowsStorageKey="trilho.rows.detail.v1"
+            detailTab={detailTab}
+            onDetailTabChange={setDetailTab}
           />
         </div>
       )}

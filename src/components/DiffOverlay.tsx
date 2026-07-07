@@ -1,11 +1,12 @@
 import { Minimize2 } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BlamePanel } from "@/components/BlamePanel";
 import { DiffViewer } from "@/components/DiffViewer";
-import { ResizableRows } from "@/components/ResizableRows";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import type { BlameLineDto, BlameSourceDto, CommitDto } from "@/types";
+
+type DetailTab = "diff" | "blame";
 
 interface DiffOverlayProps {
   open: boolean;
@@ -39,7 +40,12 @@ export function DiffOverlay({
   onLineClick,
 }: DiffOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>("diff");
   useDialogA11y(open, onClose, panelRef);
+
+  useEffect(() => {
+    if (open) setDetailTab("diff");
+  }, [open, filePath]);
 
   if (!open) return null;
 
@@ -53,10 +59,7 @@ export function DiffOverlay({
       aria-modal="true"
       aria-labelledby="diff-overlay-title"
     >
-      <div
-        ref={panelRef}
-        className="flex h-full min-h-0 flex-col"
-      >
+      <div ref={panelRef} className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2">
           <h2
             id="diff-overlay-title"
@@ -78,32 +81,46 @@ export function DiffOverlay({
         </div>
         <div className="min-h-0 flex-1">
           {showBlame ? (
-            <ResizableRows
-              storageKey="trilho.rows.diff-overlay.v1"
-              defaultTop={420}
-              minTop={120}
-              minBottom={120}
-              top={
-                <DiffViewer
-                  diff={diff}
-                  loading={loading}
-                  onLineClick={filePath ? onLineClick : undefined}
-                  selectedLine={blameFocusLine}
-                />
-              }
-              bottom={
-                <BlamePanel
-                  path={filePath}
-                  source={blameSource}
-                  onSourceChange={onBlameSourceChange}
-                  lines={blameLines}
-                  focusLine={blameFocusLine}
-                  loading={blameLoading}
-                  error={blameError}
-                  showSourcePicker={!commit}
-                />
-              }
-            />
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex shrink-0 gap-0.5 border-b border-border px-2 py-1">
+                {(["diff", "blame"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setDetailTab(tab)}
+                    className={`rounded px-2.5 py-0.5 text-[11px] font-medium ${
+                      detailTab === tab
+                        ? "bg-accent text-white"
+                        : "text-muted hover:bg-surface hover:text-text"
+                    }`}
+                  >
+                    {tab === "diff" ? "Diff" : "Blame"}
+                  </button>
+                ))}
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {detailTab === "diff" ? (
+                  <DiffViewer
+                    diff={diff}
+                    loading={loading}
+                    onLineClick={filePath ? onLineClick : undefined}
+                    selectedLine={blameFocusLine}
+                  />
+                ) : (
+                  <BlamePanel
+                    path={filePath}
+                    source={blameSource}
+                    onSourceChange={onBlameSourceChange}
+                    lines={blameLines}
+                    focusLine={blameFocusLine}
+                    loading={blameLoading}
+                    error={blameError}
+                    showSourcePicker={!commit}
+                    embedded
+                  />
+                )}
+              </div>
+            </div>
           ) : (
             <DiffViewer
               diff={diff}

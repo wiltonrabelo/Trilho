@@ -158,15 +158,22 @@ pub fn preview_write(
             let op = RevertCommit { sha };
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
-        WriteRequest::CherryPick { commit_id } => {
-            let sha =
-                validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            let blocked = gate_cherry_pick(ctx, repo_path, &sha)?
-                .or(gate_cherry_pick_merge(ctx, &sha)?)
-                .or(gate_not_head_commit(repo_path, &sha, "cherry-pick")?)
-                .or(gate_cherry_pick_foreign(ctx, &sha)?);
-            let op = CherryPickCommit { sha };
-            (ctx.preview_op(&op), op.description().to_string(), blocked)
+        WriteRequest::CherryPick {
+            commit_id,
+            commit_ids,
+            record_origin,
+        } => {
+            let shas = resolve_cherry_pick_shas(&commit_id, &commit_ids)?;
+            let blocked = gate_cherry_pick_shas(ctx, repo_path, &shas)?;
+            let op = CherryPickCommit {
+                shas: shas.clone(),
+                record_origin: *record_origin,
+            };
+            (
+                ctx.preview_op(&op),
+                cherry_pick_description(&shas, *record_origin),
+                blocked,
+            )
         }
         WriteRequest::Push => {
             let op = PushUpstream;
@@ -537,10 +544,16 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
                 return Err(e);
             }
         }
-        WriteRequest::CherryPick { commit_id } => {
-            let sha =
-                validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            if let Err(e) = ctx.execute_op(&CherryPickCommit { sha }) {
+        WriteRequest::CherryPick {
+            commit_id,
+            commit_ids,
+            record_origin,
+        } => {
+            let shas = resolve_cherry_pick_shas(&commit_id, &commit_ids)?;
+            if let Err(e) = ctx.execute_op(&CherryPickCommit {
+                shas,
+                record_origin,
+            }) {
                 if cherry_pick_in_progress(ctx.repo_path()) {
                     return Ok(());
                 }
@@ -868,6 +881,64 @@ fn gate_revert(ctx: &RepoContext, repo_path: &str) -> Result<Option<String>, Git
     Ok(None)
 }
 
+fn resolve_cherry_pick_shas(
+    commit_id: &Option<String>,
+    commit_ids: &[String],
+) -> Result<Vec<String>, GitError> {
+    let raw: Vec<String> = if !commit_ids.is_empty() {
+        commit_ids.to_vec()
+    } else if let Some(id) = commit_id {
+        vec![id.clone()]
+    } else {
+        return Err(GitError::Git(
+            "Cherry-pick exige pelo menos um commit.".into(),
+        ));
+    };
+    let mut shas = Vec::with_capacity(raw.len());
+    for id in raw {
+        shas.push(validate_git_object_id(&id).map_err(|e| GitError::Git(e.to_string()))?);
+    }
+    Ok(shas)
+}
+
+fn gate_cherry_pick_shas(
+    ctx: &RepoContext,
+    repo_path: &str,
+    shas: &[String],
+) -> Result<Option<String>, GitError> {
+    let anchor = shas.first().map(String::as_str).unwrap_or("");
+    if let Some(msg) = gate_cherry_pick(ctx, repo_path, anchor)? {
+        return Ok(Some(msg));
+    }
+    for sha in shas {
+        if let Some(msg) = gate_cherry_pick_merge(ctx, sha)? {
+            return Ok(Some(msg));
+        }
+        if let Some(msg) = gate_not_head_commit(repo_path, sha, "cherry-pick")? {
+            return Ok(Some(msg));
+        }
+        if let Some(msg) = gate_cherry_pick_foreign(ctx, sha)? {
+            return Ok(Some(msg));
+        }
+    }
+    Ok(None)
+}
+
+fn cherry_pick_description(shas: &[String], record_origin: bool) -> String {
+    let mut desc = if shas.len() > 1 {
+        format!(
+            "Aplica {} commits no topo da branch atual (do mais antigo ao mais recente).",
+            shas.len()
+        )
+    } else {
+        "Aplica as alterações do commit selecionado no topo da branch atual.".into()
+    };
+    if record_origin {
+        desc.push_str(" Registra a origem de cada commit na mensagem (-x).");
+    }
+    desc
+}
+
 fn gate_cherry_pick(
     ctx: &RepoContext,
     repo_path: &str,
@@ -926,11 +997,13 @@ fn gate_cherry_pick_merge(ctx: &RepoContext, sha: &str) -> Result<Option<String>
         .find_commit(oid)
         .map_err(|_| GitError::Git("Commit não encontrado no repositório.".into()))?;
     if commit.parent_count() > 1 {
-        return Ok(Some(
-            "Commit de merge — cherry-pick exige escolher qual lado manter (git cherry-pick -m), \
-             operação avançada fora do MVP."
-                .into(),
-        ));
+        let summary = commit.summary().unwrap_or("merge");
+        return Ok(Some(format!(
+            "«{summary}» ({:.7}) é commit de merge — cherry-pick exige escolher qual lado manter \
+             (git cherry-pick -m), operação avançada fora do MVP. Desmarque merges e escolha só \
+             commits normais.",
+            oid
+        )));
     }
     Ok(None)
 }
@@ -1646,7 +1719,11 @@ mod tests {
         let preview = preview_write(
             &ctx,
             ctx.repo_path(),
-            &WriteRequest::CherryPick { commit_id: sha },
+            &WriteRequest::CherryPick {
+                commit_id: Some(sha),
+                commit_ids: vec![],
+                record_origin: false,
+            },
         )
         .expect("preview");
         assert!(preview.blocked.is_some());

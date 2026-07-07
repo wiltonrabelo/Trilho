@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { ConnectDialog } from "@/components/ConnectDialog";
 import { CloneDialog } from "@/components/CloneDialog";
+import { CherryPickDialog } from "@/components/CherryPickDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
 import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
@@ -45,6 +46,7 @@ function App() {
   const [stashOpen, setStashOpen] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
   const [rewordOpen, setRewordOpen] = useState(false);
+  const [cherryPickOpen, setCherryPickOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -265,6 +267,12 @@ function App() {
     }
   }, [ops.preview, ops.pending]);
 
+  useEffect(() => {
+    if (ops.preview && ops.pending?.kind === "cherryPick") {
+      setCherryPickOpen(false);
+    }
+  }, [ops.preview, ops.pending]);
+
   const headCommit = checkoutHeadCommit ?? commits[0] ?? null;
   const canAmend =
     Boolean(headCommit?.isLocalOnly) && !repo?.isDetached;
@@ -306,6 +314,12 @@ function App() {
 
   // Sempre abre o diálogo com a URL atual editável: quem publicou com a URL
   // errada (conta sem acesso) corrige aqui — o plano vira `remote set-url` + push.
+  const handleCherryPick = useCallback(() => {
+    if (writeDisabled || !selectedCommit || !headCommit) return;
+    if (selectedCommit.id === headCommit.id) return;
+    setCherryPickOpen(true);
+  }, [writeDisabled, selectedCommit, headCommit]);
+
   const handlePublish = useCallback(() => {
     if (!repo || writeDisabled) return;
     ops.cancel();
@@ -504,6 +518,30 @@ function App() {
             kind: "stashPush",
             message: message || null,
             includeUntracked,
+          });
+        }}
+      />
+      <CherryPickDialog
+        open={cherryPickOpen}
+        primaryCommit={selectedCommit}
+        candidates={
+          focusedBranch && selectedCommit
+            ? commits
+            : selectedCommit
+              ? [selectedCommit]
+              : []
+        }
+        loading={ops.loading}
+        error={cherryPickOpen && !ops.preview ? ops.error : null}
+        onCancel={() => {
+          setCherryPickOpen(false);
+          ops.cancel();
+        }}
+        onContinue={(commitIds, recordOrigin) => {
+          void ops.request({
+            kind: "cherryPick",
+            commitIds,
+            recordOrigin,
           });
         }}
       />
@@ -844,19 +882,18 @@ function App() {
                         selectedCommit &&
                         headCommit &&
                         selectedCommit.id !== headCommit.id
-                          ? "Cherry-pick traz as alterações de um commit de outra branch para a branch atual (checkout)."
+                          ? selectedCommit.parentIds.length > 1
+                            ? "Cherry-pick não está disponível para commits de merge nesta versão."
+                            : "Cherry-pick traz as alterações de um commit de outra branch para a branch atual (checkout)."
                           : null
                       }
                       onCherryPick={
                         selectedCommit &&
                         !writeDisabled &&
                         headCommit &&
-                        selectedCommit.id !== headCommit.id
-                          ? () =>
-                              void ops.request({
-                                kind: "cherryPick",
-                                commitId: selectedCommit.id,
-                              })
+                        selectedCommit.id !== headCommit.id &&
+                        selectedCommit.parentIds.length <= 1
+                          ? handleCherryPick
                           : undefined
                       }
                       onCreateTag={
@@ -880,6 +917,9 @@ function App() {
                 defaultTop={280}
                 minTop={140}
                 minBottom={200}
+                topMaxHeight={
+                  status?.operationInProgress ? 200 : undefined
+                }
                 top={
                   <div className="flex h-full min-h-0 flex-col">
                     <div className="min-h-0 flex-1">
@@ -1016,6 +1056,7 @@ function App() {
                     </div>
                     {workingCopySelected &&
                       !writeDisabled &&
+                      !status?.operationInProgress &&
                       ((status?.staged.length ?? 0) > 0 || canAmend) && (
                       <div className="shrink-0">
                         <CommitForm
