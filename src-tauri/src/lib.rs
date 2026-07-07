@@ -48,6 +48,7 @@ pub fn run() {
             commands::list_local_branches,
             commands::list_remote_branches,
             commands::list_stashes,
+            commands::list_tags,
             commands::list_clone_remote_branches,
             commands::execute_clone_remote,
         ])

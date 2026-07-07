@@ -97,6 +97,22 @@ pub enum WriteRequest {
     StashDrop {
         index: usize,
     },
+    /// RF-24 — cria tag em commit (`git tag`).
+    CreateTag {
+        name: String,
+        #[serde(rename = "commitId")]
+        commit_id: String,
+        #[serde(default = "default_true")]
+        annotated: bool,
+        #[serde(default)]
+        message: Option<String>,
+        #[serde(default, rename = "pushToRemote")]
+        push_to_remote: bool,
+    },
+    /// RF-24 — remove tag local (`git tag -d`).
+    DeleteTag {
+        name: String,
+    },
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o
@@ -104,6 +120,10 @@ pub enum WriteRequest {
         #[serde(default)]
         url: Option<String>,
     },
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -183,6 +203,40 @@ mod tests {
             serde_json::from_str(r#"{"kind":"stashApply","index":0}"#).unwrap();
         match req {
             WriteRequest::StashApply { index } => assert_eq!(index, 0),
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn delete_tag_deserializa_name() {
+        let req: WriteRequest =
+            serde_json::from_str(r#"{"kind":"deleteTag","name":"v1.0"}"#).unwrap();
+        match req {
+            WriteRequest::DeleteTag { name } => assert_eq!(name, "v1.0"),
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn create_tag_deserializa_campos() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"createTag","name":"v1","commitId":"abcdef0123456789abcdef0123456789abcdef01","annotated":true,"message":"release","pushToRemote":true}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::CreateTag {
+                name,
+                commit_id,
+                annotated,
+                message,
+                push_to_remote,
+            } => {
+                assert_eq!(name, "v1");
+                assert_eq!(commit_id.len(), 40);
+                assert!(annotated);
+                assert_eq!(message.as_deref(), Some("release"));
+                assert!(push_to_remote);
+            }
             _ => panic!("variant errada"),
         }
     }

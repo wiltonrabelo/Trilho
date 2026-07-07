@@ -145,6 +145,39 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     setCommitFileDiff(null);
   }, []);
 
+  const selectCommitBySha = useCallback(
+    async (sha: string) => {
+      if (!repo) return;
+      const reqRepo = repo;
+      const matches = (c: CommitDto) =>
+        c.id === sha ||
+        c.id.startsWith(sha) ||
+        sha.startsWith(c.id) ||
+        c.shortId === sha.slice(0, 7);
+
+      const found = commits.find(matches);
+      if (found) {
+        await selectCommit(found);
+        return;
+      }
+
+      const stub: CommitDto = {
+        id: sha,
+        shortId: sha.slice(0, 7),
+        summary: `Commit ${sha.slice(0, 7)}`,
+        body: null,
+        authorName: "",
+        authoredAt: new Date().toISOString(),
+        isLocalOnly: false,
+        parentIds: [],
+        refs: [],
+      };
+      if (repoRef.current !== reqRepo) return;
+      await selectCommit(stub);
+    },
+    [repo, commits, selectCommit],
+  );
+
   return {
     view,
     setView,
@@ -161,6 +194,7 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     refresh,
     loadMore,
     selectCommit,
+    selectCommitBySha,
     selectCommitFile,
     clearSelection,
   };

@@ -9,8 +9,8 @@ use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInf
 use crate::infrastructure::{
     detect_credential_status, ensure_gcm_configured, fetch_all_remote_branch_refs,
     list_local_branches as fetch_local_branches, list_remote_branches as fetch_remote_branches,
-    list_stashes as fetch_stashes, repo_info, validate_git_object_id, validate_repo_relative_path,
-    CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry,
+    list_stashes as fetch_stashes, list_tags as fetch_tags, repo_info, validate_git_object_id, validate_repo_relative_path,
+    CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry, TagEntry,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -332,6 +332,16 @@ pub async fn list_stashes(state: State<'_, AppState>) -> Result<Vec<StashEntry>,
     })
     .await
     .map_err(|e| format!("Listagem de stashes interrompida: {e}"))?
+}
+
+#[tauri::command]
+pub async fn list_tags(state: State<'_, AppState>) -> Result<Vec<TagEntry>, String> {
+    let path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_tags(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Listagem de tags interrompida: {e}"))?
 }
 
 #[tauri::command]

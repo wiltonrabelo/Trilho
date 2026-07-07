@@ -10,6 +10,7 @@ mod repo_watcher;
 mod ssh_keys;
 mod stashes;
 mod status_parser;
+mod tags;
 mod upstream;
 mod validation;
 
@@ -17,6 +18,7 @@ pub use ssh_keys::{read_ssh_public_key, test_github_ssh, SshKeyInfo, SshTestResu
 
 pub use branches::{list_local_branches, list_remote_branches, RemoteBranchRef};
 pub use stashes::{list_stashes, stash_reference, StashEntry};
+pub use tags::{list_tags, TagEntry};
 pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
 
 pub use credential::{
@@ -29,7 +31,7 @@ pub use repo_watcher::RepoWatcher;
 pub use validation::{
     repo_name_from_url, validate_clone_branch, validate_clone_depth, validate_clone_destination,
     validate_folder_name, validate_git_object_id, validate_remote_name,
-    validate_remote_url, validate_repo_relative_path,
+    validate_remote_url, validate_repo_relative_path, validate_tag_name,
 };
 
 use crate::application::{BlameProvider, GitError, GitReader, TrailReader};

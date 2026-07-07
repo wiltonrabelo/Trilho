@@ -347,12 +347,19 @@ fn collect_ref_map(repo: &Repository) -> HashMap<Oid, Vec<String>> {
     let mut map: HashMap<Oid, Vec<String>> = HashMap::new();
     if let Ok(refs) = repo.references() {
         for reference in refs.flatten() {
+            let full_name = reference.name().unwrap_or("");
+            if full_name == "HEAD" || full_name.ends_with("/HEAD") {
+                continue;
+            }
+            let is_tag = full_name.starts_with("refs/tags/");
             let Some(name) = reference.shorthand().map(|s| s.to_string()) else {
                 continue;
             };
-            if name == "HEAD" || name.ends_with("/HEAD") {
-                continue;
-            }
+            let label = if is_tag {
+                format!("tag:{name}")
+            } else {
+                name
+            };
             // Tags anotadas apontam para objeto tag; resolve para o commit.
             let target = reference
                 .peel_to_commit()
@@ -360,7 +367,7 @@ fn collect_ref_map(repo: &Repository) -> HashMap<Oid, Vec<String>> {
                 .map(|c| c.id())
                 .or_else(|| reference.target());
             if let Some(oid) = target {
-                map.entry(oid).or_default().push(name);
+                map.entry(oid).or_default().push(label);
             }
         }
     }

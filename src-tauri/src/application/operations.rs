@@ -430,6 +430,90 @@ impl GitOperation for StashDrop {
     }
 }
 
+/// RF-24 — cria tag em commit (`git tag` / `git tag -a`).
+pub struct CreateTag {
+    pub name: String,
+    pub commit_id: String,
+    pub annotated: bool,
+    pub message: Option<String>,
+}
+
+impl GitOperation for CreateTag {
+    fn command(&self) -> GitCommand {
+        if self.annotated {
+            GitCommand {
+                args: vec![
+                    "tag".into(),
+                    "-a".into(),
+                    self.name.clone(),
+                    self.commit_id.clone(),
+                    "-F".into(),
+                    "-".into(),
+                ],
+            }
+        } else {
+            GitCommand {
+                args: vec![
+                    "tag".into(),
+                    self.name.clone(),
+                    self.commit_id.clone(),
+                ],
+            }
+        }
+    }
+    fn stdin_payload(&self) -> Option<Vec<u8>> {
+        if !self.annotated {
+            return None;
+        }
+        let msg = self
+            .message
+            .as_ref()
+            .map(|m| m.trim())
+            .filter(|m| !m.is_empty())?;
+        Some(format!("{msg}\n").into_bytes())
+    }
+    fn description(&self) -> &'static str {
+        "Cria uma tag apontando para o commit selecionado."
+    }
+}
+
+/// RF-24 — envia tag ao remoto (`git push origin <tag>`).
+pub struct PushTag {
+    pub remote: String,
+    pub name: String,
+}
+
+impl GitOperation for PushTag {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "push".into(),
+                self.remote.clone(),
+                self.name.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Envia a tag ao remoto configurado."
+    }
+}
+
+/// RF-24 — remove tag local (`git tag -d`).
+pub struct DeleteTag {
+    pub name: String,
+}
+
+impl GitOperation for DeleteTag {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["tag".into(), "-d".into(), self.name.clone()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Remove a tag do repositório local (não remove do remoto)."
+    }
+}
+
 pub struct AddRemote {
     pub name: String,
     pub url: String,
@@ -582,6 +666,61 @@ mod tests {
         };
         assert!(op.command().args.contains(&"--amend".to_string()));
         assert!(op.stdin_payload().is_some());
+    }
+
+    #[test]
+    fn stash_drop_usa_drop() {
+        let op = StashDrop {
+            reference: "stash@{0}".into(),
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["stash", "drop", "stash@{0}"]
+        );
+    }
+
+    #[test]
+    fn create_tag_anotada_usa_a_e_f() {
+        let op = CreateTag {
+            name: "v1".into(),
+            commit_id: "abcdef0".into(),
+            annotated: true,
+            message: Some("release".into()),
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["tag", "-a", "v1", "abcdef0", "-F", "-"]
+        );
+        assert!(op.stdin_payload().is_some());
+    }
+
+    #[test]
+    fn create_tag_leve_sem_mensagem() {
+        let op = CreateTag {
+            name: "v1".into(),
+            commit_id: "abcdef0".into(),
+            annotated: false,
+            message: None,
+        };
+        assert_eq!(op.command().args, vec!["tag", "v1", "abcdef0"]);
+        assert!(op.stdin_payload().is_none());
+    }
+
+    #[test]
+    fn push_tag_envia_para_remoto() {
+        let op = PushTag {
+            remote: "origin".into(),
+            name: "v1".into(),
+        };
+        assert_eq!(op.command().args, vec!["push", "origin", "v1"]);
+    }
+
+    #[test]
+    fn delete_tag_usa_d() {
+        let op = DeleteTag {
+            name: "v1".into(),
+        };
+        assert_eq!(op.command().args, vec!["tag", "-d", "v1"]);
     }
 
     #[test]

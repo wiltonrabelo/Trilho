@@ -5,6 +5,7 @@ import {
   Cloud,
   GitBranch,
   Search,
+  Tag,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -12,17 +13,19 @@ import {
   filterBranches,
   filterRemoteBranches,
   filterStashes,
+  filterTags,
   groupByRemote,
 } from "@/lib/refs-filter";
-import type { RemoteBranchRefDto, StashEntryDto } from "@/types";
+import type { RemoteBranchRefDto, StashEntryDto, TagEntryDto } from "@/types";
 
-const SECTION_STORAGE_KEY = "trilho.refs.sections.v2";
+const SECTION_STORAGE_KEY = "trilho.refs.sections.v3";
 
-type SectionKey = "locals" | "remotes" | "stashes";
+type SectionKey = "locals" | "remotes" | "tags" | "stashes";
 
 interface SectionState {
   locals: boolean;
   remotes: boolean;
+  tags: boolean;
   stashes: boolean;
 }
 
@@ -30,16 +33,18 @@ function loadSectionState(): SectionState {
   try {
     const raw =
       localStorage.getItem(SECTION_STORAGE_KEY) ??
+      localStorage.getItem("trilho.refs.sections.v2") ??
       localStorage.getItem("trilho.refs.sections.v1");
-    if (!raw) return { locals: true, remotes: true, stashes: true };
+    if (!raw) return { locals: true, remotes: true, tags: true, stashes: true };
     const parsed = JSON.parse(raw) as Partial<SectionState>;
     return {
       locals: parsed.locals !== false,
       remotes: parsed.remotes !== false,
+      tags: parsed.tags !== false,
       stashes: parsed.stashes !== false,
     };
   } catch {
-    return { locals: true, remotes: true, stashes: true };
+    return { locals: true, remotes: true, tags: true, stashes: true };
   }
 }
 
@@ -50,9 +55,11 @@ function persistSectionState(state: SectionState) {
 interface RefsPanelProps {
   branches: string[];
   remoteBranches: RemoteBranchRefDto[];
+  tags: TagEntryDto[];
   stashes: StashEntryDto[];
   currentBranch?: string | null;
   loading?: boolean;
+  tagsLoading?: boolean;
   stashesLoading?: boolean;
   writeDisabled?: boolean;
   onSwitchLocal: (branch: string) => void;
@@ -60,6 +67,8 @@ interface RefsPanelProps {
   onStashApply: (index: number) => void;
   onStashPop: (index: number) => void;
   onStashDrop: (index: number) => void;
+  onTagSelect: (commitId: string) => void;
+  onTagDelete: (name: string) => void;
 }
 
 function CollapsibleSection({
@@ -100,9 +109,11 @@ function CollapsibleSection({
 export function RefsPanel({
   branches,
   remoteBranches,
+  tags,
   stashes,
   currentBranch,
   loading,
+  tagsLoading,
   stashesLoading,
   writeDisabled,
   onSwitchLocal,
@@ -110,6 +121,8 @@ export function RefsPanel({
   onStashApply,
   onStashPop,
   onStashDrop,
+  onTagSelect,
+  onTagDelete,
 }: RefsPanelProps) {
   const [query, setQuery] = useState("");
   const [sections, setSections] = useState<SectionState>(loadSectionState);
@@ -134,6 +147,10 @@ export function RefsPanel({
     () => filterStashes(stashes, query),
     [stashes, query],
   );
+  const filteredTags = useMemo(
+    () => filterTags(tags, query),
+    [tags, query],
+  );
   const remoteGroups = useMemo(
     () => groupByRemote(filteredRemotes),
     [filteredRemotes],
@@ -142,8 +159,10 @@ export function RefsPanel({
   const hasAny =
     branches.length > 0 ||
     remoteBranches.length > 0 ||
+    tags.length > 0 ||
     stashes.length > 0 ||
     loading ||
+    tagsLoading ||
     stashesLoading;
 
   if (!hasAny) {
@@ -154,6 +173,7 @@ export function RefsPanel({
     query.trim().length > 0 &&
     filteredLocals.length === 0 &&
     filteredRemotes.length === 0 &&
+    filteredTags.length === 0 &&
     filteredStashes.length === 0;
 
   return (
@@ -167,8 +187,8 @@ export function RefsPanel({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filtrar ramos…"
-          aria-label="Filtrar branches, remotos e pilhas"
+          placeholder="Filtrar ramos, tags…"
+          aria-label="Filtrar branches, remotos, tags e pilhas"
           className="w-full rounded-md border border-border bg-bg py-1.5 pl-7 pr-2 text-xs text-text placeholder:text-muted focus:border-accent focus:outline-none"
         />
       </div>
@@ -275,6 +295,52 @@ export function RefsPanel({
                     </div>
                   ))}
                 </div>
+              </CollapsibleSection>
+            ) : null}
+
+            {!query || filteredTags.length > 0 || tags.length > 0 ? (
+              <CollapsibleSection
+                title="Tags"
+                icon={<Tag size={12} />}
+                count={filteredTags.length}
+                open={sections.tags}
+                onToggle={() => toggleSection("tags")}
+              >
+                {tagsLoading && tags.length === 0 ? (
+                  <p className="px-2 text-xs text-muted">Carregando…</p>
+                ) : filteredTags.length === 0 ? (
+                  <p className="px-2 text-xs text-muted">Nenhuma tag.</p>
+                ) : (
+                  <ul className="flex flex-col gap-0.5">
+                    {filteredTags.map((tag) => (
+                      <li
+                        key={tag.name}
+                        className="rounded-md px-2 py-1 hover:bg-surface"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onTagSelect(tag.commitId)}
+                          title={`Ir para o commit ${tag.shortId}`}
+                          className="w-full truncate text-left text-xs"
+                        >
+                          <span className="font-medium text-amber-600 dark:text-amber-400">
+                            {tag.name}
+                          </span>
+                          <span className="ml-1 font-mono text-[10px] text-muted">
+                            {tag.shortId}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onTagDelete(tag.name)}
+                          className="mt-0.5 text-[10px] text-red-600 hover:underline dark:text-red-400"
+                        >
+                          Excluir
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </CollapsibleSection>
             ) : null}
 

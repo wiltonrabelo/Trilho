@@ -1,9 +1,10 @@
 //! Casos de uso de escrita M3 — preview (RF-08) e execução com gates.
 
 use crate::application::operations::{
-    AddRemote, CreateCommit, GitOperation, PullFfOnly, PushSetUpstream, PushUpstream, RevertCommit,
-    SetRemoteUrl, Stage, StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush,
-    SwitchBranch, UncommitSoft, UnshallowRemote, Unstage, UnstageAll, UnstageMany,
+    AddRemote, CreateCommit, CreateTag, DeleteTag, GitOperation, PullFfOnly, PushSetUpstream,
+    PushTag, PushUpstream, RevertCommit, SetRemoteUrl, Stage, StageAll, StageMany, StashApply,
+    StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft, UnshallowRemote, Unstage,
+    UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, GitWriter, RepoContext};
@@ -11,7 +12,7 @@ use crate::domain::{OperationPreview, WriteRequest};
 use crate::infrastructure::{
     list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
     validate_clone_branch, validate_git_object_id, validate_remote_name, validate_remote_url,
-    validate_repo_relative_path,
+    validate_repo_relative_path, validate_tag_name, SafeGitCli,
 };
 use git2::Repository;
 
@@ -239,6 +240,36 @@ pub fn preview_write(
             );
             (ctx.preview_op(&op), description, blocked)
         }
+        WriteRequest::CreateTag {
+            name,
+            commit_id,
+            annotated,
+            message,
+            push_to_remote,
+        } => preview_create_tag(
+            ctx,
+            repo_path,
+            name,
+            commit_id,
+            *annotated,
+            message.as_deref(),
+            *push_to_remote,
+        )?,
+        WriteRequest::DeleteTag { name } => {
+            let name = match validate_tag_name(name) {
+                Ok(n) => n,
+                Err(GitError::Git(msg)) => {
+                    return Ok(blocked_preview(repo_path, &msg));
+                }
+                Err(e) => return Err(e),
+            };
+            let blocked = gate_tag_missing(repo_path, &name)?;
+            let op = DeleteTag {
+                name: name.clone(),
+            };
+            let description = format!("Remove a tag local «{name}».");
+            (ctx.preview_op(&op), description, blocked)
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -344,6 +375,33 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         WriteRequest::StashDrop { index } => {
             let reference = stash_reference(index)?;
             ctx.execute_op(&StashDrop { reference })?;
+        }
+        WriteRequest::CreateTag {
+            name,
+            commit_id,
+            annotated,
+            message,
+            push_to_remote,
+        } => {
+            let name = validate_tag_name(&name)?;
+            let commit_id =
+                validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            ctx.execute_op(&CreateTag {
+                name: name.clone(),
+                commit_id,
+                annotated,
+                message,
+            })?;
+            if push_to_remote {
+                ctx.execute_op(&PushTag {
+                    remote: "origin".into(),
+                    name,
+                })?;
+            }
+        }
+        WriteRequest::DeleteTag { name } => {
+            let name = validate_tag_name(&name)?;
+            ctx.execute_op(&DeleteTag { name })?;
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -641,6 +699,93 @@ fn stash_label(repo_path: &str, index: usize) -> String {
                 .map(|s| s.message)
         })
         .unwrap_or_else(|| format!("stash@{{{index}}}"))
+}
+
+fn gate_tag_exists(repo_path: &str, name: &str) -> Result<Option<String>, GitError> {
+    let cli = SafeGitCli::new(repo_path);
+    let op = crate::application::GitCommand {
+        args: vec![
+            "show-ref".into(),
+            "--verify".into(),
+            "--quiet".into(),
+            format!("refs/tags/{name}"),
+        ],
+    };
+    if cli.run_bool(&op)? {
+        Ok(Some(format!(
+            "Já existe uma tag «{name}» neste repositório."
+        )))
+    } else {
+        Ok(None)
+    }
+}
+
+fn gate_push_tag(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    let info = repo_info(ctx.repo_path())?;
+    if !info.has_remote {
+        return Ok(Some(
+            "Não há remoto configurado — desmarque «Enviar ao remoto».".into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn gate_tag_missing(repo_path: &str, name: &str) -> Result<Option<String>, GitError> {
+    match gate_tag_exists(repo_path, name)? {
+        Some(_) => Ok(None),
+        None => Ok(Some(format!("Tag «{name}» não encontrada."))),
+    }
+}
+
+fn preview_create_tag(
+    ctx: &RepoContext,
+    repo_path: &str,
+    name: &str,
+    commit_id: &str,
+    annotated: bool,
+    message: Option<&str>,
+    push_to_remote: bool,
+) -> Result<(Vec<String>, String, Option<String>), GitError> {
+    let name = match validate_tag_name(name) {
+        Ok(n) => n,
+        Err(GitError::Git(msg)) => return Ok((vec![], String::new(), Some(msg))),
+        Err(e) => return Err(e),
+    };
+    let commit_id = match validate_git_object_id(commit_id) {
+        Ok(id) => id,
+        Err(GitError::Git(msg)) => return Ok((vec![], String::new(), Some(msg))),
+        Err(e) => return Err(e),
+    };
+
+    let mut blocked = gate_tag_exists(repo_path, &name)?;
+    if annotated && message.map(str::trim).filter(|m| !m.is_empty()).is_none() {
+        blocked = blocked.or(Some(
+            "Tags anotadas precisam de uma mensagem.".into(),
+        ));
+    }
+
+    let tag_op = CreateTag {
+        name: name.clone(),
+        commit_id: commit_id.clone(),
+        annotated,
+        message: message.map(str::to_string),
+    };
+    let mut commands = ctx.preview_op(&tag_op);
+    let kind = if annotated { "anotada" } else { "leve" };
+    let short: String = commit_id.chars().take(7).collect();
+    let mut description = format!("Cria tag {kind} «{name}» no commit {short}.");
+
+    if push_to_remote {
+        blocked = blocked.or(gate_push_tag(ctx)?);
+        let push_op = PushTag {
+            remote: "origin".into(),
+            name: name.clone(),
+        };
+        commands.extend(ctx.preview_op(&push_op));
+        description.push_str(" Em seguida envia a tag ao remoto origin.");
+    }
+
+    Ok((commands, description, blocked))
 }
 
 fn gate_switch_branch(
@@ -1053,6 +1198,127 @@ mod tests {
 
         let status = ctx.reader().get_status().expect("status");
         assert!(status.staged.is_empty() && status.unstaged.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_tag_leve_executa() {
+        let dir = std::env::temp_dir().join(format!("trilho-tag-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        let sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let commit_id = String::from_utf8(sha.stdout).unwrap().trim().to_string();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::CreateTag {
+                name: "v1.0".into(),
+                commit_id: commit_id.clone(),
+                annotated: false,
+                message: None,
+                push_to_remote: false,
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_none(), "{:?}", preview.blocked);
+        assert!(preview.commands.iter().any(|c| c.contains("tag")));
+
+        execute_write(
+            &ctx,
+            WriteRequest::CreateTag {
+                name: "v1.0".into(),
+                commit_id,
+                annotated: false,
+                message: None,
+                push_to_remote: false,
+            },
+        )
+        .expect("tag");
+
+        let out = std::process::Command::new("git")
+            .args(["tag", "-l", "v1.0"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&out.stdout).contains("v1.0"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_tag_duplicata_bloqueada() {
+        let dir = std::env::temp_dir().join(format!("trilho-tag-dup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::process::Command::new("git")
+            .args(["tag", "v1"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let commit_id = String::from_utf8(sha.stdout).unwrap().trim().to_string();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::CreateTag {
+                name: "v1".into(),
+                commit_id,
+                annotated: false,
+                message: None,
+                push_to_remote: false,
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_tag_executa() {
+        let dir = std::env::temp_dir().join(format!("trilho-tag-del-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::process::Command::new("git")
+            .args(["tag", "v-del"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::DeleteTag {
+                name: "v-del".into(),
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_none());
+        execute_write(
+            &ctx,
+            WriteRequest::DeleteTag {
+                name: "v-del".into(),
+            },
+        )
+        .expect("delete");
+
+        let out = std::process::Command::new("git")
+            .args(["tag", "-l"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&out.stdout).trim().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

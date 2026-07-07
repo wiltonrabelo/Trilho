@@ -8,6 +8,7 @@ interface CommitSummaryPanelProps {
   onRevert?: () => void;
   onUncommit?: () => void;
   onEditMessage?: () => void;
+  onCreateTag?: () => void;
 }
 
 export function CommitSummaryPanel({
@@ -18,6 +19,7 @@ export function CommitSummaryPanel({
   onRevert,
   onUncommit,
   onEditMessage,
+  onCreateTag,
 }: CommitSummaryPanelProps) {
   if (!commit) {
     return (
@@ -29,6 +31,7 @@ export function CommitSummaryPanel({
 
   const showActions =
     onRevert ||
+    onCreateTag ||
     (canUncommit && onUncommit) ||
     (canEditMessage && onEditMessage);
 
@@ -43,6 +46,15 @@ export function CommitSummaryPanel({
               className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
             >
               Reverter commit
+            </button>
+          )}
+          {onCreateTag && (
+            <button
+              type="button"
+              onClick={onCreateTag}
+              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
+            >
+              Criar tag…
             </button>
           )}
           {canEditMessage && onEditMessage && (

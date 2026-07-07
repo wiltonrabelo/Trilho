@@ -22,11 +22,15 @@ interface CommitRowProps {
 
 const MAX_REF_CHIPS = 3;
 
-/** Classifica uma ref pelo nome (não temos o tipo vindo do backend ainda). */
+/** Classifica uma ref pelo nome (prefixo `tag:` vindo do backend). */
 function refKind(ref: string): "tag" | "remote" | "branch" {
-  if (ref.startsWith("tag:") || ref.startsWith("v")) return "tag";
+  if (ref.startsWith("tag:")) return "tag";
   if (ref.includes("/")) return "remote";
   return "branch";
+}
+
+function refLabel(ref: string): string {
+  return ref.startsWith("tag:") ? ref.slice(4) : ref;
 }
 
 /** Pílulas de ref estilo grafo do VS Code: ícone + nome; branch atual (HEAD)
@@ -55,7 +59,7 @@ function RefChips({ refs, isHead = false }: { refs: string[]; isHead?: boolean }
             className={`inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 font-mono text-[10px] leading-none ${style}`}
           >
             <Icon size={9} strokeWidth={2.5} className="shrink-0" />
-            {r}
+            {refLabel(r)}
           </span>
         );
       })}

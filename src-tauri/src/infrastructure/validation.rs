@@ -96,6 +96,30 @@ pub fn validate_clone_branch(branch: Option<&str>) -> Result<Option<String>, Git
     }
 }
 
+/// Nome de tag Git (`v1.0`, `release/2026`, …).
+pub fn validate_tag_name(name: &str) -> Result<String, GitError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::Git("Nome da tag não pode ficar vazio.".into()));
+    }
+    if trimmed.starts_with('-') || trimmed.starts_with('.') {
+        return Err(GitError::Git("Nome de tag inválido.".into()));
+    }
+    if trimmed.ends_with(".lock") || trimmed.ends_with('/') || trimmed.ends_with('.') {
+        return Err(GitError::Git("Nome de tag inválido.".into()));
+    }
+    if trimmed.contains("..") || trimmed.contains("@{") || trimmed.contains("//") {
+        return Err(GitError::Git("Nome de tag inválido.".into()));
+    }
+    const INVALID: &[char] = &[' ', '~', '^', ':', '?', '*', '[', '\\'];
+    if trimmed.chars().any(|c| INVALID.contains(&c) || c.is_control()) {
+        return Err(GitError::Git(
+            "Nome de tag contém caracteres inválidos.".into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
 /// Nome de remoto Git (`origin`, `upstream`, …).
 pub fn validate_remote_name(name: &str) -> Result<String, GitError> {
     let trimmed = name.trim();
@@ -192,6 +216,19 @@ mod tests {
             repo_name_from_url("https://github.com/user/Trilho.git").as_deref(),
             Some("Trilho")
         );
+    }
+
+    #[test]
+    fn aceita_tag_valida() {
+        assert!(validate_tag_name("v1.0.0").is_ok());
+        assert!(validate_tag_name("release/2026-07").is_ok());
+    }
+
+    #[test]
+    fn rejeita_tag_invalida() {
+        assert!(validate_tag_name("").is_err());
+        assert!(validate_tag_name("bad name").is_err());
+        assert!(validate_tag_name("..").is_err());
     }
 
     #[test]

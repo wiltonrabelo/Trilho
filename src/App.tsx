@@ -16,6 +16,7 @@ import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
 import { StashDialog } from "@/components/StashDialog";
 import { StatusPanel } from "@/components/StatusPanel";
+import { TagDialog } from "@/components/TagDialog";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
@@ -29,6 +30,7 @@ import { useOperations } from "@/hooks/useOperations";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useStashes } from "@/hooks/useStashes";
+import { useTags } from "@/hooks/useTags";
 import { useSync } from "@/hooks/useSync";
 import { getAppInfo, getRepoInfo, runningInTauri } from "@/lib/api";
 import type { AppInfo, RepoInfo } from "@/types";
@@ -40,6 +42,7 @@ function App() {
   const [amendIntent, setAmendIntent] = useState(0);
   const [publishOpen, setPublishOpen] = useState(false);
   const [stashOpen, setStashOpen] = useState(false);
+  const [tagOpen, setTagOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -84,6 +87,7 @@ function App() {
     refresh: refreshCommits,
     loadMore,
     selectCommit,
+    selectCommitBySha,
     selectCommitFile,
     clearSelection,
   } = useCommits(repo, origin?.candidate ?? null);
@@ -106,6 +110,7 @@ function App() {
 
   const branchList = useBranches(repo?.path, repo?.branch);
   const stashList = useStashes(repo?.path);
+  const tagList = useTags(repo?.path);
 
   const onAfterFetch = useCallback(async () => {
     await Promise.all([
@@ -114,8 +119,9 @@ function App() {
       refreshOrigin(),
       branchList.refresh(),
       stashList.refresh(),
+      tagList.refresh(),
     ]);
-  }, [refreshCommits, refreshStatus, refreshOrigin, branchList.refresh, stashList.refresh]);
+  }, [refreshCommits, refreshStatus, refreshOrigin, branchList.refresh, stashList.refresh, tagList.refresh]);
 
   const {
     sync,
@@ -145,8 +151,9 @@ function App() {
       refreshOrigin(),
       branchList.refresh(),
       stashList.refresh(),
+      tagList.refresh(),
     ]);
-  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin, branchList.refresh, stashList.refresh]);
+  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin, branchList.refresh, stashList.refresh, tagList.refresh]);
 
   useRepoChanged(refreshAll);
 
@@ -204,6 +211,12 @@ function App() {
   useEffect(() => {
     if (ops.preview && ops.pending?.kind === "stashPush") {
       setStashOpen(false);
+    }
+  }, [ops.preview, ops.pending]);
+
+  useEffect(() => {
+    if (ops.preview && ops.pending?.kind === "createTag") {
+      setTagOpen(false);
     }
   }, [ops.preview, ops.pending]);
 
@@ -302,6 +315,12 @@ function App() {
     await selectCommit(commit);
   }
 
+  async function handleSelectTag(commitId: string) {
+    setWorkingCopySelected(false);
+    clearFileSelection();
+    await selectCommitBySha(commitId);
+  }
+
   async function handleSelectCommitFile(path: string) {
     clearFileSelection();
     await selectCommitFile(path);
@@ -360,7 +379,11 @@ function App() {
                         ? "Aplicar e remover stash"
                         : ops.pending?.kind === "stashDrop"
                           ? "Excluir stash"
-                          : undefined
+                          : ops.pending?.kind === "createTag"
+                            ? "Criar tag"
+                            : ops.pending?.kind === "deleteTag"
+                              ? "Excluir tag"
+                              : undefined
         }
       />
       <CloneDialog
@@ -400,6 +423,28 @@ function App() {
             kind: "stashPush",
             message: message || null,
             includeUntracked,
+          });
+        }}
+      />
+      <TagDialog
+        open={tagOpen}
+        commitShortId={selectedCommit?.shortId ?? "—"}
+        hasRemote={repo?.hasRemote}
+        loading={ops.loading}
+        error={tagOpen && !ops.preview ? ops.error : null}
+        onCancel={() => {
+          setTagOpen(false);
+          ops.cancel();
+        }}
+        onContinue={({ name, annotated, message, pushToRemote }) => {
+          if (!selectedCommit) return;
+          void ops.request({
+            kind: "createTag",
+            name,
+            commitId: selectedCommit.id,
+            annotated,
+            message: message || null,
+            pushToRemote,
           });
         }}
       />
@@ -573,9 +618,11 @@ function App() {
                 <RefsPanel
                   branches={branchList.branches}
                   remoteBranches={branchList.remoteBranches}
+                  tags={tagList.tags}
                   stashes={stashList.stashes}
                   currentBranch={repo.branch}
                   loading={branchList.loading}
+                  tagsLoading={tagList.loading}
                   stashesLoading={stashList.loading}
                   writeDisabled={writeDisabled}
                   onSwitchLocal={(branch) =>
@@ -596,6 +643,10 @@ function App() {
                   }
                   onStashDrop={(index) =>
                     void ops.request({ kind: "stashDrop", index })
+                  }
+                  onTagSelect={(commitId) => void handleSelectTag(commitId)}
+                  onTagDelete={(name) =>
+                    void ops.request({ kind: "deleteTag", name })
                   }
                 />
                 <div className="mt-auto shrink-0 border-t border-border pt-3">
@@ -682,6 +733,11 @@ function App() {
                                 kind: "revert",
                                 commitId: selectedCommit.id,
                               })
+                          : undefined
+                      }
+                      onCreateTag={
+                        selectedCommit && !workingCopySelected
+                          ? () => setTagOpen(true)
                           : undefined
                       }
                       onUncommit={

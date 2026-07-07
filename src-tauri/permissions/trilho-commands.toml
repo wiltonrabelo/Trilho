@@ -41,6 +41,7 @@ commands.allow = [
   "list_local_branches",
   "list_remote_branches",
   "list_stashes",
+  "list_tags",
   "list_clone_remote_branches",
   "execute_clone_remote",
 ]

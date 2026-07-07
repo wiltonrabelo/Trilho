@@ -256,7 +256,12 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Checkout branch — recorte 1** — listar branches locais + `git switch` + preview RF-08 + gate WT suja
 - [x] **Checkout branch — recorte 2** — checkout de branch remota (`git switch --track origin/<branch>`)
 - [x] **Painel Refs — recorte 1** — sidebar colapsável: Ramos + Remotos + pesquisa (estilo SourceTree)
-- [ ] **Painel Refs — recorte 2** — seções Tags e Pilhas (depende RF-23/RF-24)
+- [x] **Painel Refs — recorte 2** — seção Tags listar/excluir + clique → commit no grafo (Pilhas ✅)
+
+## Backlog F4 — RF-24 Tags ✅
+
+- [x] **Recorte 1** — criar tag no commit selecionado (diálogo + preview RF-08 + push opcional)
+- [x] **Recorte 2** — listar/excluir tags na seção Tags do painel Refs
 
 ## Backlog F4 — RF-23 Stash ⏳
 

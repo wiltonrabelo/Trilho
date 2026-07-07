@@ -1,4 +1,4 @@
-import type { RemoteBranchRefDto, StashEntryDto } from "@/types";
+import type { RemoteBranchRefDto, StashEntryDto, TagEntryDto } from "@/types";
 
 export function filterBranches(branches: string[], query: string): string[] {
   const q = query.trim().toLowerCase();
@@ -31,6 +31,17 @@ export function filterStashes(
       s.message.toLowerCase().includes(q) ||
       s.reference.toLowerCase().includes(q) ||
       String(s.index).includes(q),
+  );
+}
+
+export function filterTags(tags: TagEntryDto[], query: string): TagEntryDto[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return tags;
+  return tags.filter(
+    (t) =>
+      t.name.toLowerCase().includes(q) ||
+      t.shortId.toLowerCase().includes(q) ||
+      t.commitId.toLowerCase().includes(q),
   );
 }
 

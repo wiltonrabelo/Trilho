@@ -25,6 +25,7 @@ import type {
   OperationPreviewDto,
   RemoteBranchRefDto,
   StashEntryDto,
+  TagEntryDto,
   WriteRequestDto,
 } from "@/types";
 
@@ -432,6 +433,13 @@ export async function listStashes(): Promise<StashEntryDto[]> {
     ];
   }
   return invoke<StashEntryDto[]>("list_stashes");
+}
+
+export async function listTags(): Promise<TagEntryDto[]> {
+  if (!isTauri()) {
+    return [];
+  }
+  return invoke<TagEntryDto[]>("list_tags");
 }
 
 export async function previewCloneRemote(

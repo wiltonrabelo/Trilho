@@ -155,6 +155,12 @@ export interface StashEntryDto {
   message: string;
 }
 
+export interface TagEntryDto {
+  name: string;
+  commitId: string;
+  shortId: string;
+}
+
 export interface BranchOriginDto {
   currentBranch: string | null;
   candidate: string | null;
@@ -215,6 +221,15 @@ export type WriteRequestDto =
   | { kind: "stashApply"; index: number }
   | { kind: "stashPop"; index: number }
   | { kind: "stashDrop"; index: number }
+  | {
+      kind: "createTag";
+      name: string;
+      commitId: string;
+      annotated?: boolean;
+      message?: string | null;
+      pushToRemote?: boolean;
+    }
+  | { kind: "deleteTag"; name: string }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {
