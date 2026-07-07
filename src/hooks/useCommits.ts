@@ -4,6 +4,7 @@ import {
   getCommitDiff,
   getCommitFileDiff,
   getDualTrail,
+  listBranchExclusiveCommits,
   listCommitFiles,
   listCommits,
 } from "@/lib/api";
@@ -11,58 +12,90 @@ import type { CommitDto, FileChangeDto, RepoInfo, TrailKindDto } from "@/types";
 
 const PAGE_SIZE = 100;
 const DUAL_TRAIL_LIMIT = 300;
+const EXCLUSIVE_LIMIT = 300;
 
 /** Visão do grafo: "trail" = trilha da branch atual + linha da base (RF-02),
  *  legível em repositórios com muitos merges; "graph" = grafo completo. */
 export type GraphView = "trail" | "graph";
 
 export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
-  // Grafo completo (lanes coloridas, estilo Git Graph do VS Code) é a visão
-  // primária; "Trilha da branch" fica como recorte first-parent opcional.
   const [view, setView] = useState<GraphView>("graph");
   const [commits, setCommits] = useState<CommitDto[]>([]);
-  // Paralelo a `commits` na trilha dupla: linha de cada commit (current/base/shared).
   const [trails, setTrails] = useState<TrailKindDto[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [focusedBranch, setFocusedBranch] = useState<string | null>(null);
+  const [checkoutHeadCommit, setCheckoutHeadCommit] =
+    useState<CommitDto | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<CommitDto | null>(null);
   const [commitDiff, setCommitDiff] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
-  // Detalhes do commit: arquivos alterados + arquivo selecionado + seu diff.
   const [commitFiles, setCommitFiles] = useState<FileChangeDto[]>([]);
   const [selectedCommitFile, setSelectedCommitFile] = useState<string | null>(
     null,
   );
   const [commitFileDiff, setCommitFileDiff] = useState<string | null>(null);
 
-  // Repositório atual em ref: usado para descartar respostas atrasadas de um
-  // repo que já não está aberto. Sem isso, uma leitura em voo disparada pelo
-  // watcher (RF-19) do repo anterior pode resolver *depois* da troca e
-  // sobrescrever a lista — exibindo commits de outro repositório.
   const repoRef = useRef(repo);
   repoRef.current = repo;
+
+  const focusBranch = useCallback(
+    (branch: string) => {
+      if (!repo?.branch || branch === repo.branch) {
+        setFocusedBranch(null);
+        return;
+      }
+      setFocusedBranch((prev) => (prev === branch ? null : branch));
+    },
+    [repo?.branch],
+  );
+
+  const clearFocusedBranch = useCallback(() => {
+    setFocusedBranch(null);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!repo) return;
     const reqRepo = repo;
+
+    const headListPromise = listCommits(1, null, false);
+
+    if (focusedBranch) {
+      const [list, headList] = await Promise.all([
+        listBranchExclusiveCommits(focusedBranch, EXCLUSIVE_LIMIT),
+        headListPromise,
+      ]);
+      if (repoRef.current !== reqRepo) return;
+      setCommits(list);
+      setTrails(null);
+      setHasMore(list.length >= EXCLUSIVE_LIMIT);
+      setCheckoutHeadCommit(headList[0] ?? null);
+      return;
+    }
+
     if (view === "trail" && baseBranch) {
-      // Trilha dupla: branch atual + base, divergência e trilho comum.
-      const entries = await getDualTrail(baseBranch, DUAL_TRAIL_LIMIT);
+      const [entries, headList] = await Promise.all([
+        getDualTrail(baseBranch, DUAL_TRAIL_LIMIT),
+        headListPromise,
+      ]);
       if (repoRef.current !== reqRepo) return;
       setCommits(entries.map((e) => e.commit));
       setTrails(entries.map((e) => e.trail));
       setHasMore(false);
+      setCheckoutHeadCommit(headList[0] ?? null);
       return;
     }
-    const list = await listCommits(PAGE_SIZE, null, view === "trail");
+    const [list, headList] = await Promise.all([
+      listCommits(PAGE_SIZE, null, view === "trail"),
+      headListPromise,
+    ]);
     if (repoRef.current !== reqRepo) return;
     setCommits(list);
     setTrails(null);
     setHasMore(list.length >= PAGE_SIZE);
-  }, [repo, view, baseBranch]);
+    setCheckoutHeadCommit(headList[0] ?? null);
+  }, [repo, view, baseBranch, focusedBranch]);
 
-  // Troca de repositório: zera a lista imediatamente para não exibir commits do
-  // repo anterior enquanto o novo carrega (chaveado por path, não por view).
   useEffect(() => {
     setCommits([]);
     setTrails(null);
@@ -72,6 +105,8 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     setCommitFiles([]);
     setSelectedCommitFile(null);
     setCommitFileDiff(null);
+    setFocusedBranch(null);
+    setCheckoutHeadCommit(null);
   }, [repo?.path]);
 
   useEffect(() => {
@@ -85,10 +120,18 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     const after = commits[commits.length - 1]!.id;
     setLoading(true);
     try {
-      const more = await listCommits(PAGE_SIZE, after, view === "trail");
+      const more = focusedBranch
+        ? await listBranchExclusiveCommits(
+            focusedBranch,
+            EXCLUSIVE_LIMIT,
+            after,
+          )
+        : await listCommits(PAGE_SIZE, after, view === "trail");
       if (repoRef.current !== reqRepo) return;
       setCommits((prev) => [...prev, ...more]);
-      setHasMore(more.length >= PAGE_SIZE);
+      setHasMore(
+        more.length >= (focusedBranch ? EXCLUSIVE_LIMIT : PAGE_SIZE),
+      );
     } finally {
       setLoading(false);
     }
@@ -185,6 +228,10 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
     trails,
     hasMore,
     loading,
+    focusedBranch,
+    focusBranch,
+    clearFocusedBranch,
+    checkoutHeadCommit,
     selectedCommit,
     commitDiff,
     commitFiles,

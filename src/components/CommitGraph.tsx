@@ -9,6 +9,10 @@ interface CommitGraphProps {
   onViewChange: (view: GraphView) => void;
   trails?: TrailKindDto[] | null;
   divergence?: TrailDivergence | null;
+  focusedBranch?: string | null;
+  currentBranch?: string | null;
+  checkoutHeadId?: string | null;
+  onClearFocusedBranch?: () => void;
   workingCopySelected?: boolean;
   changeCount?: number;
   stagedCount?: number;
@@ -39,6 +43,10 @@ export function CommitGraph({
   onViewChange,
   trails,
   divergence,
+  focusedBranch,
+  currentBranch,
+  checkoutHeadId,
+  onClearFocusedBranch,
   workingCopySelected,
   changeCount,
   stagedCount,
@@ -50,9 +58,37 @@ export function CommitGraph({
 }: CommitGraphProps) {
   return (
     <div className="flex h-full flex-col">
+      {focusedBranch ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-900 dark:text-amber-100">
+          <span className="min-w-0 flex-1">
+            Commits exclusivos de{" "}
+            <span className="font-semibold">{focusedBranch}</span>
+            {currentBranch ? (
+              <>
+                {" "}
+                (não em <span className="font-semibold">{currentBranch}</span>)
+              </>
+            ) : null}
+            {commits.length === 0 ? " — nenhum commit exclusivo" : null}
+          </span>
+          {onClearFocusedBranch ? (
+            <button
+              type="button"
+              onClick={onClearFocusedBranch}
+              className="shrink-0 rounded border border-amber-500/40 px-2 py-0.5 text-[10px] hover:bg-amber-500/20"
+            >
+              Voltar à trilha
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-xs font-medium text-muted">Trilha de commits</span>
-        <div className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5" role="group" aria-label="Visão do grafo">
+        <div
+          className={`inline-flex items-center gap-0.5 rounded-md border border-border p-0.5 ${focusedBranch ? "opacity-50 pointer-events-none" : ""}`}
+          role="group"
+          aria-label="Visão do grafo"
+        >
           {VIEWS.map(({ value, label, hint }) => (
             <button
               key={value}
@@ -75,7 +111,7 @@ export function CommitGraph({
       <GraphCanvas
         commits={commits}
         selectedId={selectedId}
-        headId={commits[0]?.id ?? null}
+        headId={checkoutHeadId ?? commits[0]?.id ?? null}
         linear={view === "trail"}
         trails={view === "trail" ? trails : null}
         divergence={divergence}

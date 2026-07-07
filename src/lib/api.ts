@@ -138,6 +138,20 @@ export async function getDualTrail(
   return invoke<TrailEntryDto[]>("get_dual_trail", { base, limit });
 }
 
+/** Commits em `branch` que não estão no histórico de HEAD (`git log branch --not HEAD`). */
+export async function listBranchExclusiveCommits(
+  branch: string,
+  limit = 300,
+  after: string | null = null,
+): Promise<CommitDto[]> {
+  if (!isTauri()) return MOCK_COMMITS.slice(0, 2);
+  return invoke<CommitDto[]>("list_branch_exclusive_commits", {
+    branch,
+    limit,
+    after,
+  });
+}
+
 export async function getRepoStatus(): Promise<RepoStatusDto> {
 
   if (!isTauri()) return MOCK_STATUS;

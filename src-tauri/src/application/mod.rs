@@ -192,6 +192,13 @@ pub trait TrailReader: Send + Sync {
         first_parent: bool,
     ) -> Result<Vec<Commit>, GitError>;
     fn get_dual_trail(&self, base: &str, limit: usize) -> Result<Vec<TrailEntry>, GitError>;
+    /// Commits alcançáveis em `branch` mas não em HEAD (`git log branch --not HEAD`).
+    fn list_branch_exclusive_commits(
+        &self,
+        branch: &str,
+        limit: usize,
+        after: Option<&str>,
+    ) -> Result<Vec<Commit>, GitError>;
     fn list_commit_files(&self, sha: &str) -> Result<Vec<FileChange>, GitError>;
 }
 

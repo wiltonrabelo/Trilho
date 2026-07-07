@@ -1,8 +1,8 @@
 //! Casos de uso de escrita M3 — preview (RF-08) e execução com gates.
 
 use crate::application::operations::{
-    AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, ContinueMerge,
-    CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
+    AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, CherryPickCommit,
+    ContinueMerge, CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
     DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushForceWithLease,
     PushSetUpstream, PushTag,
     PushUpstream, RemoveUntracked, RemoveUntrackedMany, RevertCommit, SetRemoteUrl, Stage,
@@ -10,7 +10,7 @@ use crate::application::operations::{
     UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::{head_is_local_only, is_commit_on_remote};
-use crate::application::{GitError, GitWriter, RepoContext};
+use crate::application::{GitCommand, GitError, GitWriter, RepoContext};
 use crate::domain::{FileChangeKind, InProgressKind, OperationPreview, WriteRequest};
 use crate::infrastructure::{
     list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
@@ -152,8 +152,20 @@ pub fn preview_write(
         WriteRequest::Revert { commit_id } => {
             let sha =
                 validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            let blocked = gate_revert(ctx, repo_path)?.or(gate_revert_merge(ctx, &sha)?);
+            let blocked = gate_revert(ctx, repo_path)?
+                .or(gate_revert_merge(ctx, &sha)?)
+                .or(gate_not_head_commit(repo_path, &sha, "reverter")?);
             let op = RevertCommit { sha };
+            (ctx.preview_op(&op), op.description().to_string(), blocked)
+        }
+        WriteRequest::CherryPick { commit_id } => {
+            let sha =
+                validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_cherry_pick(ctx, repo_path, &sha)?
+                .or(gate_cherry_pick_merge(ctx, &sha)?)
+                .or(gate_not_head_commit(repo_path, &sha, "cherry-pick")?)
+                .or(gate_cherry_pick_foreign(ctx, &sha)?);
+            let op = CherryPickCommit { sha };
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
         WriteRequest::Push => {
@@ -525,6 +537,16 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
                 return Err(e);
             }
         }
+        WriteRequest::CherryPick { commit_id } => {
+            let sha =
+                validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            if let Err(e) = ctx.execute_op(&CherryPickCommit { sha }) {
+                if cherry_pick_in_progress(ctx.repo_path()) {
+                    return Ok(());
+                }
+                return Err(e);
+            }
+        }
         WriteRequest::Push => {
             ctx.execute_op(&PushUpstream)?;
         }
@@ -833,17 +855,8 @@ fn gate_revert_merge(ctx: &RepoContext, sha: &str) -> Result<Option<String>, Git
 }
 
 fn gate_revert(ctx: &RepoContext, repo_path: &str) -> Result<Option<String>, GitError> {
-    let git_dir = std::path::Path::new(repo_path).join(".git");
-    if git_dir.join("REVERT_HEAD").exists() {
-        return Ok(Some(
-            "Há um revert em andamento — finalize com «Continuar revert» ou cancele com «Abortar revert»."
-                .into(),
-        ));
-    }
-    if git_dir.join("MERGE_HEAD").exists() {
-        return Ok(Some(
-            "Há um merge em andamento — conclua ou aborte antes de reverter.".into(),
-        ));
+    if let Some(msg) = gate_sequencer_idle(repo_path, "reverter")? {
+        return Ok(Some(msg));
     }
     let status = ctx.reader().get_status()?;
     if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
@@ -853,6 +866,97 @@ fn gate_revert(ctx: &RepoContext, repo_path: &str) -> Result<Option<String>, Git
         ));
     }
     Ok(None)
+}
+
+fn gate_cherry_pick(
+    ctx: &RepoContext,
+    repo_path: &str,
+    _sha: &str,
+) -> Result<Option<String>, GitError> {
+    if let Some(msg) = gate_sequencer_idle(repo_path, "cherry-pick")? {
+        return Ok(Some(msg));
+    }
+    let status = ctx.reader().get_status()?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
+        return Ok(Some(
+            "Working tree com alterações — faça commit, stash ou descarte antes do cherry-pick."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn gate_sequencer_idle(repo_path: &str, action: &str) -> Result<Option<String>, GitError> {
+    let git_dir = std::path::Path::new(repo_path).join(".git");
+    if git_dir.join("CHERRY_PICK_HEAD").exists() {
+        return Ok(Some(format!(
+            "Há um cherry-pick em andamento — finalize com «Continuar cherry-pick» ou cancele antes de {action}."
+        )));
+    }
+    if git_dir.join("REVERT_HEAD").exists() {
+        return Ok(Some(format!(
+            "Há um revert em andamento — conclua ou aborte antes de {action}."
+        )));
+    }
+    if git_dir.join("MERGE_HEAD").exists() {
+        return Ok(Some(format!(
+            "Há um merge em andamento — conclua ou aborte antes de {action}."
+        )));
+    }
+    Ok(None)
+}
+
+fn gate_not_head_commit(
+    repo_path: &str,
+    sha: &str,
+    action: &str,
+) -> Result<Option<String>, GitError> {
+    if is_head_commit(repo_path, sha)? {
+        return Ok(Some(format!(
+            "Este é o último commit (HEAD) — não é possível fazer {action} dele."
+        )));
+    }
+    Ok(None)
+}
+
+fn gate_cherry_pick_merge(ctx: &RepoContext, sha: &str) -> Result<Option<String>, GitError> {
+    let repo = Repository::discover(ctx.repo_path()).map_err(|e| GitError::Io(e.to_string()))?;
+    let oid = git2::Oid::from_str(sha).map_err(|e| GitError::Git(e.to_string()))?;
+    let commit = repo
+        .find_commit(oid)
+        .map_err(|_| GitError::Git("Commit não encontrado no repositório.".into()))?;
+    if commit.parent_count() > 1 {
+        return Ok(Some(
+            "Commit de merge — cherry-pick exige escolher qual lado manter (git cherry-pick -m), \
+             operação avançada fora do MVP."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
+/// Cherry-pick só faz sentido para commits fora do histórico da branch atual.
+fn gate_cherry_pick_foreign(ctx: &RepoContext, sha: &str) -> Result<Option<String>, GitError> {
+    if is_ancestor_of_head(ctx.writer(), sha)? {
+        return Ok(Some(
+            "Este commit já faz parte do histórico da branch atual — use cherry-pick para trazer \
+             commits de outras branches que ainda não estão aqui."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn is_ancestor_of_head(cli: &SafeGitCli, sha: &str) -> Result<bool, GitError> {
+    let op = GitCommand {
+        args: vec![
+            "merge-base".into(),
+            "--is-ancestor".into(),
+            sha.into(),
+            "HEAD".into(),
+        ],
+    };
+    cli.run_bool(&op)
 }
 
 fn gate_abort_revert(repo_path: &str) -> Result<Option<String>, GitError> {
@@ -1215,6 +1319,12 @@ fn revert_in_progress(repo_path: &str) -> bool {
         .exists()
 }
 
+fn cherry_pick_in_progress(repo_path: &str) -> bool {
+    std::path::Path::new(repo_path)
+        .join(".git/CHERRY_PICK_HEAD")
+        .exists()
+}
+
 fn gate_discard_blocked(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     let status = ctx.reader().get_status()?;
     if let Some(op) = &status.operation_in_progress {
@@ -1503,6 +1613,43 @@ mod tests {
             preview.blocked.is_some(),
             "revert de merge deve vir bloqueado"
         );
+        assert!(preview.blocked.unwrap().to_lowercase().contains("merge"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cherry_pick_de_merge_e_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-cpmrg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        for args in [
+            vec!["checkout", "-b", "feat"],
+            vec!["commit", "--allow-empty", "-m", "feat work"],
+            vec!["checkout", "-"],
+            vec!["commit", "--allow-empty", "-m", "avanca"],
+            vec!["merge", "--no-ff", "feat", "-m", "merge feat"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+        }
+        let sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::CherryPick { commit_id: sha },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_some());
         assert!(preview.blocked.unwrap().to_lowercase().contains("merge"));
         let _ = std::fs::remove_dir_all(&dir);
     }

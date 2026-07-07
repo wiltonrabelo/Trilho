@@ -175,6 +175,66 @@ impl TrailReader for Git2Reader {
         Ok(result)
     }
 
+    fn list_branch_exclusive_commits(
+        &self,
+        branch: &str,
+        limit: usize,
+        after: Option<&str>,
+    ) -> Result<Vec<Commit>, GitError> {
+        let repo = self.open()?;
+        let upstream_oid = resolve_head_upstream(&repo).and_then(|u| u.upstream_oid);
+        let refs_by_oid = self.ref_map(&repo);
+
+        let head_oid = repo
+            .head()
+            .ok()
+            .and_then(|h| h.target())
+            .ok_or(GitError::NotARepository)?;
+
+        let branch_tip = crate::application::branch_tip(&repo, branch).ok_or_else(|| {
+            GitError::Git(format!("Branch «{branch}» não encontrada neste repositório."))
+        })?;
+
+        let after_oid = match after {
+            None => None,
+            Some(id) => {
+                let id = validate_git_object_id(id)?;
+                let oid = git2::Oid::from_str(&id)
+                    .map_err(|e| GitError::Git(format!("Commit «{id}» inválido: {e}")))?;
+                repo.find_commit(oid).map_err(|_| {
+                    GitError::Git(format!("Commit «{id}» não encontrado neste repositório."))
+                })?;
+                Some(oid)
+            }
+        };
+
+        let mut revwalk = repo.revwalk().map_err(|e| GitError::Io(e.to_string()))?;
+        revwalk
+            .push(branch_tip)
+            .map_err(|e| GitError::Io(e.to_string()))?;
+        revwalk
+            .hide(head_oid)
+            .map_err(|e| GitError::Io(e.to_string()))?;
+        revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME).ok();
+
+        let mut passed_cursor = after_oid.is_none();
+        let mut commits = Vec::with_capacity(limit.min(256));
+        for oid in revwalk {
+            let oid = oid.map_err(|e| GitError::Io(e.to_string()))?;
+            if !passed_cursor {
+                if after_oid == Some(oid) {
+                    passed_cursor = true;
+                }
+                continue;
+            }
+            if commits.len() >= limit {
+                break;
+            }
+            commits.push(build_commit(&repo, oid, upstream_oid, &refs_by_oid)?);
+        }
+        Ok(commits)
+    }
+
     fn list_commit_files(&self, sha: &str) -> Result<Vec<FileChange>, GitError> {
         let repo = self.open()?;
         let oid = git2::Oid::from_str(sha).map_err(|e| GitError::Git(e.to_string()))?;
@@ -706,6 +766,62 @@ mod integration_tests {
         assert_eq!(kind_of("init"), Some(TrailKind::Shared));
         // Trilho comum vem por último (abaixo da divergência).
         assert_eq!(trail.last().unwrap().commit.summary, "init");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_branch_exclusive_commits_exclui_ancestrais_do_head() {
+        let dir = std::env::temp_dir().join(format!(
+            "trilho_exclusive_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+
+        let default_out = Command::new("git")
+            .args(["symbolic-ref", "--short", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let default = String::from_utf8_lossy(&default_out.stdout)
+            .trim()
+            .to_string();
+
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        fs::write(dir.join("feat.txt"), "y").unwrap();
+        Command::new("git")
+            .args(["add", "feat.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "feat only"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["checkout", &default])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let path = dir.to_string_lossy();
+        let reader = Git2Reader::new(&path).expect("reader");
+        let exclusive = reader
+            .list_branch_exclusive_commits("feature", 50, None)
+            .expect("exclusive");
+        assert_eq!(exclusive.len(), 1);
+        assert_eq!(exclusive[0].summary, "feat only");
+
+        let none = reader
+            .list_branch_exclusive_commits(&default, 50, None)
+            .expect("none");
+        assert!(none.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 }

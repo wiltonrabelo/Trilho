@@ -58,10 +58,12 @@ interface RefsPanelProps {
   tags: TagEntryDto[];
   stashes: StashEntryDto[];
   currentBranch?: string | null;
+  focusedBranch?: string | null;
   loading?: boolean;
   tagsLoading?: boolean;
   stashesLoading?: boolean;
   writeDisabled?: boolean;
+  onFocusBranch: (branch: string) => void;
   onSwitchLocal: (branch: string) => void;
   onSwitchRemote: (remote: string, branch: string) => void;
   onStashApply: (index: number) => void;
@@ -112,10 +114,12 @@ export function RefsPanel({
   tags,
   stashes,
   currentBranch,
+  focusedBranch,
   loading,
   tagsLoading,
   stashesLoading,
   writeDisabled,
+  onFocusBranch,
   onSwitchLocal,
   onSwitchRemote,
   onStashApply,
@@ -216,23 +220,31 @@ export function RefsPanel({
                   <ul className="flex flex-col gap-0.5">
                     {filteredLocals.map((branch) => {
                       const active = branch === currentBranch;
+                      const focused = branch === focusedBranch;
                       return (
                         <li key={branch}>
                           <button
                             type="button"
                             disabled={active}
-                            onClick={() => onSwitchLocal(branch)}
+                            onClick={() => onFocusBranch(branch)}
+                            onDoubleClick={() => {
+                              if (!active) onSwitchLocal(branch);
+                            }}
                             title={
-                              active ? "Branch atual" : `Trocar para ${branch}`
+                              active
+                                ? "Branch em checkout"
+                                : `Clique: commits exclusivos de ${branch} · Duplo clique: checkout`
                             }
                             className={`w-full truncate rounded-md px-2 py-1 text-left text-xs ${
                               active
                                 ? "bg-accent/15 font-medium text-accent"
-                                : "text-text hover:bg-surface"
+                                : focused
+                                  ? "bg-amber-500/15 font-medium text-amber-700 dark:text-amber-300"
+                                  : "text-text hover:bg-surface"
                             } disabled:cursor-default`}
                           >
                             {branch}
-                            {active ? " ✓" : ""}
+                            {active ? " ✓" : focused ? " ◉" : ""}
                           </button>
                         </li>
                       );
@@ -260,33 +272,40 @@ export function RefsPanel({
                         {refs.map((ref) => {
                           const label = `${ref.remote}/${ref.branch}`;
                           const active = ref.branch === currentBranch;
+                          const focused = ref.branch === focusedBranch;
                           const hasLocal = branches.includes(ref.branch);
                           return (
                             <li key={label}>
                               <button
                                 type="button"
                                 disabled={active}
-                                onClick={() =>
-                                  hasLocal
-                                    ? onSwitchLocal(ref.branch)
-                                    : onSwitchRemote(ref.remote, ref.branch)
-                                }
+                                onClick={() => onFocusBranch(ref.branch)}
+                                onDoubleClick={() => {
+                                  if (active) return;
+                                  if (hasLocal) {
+                                    onSwitchLocal(ref.branch);
+                                  } else {
+                                    onSwitchRemote(ref.remote, ref.branch);
+                                  }
+                                }}
                                 title={
                                   active
-                                    ? "Branch atual"
+                                    ? "Branch em checkout"
                                     : hasLocal
-                                      ? `Trocar para ${ref.branch} (local)`
-                                      : `Criar e rastrear ${label}`
+                                      ? `Clique: commits exclusivos · Duplo clique: checkout em ${ref.branch}`
+                                      : `Clique: commits exclusivos · Duplo clique: criar e rastrear ${label}`
                                 }
                                 className={`w-full truncate rounded-md px-2 py-1 text-left text-xs ${
                                   active
                                     ? "bg-accent/15 font-medium text-accent"
-                                    : "text-muted hover:bg-surface hover:text-text"
+                                    : focused
+                                      ? "bg-amber-500/15 font-medium text-amber-700 dark:text-amber-300"
+                                      : "text-muted hover:bg-surface hover:text-text"
                                 } disabled:cursor-default`}
                               >
                                 {ref.branch}
                                 {!hasLocal ? " ↓" : ""}
-                                {active ? " ✓" : ""}
+                                {active ? " ✓" : focused ? " ◉" : ""}
                               </button>
                             </li>
                           );

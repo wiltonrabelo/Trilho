@@ -50,9 +50,15 @@ pub fn blame_file(
             ],
         })?,
         BlameSource::Staging => {
-            let index_blob = cli.run(&GitCommand {
+            let index_blob = match cli.run(&GitCommand {
                 args: vec!["show".into(), format!(":{path}")],
-            })?;
+            }) {
+                Ok(blob) => blob,
+                Err(e) if is_unmerged_blame_error(&e) => {
+                    return blame_file(cli, path, BlameSource::WorkingTree, commit_id, start_line, end_line);
+                }
+                Err(e) => return Err(e),
+            };
             cli.run_with_stdin(
                 &GitCommand {
                     args: vec![
@@ -91,11 +97,22 @@ fn blob_line_count(
             std::path::Path::new(cli.repo_path()).join(path),
         )
         .map_err(|e| GitError::Io(e.to_string()))?,
-        BlameSource::Staging => cli.run(&GitCommand {
+        BlameSource::Staging => match cli.run(&GitCommand {
             args: vec!["show".into(), format!(":{path}")],
-        })?,
+        }) {
+            Ok(blob) => blob,
+            Err(e) if is_unmerged_blame_error(&e) => {
+                return blob_line_count(cli, path, BlameSource::WorkingTree, commit_id);
+            }
+            Err(e) => return Err(e),
+        },
     };
     Ok(count_lines(&content))
+}
+
+fn is_unmerged_blame_error(err: &GitError) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("not at stage 0") || msg.contains("unmerged")
 }
 
 fn count_lines(content: &str) -> u32 {

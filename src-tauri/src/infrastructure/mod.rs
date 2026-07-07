@@ -147,6 +147,15 @@ impl TrailReader for MockGitReader {
             })
             .collect())
     }
+
+    fn list_branch_exclusive_commits(
+        &self,
+        _branch: &str,
+        limit: usize,
+        after: Option<&str>,
+    ) -> Result<Vec<Commit>, GitError> {
+        self.list_commits(limit, after, false)
+    }
 }
 
 impl GitReader for MockGitReader {

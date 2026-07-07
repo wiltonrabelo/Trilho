@@ -6,6 +6,8 @@ interface CommitSummaryPanelProps {
   canEditMessage?: boolean;
   messageEditHint?: string | null;
   onRevert?: () => void;
+  onCherryPick?: () => void;
+  cherryPickHint?: string | null;
   onUncommit?: () => void;
   onEditMessage?: () => void;
   onCreateTag?: () => void;
@@ -17,6 +19,8 @@ export function CommitSummaryPanel({
   canEditMessage,
   messageEditHint,
   onRevert,
+  onCherryPick,
+  cherryPickHint,
   onUncommit,
   onEditMessage,
   onCreateTag,
@@ -31,6 +35,7 @@ export function CommitSummaryPanel({
 
   const showActions =
     onRevert ||
+    onCherryPick ||
     onCreateTag ||
     (canUncommit && onUncommit) ||
     (canEditMessage && onEditMessage);
@@ -46,6 +51,15 @@ export function CommitSummaryPanel({
               className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
             >
               Reverter commit
+            </button>
+          )}
+          {onCherryPick && (
+            <button
+              type="button"
+              onClick={onCherryPick}
+              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
+            >
+              Cherry-pick
             </button>
           )}
           {onCreateTag && (
@@ -90,6 +104,9 @@ export function CommitSummaryPanel({
       )}
       {messageEditHint && (
         <p className="mt-2 text-[10px] leading-snug text-muted">{messageEditHint}</p>
+      )}
+      {cherryPickHint && (
+        <p className="mt-2 text-[10px] leading-snug text-muted">{cherryPickHint}</p>
       )}
     </div>
   );

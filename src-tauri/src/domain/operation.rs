@@ -67,6 +67,12 @@ pub enum WriteRequest {
         #[serde(rename = "commitId")]
         commit_id: String,
     },
+    /// RF-13 — aplica commit no topo da branch atual (`git cherry-pick`).
+    #[serde(rename = "cherryPick")]
+    CherryPick {
+        #[serde(rename = "commitId")]
+        commit_id: String,
+    },
     Push,
     PullFfOnly,
     /// Completa clone raso (`git fetch --unshallow`).
@@ -181,6 +187,20 @@ mod tests {
         .unwrap();
         match req {
             WriteRequest::Revert { commit_id } => {
+                assert_eq!(commit_id.len(), 40);
+            }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn cherry_pick_deserializa_commit_id() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"cherryPick","commitId":"abcdef0123456789abcdef0123456789abcdef01"}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::CherryPick { commit_id } => {
                 assert_eq!(commit_id.len(), 40);
             }
             _ => panic!("variant errada"),

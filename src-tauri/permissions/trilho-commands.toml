@@ -36,6 +36,7 @@ commands.allow = [
   "fetch_remote",
   "get_branch_origin",
   "get_dual_trail",
+  "list_branch_exclusive_commits",
   "get_file_blame",
   "preview_write_operation",
   "execute_write_operation",

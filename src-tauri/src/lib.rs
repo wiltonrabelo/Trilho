@@ -43,6 +43,7 @@ pub fn run() {
             commands::fetch_remote,
             commands::get_branch_origin,
             commands::get_dual_trail,
+            commands::list_branch_exclusive_commits,
             commands::get_file_blame,
             commands::preview_write_operation,
             commands::execute_write_operation,

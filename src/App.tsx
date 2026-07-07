@@ -80,6 +80,10 @@ function App() {
     trails,
     hasMore,
     loading: commitsLoading,
+    focusedBranch,
+    focusBranch,
+    clearFocusedBranch,
+    checkoutHeadCommit,
     selectedCommit,
     commitDiff,
     commitFiles,
@@ -160,6 +164,10 @@ function App() {
   useRepoChanged(refreshAll);
 
   const refreshAfterWrite = useCallback(async () => {
+    if (focusedBranch) {
+      clearFocusedBranch();
+      setView("graph");
+    }
     await refreshAll();
     try {
       setRepo(await getRepoInfo());
@@ -169,7 +177,36 @@ function App() {
     clearSelection();
     setWorkingCopySelected(true);
     clearChecks();
-  }, [refreshAll, clearSelection, setRepo, clearChecks]);
+  }, [
+    focusedBranch,
+    clearFocusedBranch,
+    setView,
+    refreshAll,
+    clearSelection,
+    setRepo,
+    clearChecks,
+  ]);
+
+  // Cherry-pick/revert/merge alteram a working tree da branch em checkout —
+  // sair da visão de commits exclusivos e mostrar o grafo da branch atual.
+  useEffect(() => {
+    const op = status?.operationInProgress;
+    if (
+      op &&
+      (op.kind === "cherryPick" ||
+        op.kind === "revert" ||
+        op.kind === "merge") &&
+      focusedBranch
+    ) {
+      clearFocusedBranch();
+      setView("graph");
+    }
+  }, [
+    status?.operationInProgress,
+    focusedBranch,
+    clearFocusedBranch,
+    setView,
+  ]);
 
   const ops = useOperations(refreshAfterWrite);
 
@@ -228,7 +265,7 @@ function App() {
     }
   }, [ops.preview, ops.pending]);
 
-  const headCommit = commits[0] ?? null;
+  const headCommit = checkoutHeadCommit ?? commits[0] ?? null;
   const canAmend =
     Boolean(headCommit?.isLocalOnly) && !repo?.isDetached;
   const canUncommit =
@@ -411,7 +448,9 @@ function App() {
                                 ? ops.pending.forcePush
                                   ? "Reescrever e enviar ao remoto"
                                   : "Reescrever mensagem"
-                                : ops.pending?.kind === "discardWorktree" ||
+                                : ops.pending?.kind === "cherryPick"
+                                  ? "Cherry-pick"
+                                  : ops.pending?.kind === "discardWorktree" ||
                                   ops.pending?.kind === "discardWorktreeMany" ||
                                   ops.pending?.kind === "discardWorktreeAll" ||
                                   ops.pending?.kind === "discardHunk"
@@ -688,10 +727,12 @@ function App() {
                   tags={tagList.tags}
                   stashes={stashList.stashes}
                   currentBranch={repo.branch}
+                  focusedBranch={focusedBranch}
                   loading={branchList.loading}
                   tagsLoading={tagList.loading}
                   stashesLoading={stashList.loading}
                   writeDisabled={writeDisabled}
+                  onFocusBranch={focusBranch}
                   onSwitchLocal={(branch) =>
                     void ops.request({ kind: "switchBranch", branch })
                   }
@@ -756,13 +797,17 @@ function App() {
                       onViewChange={setView}
                       trails={trails}
                       divergence={
-                        origin?.mergeBaseId && origin.candidate
+                        origin?.mergeBaseId && origin.candidate && !focusedBranch
                           ? {
                               mergeBaseId: origin.mergeBaseId,
                               baseName: origin.candidate,
                             }
                           : null
                       }
+                      focusedBranch={focusedBranch}
+                      currentBranch={repo.branch}
+                      checkoutHeadId={checkoutHeadCommit?.id ?? null}
+                      onClearFocusedBranch={clearFocusedBranch}
                       workingCopySelected={workingCopySelected}
                       changeCount={changeCount}
                       stagedCount={status?.staged.length ?? 0}
@@ -791,6 +836,25 @@ function App() {
                           ? () =>
                               void ops.request({
                                 kind: "revert",
+                                commitId: selectedCommit.id,
+                              })
+                          : undefined
+                      }
+                      cherryPickHint={
+                        selectedCommit &&
+                        headCommit &&
+                        selectedCommit.id !== headCommit.id
+                          ? "Cherry-pick traz as alterações de um commit de outra branch para a branch atual (checkout)."
+                          : null
+                      }
+                      onCherryPick={
+                        selectedCommit &&
+                        !writeDisabled &&
+                        headCommit &&
+                        selectedCommit.id !== headCommit.id
+                          ? () =>
+                              void ops.request({
+                                kind: "cherryPick",
                                 commitId: selectedCommit.id,
                               })
                           : undefined

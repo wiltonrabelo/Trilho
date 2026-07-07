@@ -379,6 +379,26 @@ impl GitOperation for RevertCommit {
     }
 }
 
+/// RF-13 — aplica commit em outra branch no topo da branch atual.
+pub struct CherryPickCommit {
+    pub sha: String,
+}
+
+impl GitOperation for CherryPickCommit {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "cherry-pick".into(),
+                "--no-edit".into(),
+                self.sha.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Aplica as alterações do commit selecionado no topo da branch atual."
+    }
+}
+
 pub struct AbortRevert;
 
 impl GitOperation for AbortRevert {
@@ -814,6 +834,17 @@ impl GitOperation for UnshallowRemote {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cherry_pick_usa_no_edit() {
+        let op = CherryPickCommit {
+            sha: "abc123".into(),
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["cherry-pick", "--no-edit", "abc123"]
+        );
+    }
 
     #[test]
     fn continue_revert_usa_continue_no_edit() {

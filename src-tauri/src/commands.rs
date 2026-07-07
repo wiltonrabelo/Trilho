@@ -121,8 +121,77 @@ pub async fn get_file_diff(
 ) -> Result<String, String> {
     let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
     let ctx = repo_context(&state)?;
-    let op = FileDiff { path, staged };
-    ctx.execute(&op).map_err(|e| e.to_string())
+    let git_path = diff_file_path(&path);
+
+    if is_conflicted_path(ctx.reader(), &path) {
+        return conflict_file_diff(ctx.writer(), &git_path).map_err(|e| e.to_string());
+    }
+
+    let op = FileDiff {
+        path: git_path.clone(),
+        staged,
+    };
+    match ctx.execute(&op) {
+        Ok(out) => Ok(out),
+        Err(e) if is_unmerged_diff_error(&e) => {
+            conflict_file_diff(ctx.writer(), &git_path).map_err(|e| e.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Path exibido no status (rename `a → b`) → path real no Git.
+fn diff_file_path(display_path: &str) -> String {
+    display_path
+        .rsplit(" → ")
+        .next()
+        .unwrap_or(display_path)
+        .trim()
+        .to_string()
+}
+
+fn is_conflicted_path(reader: &dyn crate::application::GitReader, display_path: &str) -> bool {
+    reader.get_status().ok().is_some_and(|s| {
+        let conflicted = |f: &crate::domain::FileChange| {
+            f.path == display_path && f.kind == crate::domain::FileChangeKind::Conflicted
+        };
+        s.staged.iter().any(conflicted) || s.unstaged.iter().any(conflicted)
+    })
+}
+
+fn is_unmerged_diff_error(err: &GitError) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("not at stage 0") || msg.contains("unmerged")
+}
+
+/// Diff combinado para paths em conflito (cherry-pick/merge/revert).
+fn conflict_file_diff(
+    cli: &crate::infrastructure::SafeGitCli,
+    path: &str,
+) -> Result<String, GitError> {
+    use crate::application::GitCommand;
+    let combined = GitCommand {
+        args: vec![
+            "diff".into(),
+            "--no-color".into(),
+            "--cc".into(),
+            "--".into(),
+            path.into(),
+        ],
+    };
+    let out = cli.run(&combined)?;
+    if out.trim().is_empty() {
+        cli.run(&GitCommand {
+            args: vec![
+                "diff".into(),
+                "--no-color".into(),
+                "--".into(),
+                path.into(),
+            ],
+        })
+    } else {
+        Ok(out)
+    }
 }
 
 #[tauri::command]
@@ -256,6 +325,25 @@ pub async fn get_dual_trail(
     repo_context(&state)?
         .reader()
         .get_dual_trail(&base, limit.min(600))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_branch_exclusive_commits(
+    branch: String,
+    limit: usize,
+    after: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::domain::Commit>, String> {
+    let branch = validate_repo_relative_path(&branch).map_err(|e| e.to_string())?;
+    let after_ref = after
+        .as_deref()
+        .map(validate_git_object_id)
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    repo_context(&state)?
+        .reader()
+        .list_branch_exclusive_commits(&branch, limit.min(600), after_ref.as_deref())
         .map_err(|e| e.to_string())
 }
 
