@@ -263,10 +263,16 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — criar tag no commit selecionado (diálogo + preview RF-08 + push opcional)
 - [x] **Recorte 2** — listar/excluir tags na seção Tags do painel Refs
 
-## Backlog F5 — RF-18 Descartar alterações 🚧
+## Backlog F5 — RF-18 Descartar alterações ✅
 
 - [x] **Recorte 1** — descartar arquivo inteiro (`git restore --worktree`) + remover não rastreado (`git clean`)
 - [x] **Recorte 2** — descartar hunk (`git apply --reverse`) no painel de diff
+- [x] **Conflitos de revert** — parser `u`, abortar revert, gates de descarte
+
+## Backlog F5 — RF-16 Reword 🚧
+
+- [x] **Recorte 1** — reword de commit local não-HEAD via `git rebase -i` automatizado + diálogo
+- [ ] **Recorte 2** — reword de commit já enviado + `push --force-with-lease` (RF-09)
 
 ## Backlog F4 — RF-23 Stash ⏳
 

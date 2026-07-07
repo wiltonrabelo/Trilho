@@ -15,8 +15,13 @@ pub fn blame_file(
     start_line: u32,
     end_line: u32,
 ) -> Result<Vec<BlameLine>, GitError> {
-    let start = start_line.max(1);
-    let end = end_line.max(start).min(start + MAX_BLAME_LINES - 1);
+    let line_count = blob_line_count(cli, path, source, commit_id)?;
+    if line_count == 0 {
+        return Ok(vec![]);
+    }
+
+    let start = start_line.max(1).min(line_count);
+    let end = end_line.max(start).min(line_count).min(start + MAX_BLAME_LINES - 1);
     let range = format!("{start},{end}");
 
     let output = match source {
@@ -69,6 +74,37 @@ pub fn blame_file(
     parse_line_porcelain(&output)
 }
 
+fn blob_line_count(
+    cli: &SafeGitCli,
+    path: &str,
+    source: BlameSource,
+    commit_id: Option<&str>,
+) -> Result<u32, GitError> {
+    let content = match source {
+        BlameSource::Commit => {
+            let rev = commit_id.unwrap_or("HEAD");
+            cli.run(&GitCommand {
+                args: vec!["show".into(), format!("{rev}:{path}")],
+            })?
+        }
+        BlameSource::WorkingTree => std::fs::read_to_string(
+            std::path::Path::new(cli.repo_path()).join(path),
+        )
+        .map_err(|e| GitError::Io(e.to_string()))?,
+        BlameSource::Staging => cli.run(&GitCommand {
+            args: vec!["show".into(), format!(":{path}")],
+        })?,
+    };
+    Ok(count_lines(&content))
+}
+
+fn count_lines(content: &str) -> u32 {
+    if content.is_empty() {
+        return 0;
+    }
+    content.matches('\n').count() as u32 + 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +149,58 @@ mod tests {
             blame_file(&cli, "src/a.ts", BlameSource::WorkingTree, None, 1, 1).expect("blame");
         assert_eq!(lines.len(), 1);
         assert!(lines[0].content.contains('1'));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn blame_arquivo_vazio_no_commit_retorna_vazio() {
+        let dir = std::env::temp_dir().join(format!("trilho-blame0-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        fs::write(dir.join("empty.txt"), "").unwrap();
+        Command::new("git")
+            .args(["add", "empty.txt"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "empty file"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+
+        let cli = SafeGitCli::new(dir.to_string_lossy());
+        let lines = blame_file(
+            &cli,
+            "empty.txt",
+            BlameSource::Commit,
+            Some(&sha),
+            1,
+            10,
+        )
+        .expect("blame vazio");
+        assert!(lines.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 }

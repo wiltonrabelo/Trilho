@@ -160,6 +160,9 @@ fn map_git_stderr(stderr: &str) -> String {
         return "Arquivo em conflito — resolva manualmente ou aborte o revert/merge em andamento."
             .into();
     }
+    if lower.contains("has only 0 lines") {
+        return "Arquivo vazio nesta versão — sem linhas para blame.".into();
+    }
     // Demais falhas: primeira linha, sem o prefixo técnico "fatal:"/"error:".
     let first = trimmed.lines().next().unwrap_or(trimmed);
     first

@@ -6,6 +6,7 @@ mod branches;
 mod credential;
 mod git2_reader;
 mod git_cli;
+mod reword;
 mod repo_watcher;
 mod ssh_keys;
 mod stashes;
@@ -27,6 +28,7 @@ pub use credential::{
 };
 pub use git2_reader::{repo_info, Git2Reader};
 pub use git_cli::{defensive_config_args, SafeGitCli};
+pub use reword::execute_reword;
 pub use repo_watcher::RepoWatcher;
 pub use validation::{
     repo_name_from_url, validate_clone_branch, validate_clone_depth, validate_clone_destination,

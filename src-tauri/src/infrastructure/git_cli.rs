@@ -66,7 +66,7 @@ impl SafeGitCli {
     /// outra coisa é ERRO e propaga. Nunca use `run()` + "erro = false" para
     /// gates — falha real viraria resposta e o gate abriria indevidamente.
     pub fn run_bool(&self, command: &GitCommand) -> Result<bool, GitError> {
-        let output = self.raw_output(command, None)?;
+        let output = self.raw_output(command, None, &[])?;
         if output.status.success() {
             return Ok(true);
         }
@@ -78,19 +78,28 @@ impl SafeGitCli {
     }
 
     fn invoke(&self, command: &GitCommand) -> Result<String, GitError> {
-        self.invoke_with_stdin(command, None)
+        self.invoke_with_stdin(command, None, &[])
     }
 
     pub fn run_with_stdin(&self, command: &GitCommand, stdin: &[u8]) -> Result<String, GitError> {
-        self.invoke_with_stdin(command, Some(stdin))
+        self.invoke_with_stdin(command, Some(stdin), &[])
+    }
+
+    pub fn run_with_env(
+        &self,
+        command: &GitCommand,
+        extra_env: &[(&str, &str)],
+    ) -> Result<String, GitError> {
+        self.invoke_with_stdin(command, None, extra_env)
     }
 
     fn invoke_with_stdin(
         &self,
         command: &GitCommand,
         stdin: Option<&[u8]>,
+        extra_env: &[(&str, &str)],
     ) -> Result<String, GitError> {
-        let output = self.raw_output(command, stdin)?;
+        let output = self.raw_output(command, stdin, extra_env)?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
             return Err(GitError::from_git_stderr(&stderr));
@@ -102,6 +111,7 @@ impl SafeGitCli {
         &self,
         command: &GitCommand,
         stdin: Option<&[u8]>,
+        extra_env: &[(&str, &str)],
     ) -> Result<std::process::Output, GitError> {
         let args = self.full_args(command);
         let mut cmd = Command::new("git");
@@ -113,6 +123,9 @@ impl SafeGitCli {
             // Impede que leituras (status, blame) reescrevam `.git/index`,
             // o que dispararia o watcher (RF-19) em laço — flicker infinito.
             .env("GIT_OPTIONAL_LOCKS", "0");
+        for (key, value) in extra_env {
+            cmd.env(key, value);
+        }
         if stdin.is_some() {
             cmd.stdin(Stdio::piped());
         }

@@ -7,13 +7,13 @@ use crate::application::operations::{
     StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
     UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
-use crate::application::write_gates::head_is_local_only;
+use crate::application::write_gates::{head_is_local_only, is_commit_on_remote};
 use crate::application::{GitError, GitWriter, RepoContext};
 use crate::domain::{FileChangeKind, InProgressKind, OperationPreview, WriteRequest};
 use crate::infrastructure::{
     list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
     validate_clone_branch, validate_git_object_id, validate_remote_name, validate_remote_url,
-    validate_repo_relative_path, validate_tag_name, SafeGitCli,
+    validate_repo_relative_path, validate_tag_name, execute_reword, SafeGitCli,
 };
 use git2::Repository;
 
@@ -388,6 +388,28 @@ pub fn preview_write(
                 gate_abort_cherry_pick(repo_path)?,
             )
         }
+        WriteRequest::Reword {
+            commit_id,
+            summary,
+            body: _body,
+        } => {
+            let sha =
+                validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_reword(ctx, repo_path, &sha, summary)?;
+            let description = format!(
+                "Reescreve a mensagem do commit {} e reaplica os commits seguintes — \
+                 cada um receberá um novo SHA.",
+                &sha[..sha.len().min(7)]
+            );
+            let short = &sha[..sha.len().min(7)];
+            let commands = vec![
+                format!("git checkout --detach {short}^"),
+                format!("git cherry-pick -n {short} && git commit -F -  # «{summary}»"),
+                "# cherry-pick dos commits seguintes até HEAD".into(),
+                "git branch -f <branch-atual> HEAD && git checkout <branch-atual>".into(),
+            ];
+            (commands, description, blocked)
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -562,6 +584,16 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         }
         WriteRequest::AbortCherryPick => {
             ctx.execute_op(&AbortCherryPick)?;
+        }
+        WriteRequest::Reword {
+            commit_id,
+            summary,
+            body,
+        } => {
+            let sha =
+                validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            let message = format_reword_message(&summary, body.as_deref());
+            execute_reword(ctx.writer(), &sha, &message)?;
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -795,6 +827,79 @@ fn gate_abort_cherry_pick(repo_path: &str) -> Result<Option<String>, GitError> {
     } else {
         Ok(Some("Não há cherry-pick em andamento.".into()))
     }
+}
+
+fn format_reword_message(summary: &str, body: Option<&str>) -> String {
+    let summary = summary.trim();
+    match body.map(str::trim).filter(|b| !b.is_empty()) {
+        Some(b) => format!("{summary}\n\n{b}"),
+        None => summary.to_string(),
+    }
+}
+
+fn gate_clean_worktree(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    if let Some(op) = &ctx.reader().get_status()?.operation_in_progress {
+        return Ok(Some(format!(
+            "{} Conclua ou aborte a operação antes de continuar.",
+            op.message
+        )));
+    }
+    let status = ctx.reader().get_status()?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
+        return Ok(Some(
+            "Working tree com alterações — faça commit, stash ou descarte antes de continuar."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn is_head_commit(repo_path: &str, sha: &str) -> Result<bool, GitError> {
+    let head = SafeGitCli::new(repo_path).run(&crate::application::GitCommand {
+        args: vec!["rev-parse".into(), "HEAD".into()],
+    })?;
+    Ok(head.trim().eq_ignore_ascii_case(sha))
+}
+
+fn gate_reword(
+    ctx: &RepoContext,
+    repo_path: &str,
+    sha: &str,
+    summary: &str,
+) -> Result<Option<String>, GitError> {
+    if summary.trim().is_empty() {
+        return Ok(Some("A mensagem do commit não pode ficar vazia.".into()));
+    }
+    if let Some(msg) = gate_clean_worktree(ctx)? {
+        return Ok(Some(msg));
+    }
+    if is_head_commit(repo_path, sha)? {
+        return Ok(Some(
+            "Este é o último commit — use Amend em «Alterações locais» para alterar a mensagem."
+                .into(),
+        ));
+    }
+    let repo = Repository::discover(repo_path).map_err(|e| GitError::Io(e.to_string()))?;
+    let oid = git2::Oid::from_str(sha).map_err(|e| GitError::Git(e.to_string()))?;
+    let commit = repo
+        .find_commit(oid)
+        .map_err(|_| GitError::Git("Commit não encontrado no repositório.".into()))?;
+    if commit.parent_count() > 1 {
+        return Ok(Some(
+            "Commit de merge — reword exige operação avançada fora do MVP.".into(),
+        ));
+    }
+    let sync = ctx.reader().get_sync_info()?;
+    if let Some(upstream) = sync.upstream.as_deref() {
+        if is_commit_on_remote(ctx.writer(), upstream, sha)? {
+            return Ok(Some(
+                "Este commit já foi enviado ao remoto — reword de commits publicados \
+                 exige push forçado (RF-16 recorte 2, ainda não disponível)."
+                    .into(),
+            ));
+        }
+    }
+    Ok(None)
 }
 
 fn gate_uncommit(ctx: &RepoContext) -> Result<Option<String>, GitError> {

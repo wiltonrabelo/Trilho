@@ -16,6 +16,7 @@ import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
 import { StashDialog } from "@/components/StashDialog";
 import { StatusPanel } from "@/components/StatusPanel";
+import { RewordDialog } from "@/components/RewordDialog";
 import { TagDialog } from "@/components/TagDialog";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -43,6 +44,7 @@ function App() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [stashOpen, setStashOpen] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
+  const [rewordOpen, setRewordOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -220,6 +222,12 @@ function App() {
     }
   }, [ops.preview, ops.pending]);
 
+  useEffect(() => {
+    if (ops.preview && ops.pending?.kind === "reword") {
+      setRewordOpen(false);
+    }
+  }, [ops.preview, ops.pending]);
+
   const headCommit = commits[0] ?? null;
   const canAmend =
     Boolean(headCommit?.isLocalOnly) && !repo?.isDetached;
@@ -239,12 +247,17 @@ function App() {
   const isSelectedHead = Boolean(
     selectedCommit && headCommit && selectedCommit.id === headCommit.id,
   );
+  const canReword =
+    Boolean(
+      selectedCommit?.isLocalOnly && !isSelectedHead && !workingCopySelected,
+    ) && !writeDisabled;
+  const canEditMessageOnHead = Boolean(isSelectedHead && canAmend) && !writeDisabled;
   const messageEditHint =
     selectedCommit && !workingCopySelected && !writeDisabled
       ? isSelectedHead && !canAmend
         ? "Este commit já está no remoto. Para corrigir a mensagem antes de enviar, use Amend em «Alterações locais» (só vale para o último commit local)."
-        : !isSelectedHead
-          ? "Alterar a mensagem de commits antigos (reword) ainda não está no MVP — previsto como RF-16 (pós-MVP)."
+        : !isSelectedHead && !selectedCommit.isLocalOnly
+          ? "Este commit já foi enviado ao remoto — reword exige push forçado (em breve)."
           : null
       : null;
 
@@ -269,10 +282,15 @@ function App() {
   );
 
   const handleEditMessage = useCallback(() => {
-    if (!canAmend || writeDisabled) return;
-    setWorkingCopySelected(true);
-    setAmendIntent((n) => n + 1);
-  }, [canAmend, writeDisabled]);
+    if (writeDisabled || !selectedCommit) return;
+    if (isSelectedHead) {
+      if (!canAmend) return;
+      setWorkingCopySelected(true);
+      setAmendIntent((n) => n + 1);
+      return;
+    }
+    if (canReword) setRewordOpen(true);
+  }, [canAmend, canReword, isSelectedHead, selectedCommit, writeDisabled]);
 
   const changeCount =
     (status?.staged.length ?? 0) +
@@ -383,7 +401,9 @@ function App() {
                             ? "Criar tag"
                             : ops.pending?.kind === "deleteTag"
                               ? "Excluir tag"
-                              : ops.pending?.kind === "discardWorktree" ||
+                              : ops.pending?.kind === "reword"
+                                ? "Reescrever mensagem"
+                                : ops.pending?.kind === "discardWorktree" ||
                                   ops.pending?.kind === "discardWorktreeMany" ||
                                   ops.pending?.kind === "discardWorktreeAll" ||
                                   ops.pending?.kind === "discardHunk"
@@ -431,6 +451,27 @@ function App() {
             kind: "stashPush",
             message: message || null,
             includeUntracked,
+          });
+        }}
+      />
+      <RewordDialog
+        open={rewordOpen}
+        shortId={selectedCommit?.shortId ?? "—"}
+        initialSummary={selectedCommit?.summary ?? ""}
+        initialBody={selectedCommit?.body ?? ""}
+        loading={ops.loading}
+        error={rewordOpen && !ops.preview ? ops.error : null}
+        onCancel={() => {
+          setRewordOpen(false);
+          ops.cancel();
+        }}
+        onContinue={(summary, body) => {
+          if (!selectedCommit) return;
+          void ops.request({
+            kind: "reword",
+            commitId: selectedCommit.id,
+            summary,
+            body: body || null,
           });
         }}
       />
@@ -720,16 +761,9 @@ function App() {
                         workingCopySelected ? null : selectedCommit
                       }
                       canUncommit={canUncommit}
-                      canEditMessage={
-                        Boolean(
-                          selectedCommit &&
-                            headCommit &&
-                            selectedCommit.id === headCommit.id &&
-                            canAmend,
-                        ) && !writeDisabled
-                      }
+                      canEditMessage={canEditMessageOnHead || canReword}
                       onEditMessage={
-                        canAmend && !writeDisabled
+                        (canEditMessageOnHead || canReword) && !writeDisabled
                           ? handleEditMessage
                           : undefined
                       }

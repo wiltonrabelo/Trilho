@@ -248,6 +248,12 @@ export type WriteRequestDto =
   | { kind: "abortRevert" }
   | { kind: "abortMerge" }
   | { kind: "abortCherryPick" }
+  | {
+      kind: "reword";
+      commitId: string;
+      summary: string;
+      body?: string | null;
+    }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {

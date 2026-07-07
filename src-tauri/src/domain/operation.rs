@@ -139,6 +139,14 @@ pub enum WriteRequest {
     AbortMerge,
     /// Cancela cherry-pick em andamento (`git cherry-pick --abort`).
     AbortCherryPick,
+    /// RF-16 — reescreve mensagem de commit local via rebase (`git rebase -i`).
+    Reword {
+        #[serde(rename = "commitId")]
+        commit_id: String,
+        summary: String,
+        #[serde(default)]
+        body: Option<String>,
+    },
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o

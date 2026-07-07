@@ -63,7 +63,12 @@ export function BlamePanel({
       {error && (
         <div className="p-3 text-xs text-red-500">{error}</div>
       )}
-      {!loading && !error && (
+      {!loading && !error && lines.length === 0 && path && (
+        <div className="p-3 text-xs text-muted">
+          Arquivo vazio nesta versão — sem linhas para blame.
+        </div>
+      )}
+      {!loading && !error && lines.length > 0 && (
         <div className="min-h-0 flex-1 overflow-auto font-mono text-xs">
           <table className="w-full border-collapse">
             <tbody>
