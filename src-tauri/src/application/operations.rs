@@ -210,6 +210,115 @@ impl GitOperation for UnstageAll {
     }
 }
 
+/// RF-18 — descarta alterações não staged de um arquivo (`git restore`).
+pub struct DiscardWorktree {
+    pub path: String,
+}
+
+impl GitOperation for DiscardWorktree {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "restore".into(),
+                "--worktree".into(),
+                "--".into(),
+                self.path.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Descarta alterações não staged do arquivo (irreversível — não há commit)."
+    }
+}
+
+pub struct DiscardWorktreeMany {
+    pub paths: Vec<String>,
+}
+
+impl GitOperation for DiscardWorktreeMany {
+    fn command(&self) -> GitCommand {
+        let mut args = vec!["restore".into(), "--worktree".into(), "--".into()];
+        args.extend(self.paths.iter().cloned());
+        GitCommand { args }
+    }
+    fn description(&self) -> &'static str {
+        "Descarta alterações não staged dos arquivos selecionados."
+    }
+}
+
+pub struct DiscardWorktreeAll;
+
+impl GitOperation for DiscardWorktreeAll {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "restore".into(),
+                "--worktree".into(),
+                "--".into(),
+                ".".into(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Descarta todas as alterações não staged da working tree."
+    }
+}
+
+/// RF-18 — remove arquivo não rastreado (`git clean`).
+pub struct RemoveUntracked {
+    pub path: String,
+}
+
+impl GitOperation for RemoveUntracked {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "clean".into(),
+                "-fd".into(),
+                "--".into(),
+                self.path.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Remove arquivo ou pasta não rastreada do disco (irreversível)."
+    }
+}
+
+pub struct RemoveUntrackedMany {
+    pub paths: Vec<String>,
+}
+
+impl GitOperation for RemoveUntrackedMany {
+    fn command(&self) -> GitCommand {
+        let mut args = vec!["clean".into(), "-fd".into(), "--".into()];
+        args.extend(self.paths.iter().cloned());
+        GitCommand { args }
+    }
+    fn description(&self) -> &'static str {
+        "Remove arquivos/pastas não rastreados selecionados do disco."
+    }
+}
+
+/// RF-18 — descarta hunk via `git apply --reverse`.
+pub struct ApplyReversePatch {
+    pub patch: String,
+}
+
+impl GitOperation for ApplyReversePatch {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["apply".into(), "--reverse".into(), "-".into()],
+        }
+    }
+    fn stdin_payload(&self) -> Option<Vec<u8>> {
+        Some(self.patch.as_bytes().to_vec())
+    }
+    fn description(&self) -> &'static str {
+        "Descarta o trecho selecionado do arquivo (irreversível)."
+    }
+}
+
 pub struct CreateCommit {
     pub summary: String,
     pub body: Option<String>,
@@ -267,6 +376,45 @@ impl GitOperation for RevertCommit {
     }
     fn description(&self) -> &'static str {
         "Cria um commit reverso que desfaz as alterações do commit selecionado."
+    }
+}
+
+pub struct AbortRevert;
+
+impl GitOperation for AbortRevert {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["revert".into(), "--abort".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Cancela o revert em andamento e restaura o estado anterior."
+    }
+}
+
+pub struct AbortMerge;
+
+impl GitOperation for AbortMerge {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["merge".into(), "--abort".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Cancela o merge em andamento e restaura o estado anterior."
+    }
+}
+
+pub struct AbortCherryPick;
+
+impl GitOperation for AbortCherryPick {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["cherry-pick".into(), "--abort".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Cancela o cherry-pick em andamento e restaura o estado anterior."
     }
 }
 
@@ -721,6 +869,28 @@ mod tests {
             name: "v1".into(),
         };
         assert_eq!(op.command().args, vec!["tag", "-d", "v1"]);
+    }
+
+    #[test]
+    fn discard_worktree_usa_restore_worktree() {
+        let op = DiscardWorktree {
+            path: "src/a.ts".into(),
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["restore", "--worktree", "--", "src/a.ts"]
+        );
+    }
+
+    #[test]
+    fn remove_untracked_usa_clean_fd() {
+        let op = RemoveUntracked {
+            path: "tmp.txt".into(),
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["clean", "-fd", "--", "tmp.txt"]
+        );
     }
 
     #[test]

@@ -156,6 +156,10 @@ fn map_git_stderr(stderr: &str) -> String {
         return "O remoto está à frente — use «Atualizar (pull --ff-only)» e tente o push de novo."
             .into();
     }
+    if lower.contains("is unmerged") || lower.contains("unmerged") {
+        return "Arquivo em conflito — resolva manualmente ou aborte o revert/merge em andamento."
+            .into();
+    }
     // Demais falhas: primeira linha, sem o prefixo técnico "fatal:"/"error:".
     let first = trimmed.lines().next().unwrap_or(trimmed);
     first

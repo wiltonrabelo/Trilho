@@ -1,16 +1,18 @@
-import { Plus, Undo2 } from "lucide-react";
+import { Plus, Trash2, Undo2 } from "lucide-react";
 import {
   countChecked,
   fileCheckKey,
   pathsFromChecked,
   type FileCheckSection,
 } from "@/lib/fileCheck";
-import type { CommitDto, FileChangeDto, FileChangeKind } from "@/types";
+import type { CommitDto, FileChangeDto, FileChangeKind, OperationInProgressDto } from "@/types";
 
 interface StatusPanelProps {
   staged: FileChangeDto[];
   unstaged: FileChangeDto[];
   untracked: FileChangeDto[];
+  operationInProgress?: OperationInProgressDto | null;
+  onAbortOperation?: (kind: OperationInProgressDto["kind"]) => void;
   selectedPath: string | null;
   selectedStaged: boolean | null;
   checkedPaths: ReadonlySet<string>;
@@ -31,6 +33,11 @@ interface StatusPanelProps {
   onUnstageMany?: (paths: string[]) => void;
   onUnstageAll?: () => void;
   onStash?: () => void;
+  onDiscard?: (path: string) => void;
+  onDiscardMany?: (paths: string[]) => void;
+  onDiscardAll?: () => void;
+  onRemoveUntracked?: (path: string) => void;
+  onRemoveUntrackedMany?: (paths: string[]) => void;
 }
 
 const KIND_BADGE: Record<
@@ -58,6 +65,10 @@ const KIND_BADGE: Record<
     label: "U",
     className: "bg-muted/25 text-muted",
   },
+  conflicted: {
+    label: "!",
+    className: "bg-orange-500/20 text-orange-700 dark:text-orange-300",
+  },
 };
 
 function KindBadge({ kind }: { kind: FileChangeKind }) {
@@ -83,6 +94,8 @@ function FileList({
   onToggleCheck,
   onStage,
   onUnstage,
+  onDiscard,
+  onRemoveUntracked,
 }: {
   title: string;
   files: FileChangeDto[];
@@ -99,6 +112,8 @@ function FileList({
   onToggleCheck: (path: string, section: FileCheckSection) => void;
   onStage?: (path: string) => void;
   onUnstage?: (path: string) => void;
+  onDiscard?: (path: string) => void;
+  onRemoveUntracked?: (path: string) => void;
 }) {
   return (
     <section className="mb-4 border-b border-border/60 pb-3 last:mb-0 last:border-0">
@@ -118,8 +133,10 @@ function FileList({
             const isChecked = checkedPaths.has(
               fileCheckKey(checkSection, f.path),
             );
-            const showStage = !staged && onStage;
-            const showUnstage = staged && onUnstage;
+            const showStage = !staged && onStage && f.kind !== "conflicted";
+            const showUnstage = staged && onUnstage && f.kind !== "conflicted";
+            const showDiscard = !staged && onDiscard && f.kind !== "conflicted";
+            const showRemove = !staged && onRemoveUntracked;
             return (
               <li
                 key={`${staged}-${f.kind}-${f.path}`}
@@ -170,6 +187,26 @@ function FileList({
                     className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-accent group-hover:opacity-100 focus:opacity-100"
                   >
                     <Undo2 size={14} />
+                  </button>
+                )}
+                {showDiscard && (
+                  <button
+                    type="button"
+                    onClick={() => onDiscard(f.path)}
+                    title="Descartar alterações"
+                    className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-red-600 group-hover:opacity-100 focus:opacity-100 dark:hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+                {showRemove && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveUntracked(f.path)}
+                    title="Remover arquivo não rastreado"
+                    className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-red-600 group-hover:opacity-100 focus:opacity-100 dark:hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
                   </button>
                 )}
               </li>
@@ -229,6 +266,8 @@ export function StatusPanel({
   staged,
   unstaged,
   untracked,
+  operationInProgress,
+  onAbortOperation,
   selectedPath,
   selectedStaged,
   checkedPaths,
@@ -245,6 +284,11 @@ export function StatusPanel({
   onUnstageMany,
   onUnstageAll,
   onStash,
+  onDiscard,
+  onDiscardMany,
+  onDiscardAll,
+  onRemoveUntracked,
+  onRemoveUntrackedMany,
 }: StatusPanelProps) {
   if (commit) {
     return (
@@ -273,13 +317,22 @@ export function StatusPanel({
   const unstagedPaths = pathsFromChecked(checkedPaths, "staged").filter((p) =>
     staged.some((f) => f.path === p),
   );
+  const discardablePaths = pathsFromChecked(checkedPaths, "working").filter((p) =>
+    unstaged.some((f) => f.path === p && f.kind !== "conflicted"),
+  );
+  const untrackedPaths = pathsFromChecked(checkedPaths, "working").filter((p) =>
+    untracked.some((f) => f.path === p),
+  );
   const checkedWorkingCount = countChecked(checkedPaths, "working");
   const checkedStagedCount = countChecked(checkedPaths, "staged");
 
+  const hasDiscardableUnstaged = unstaged.some((f) => f.kind !== "conflicted");
   const canStageAll =
     (unstaged.length > 0 || untracked.length > 0) && Boolean(onStageAll);
   const canStageMany = stageablePaths.length > 0 && Boolean(onStageMany);
   const canUnstageMany = unstagedPaths.length > 0 && Boolean(onUnstageMany);
+  const canDiscardMany = discardablePaths.length > 0 && Boolean(onDiscardMany);
+  const canRemoveMany = untrackedPaths.length > 0 && Boolean(onRemoveUntrackedMany);
 
   // `selectedPath != null` (e não Boolean(...)) para o TypeScript estreitar
   // o tipo de string | null nos usos abaixo.
@@ -298,12 +351,25 @@ export function StatusPanel({
     !unstagedPaths.includes(selectedPath) &&
     !checkedPaths.has(fileCheckKey("staged", selectedPath));
 
+  const canDiscardSelected =
+    selectedPath != null &&
+    Boolean(onDiscard) &&
+    unstaged.some((f) => f.path === selectedPath && f.kind !== "conflicted") &&
+    !discardablePaths.includes(selectedPath) &&
+    !checkedPaths.has(fileCheckKey("working", selectedPath));
+
+  const canRemoveSelected =
+    selectedPath != null &&
+    Boolean(onRemoveUntracked) &&
+    untracked.some((f) => f.path === selectedPath) &&
+    !untrackedPaths.includes(selectedPath) &&
+    !checkedPaths.has(fileCheckKey("working", selectedPath));
+
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted">
-        <div className="flex items-center justify-between gap-2">
-          <span>Alterações {total > 0 ? `(${total})` : ""}</span>
-          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+        <span>Alterações {total > 0 ? `(${total})` : ""}</span>
+        <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
             {canStageMany && (
               <button
                 type="button"
@@ -320,6 +386,24 @@ export function StatusPanel({
                 className="text-[10px] text-accent hover:underline"
               >
                 Unstage selecionados ({unstagedPaths.length})
+              </button>
+            )}
+            {canDiscardMany && (
+              <button
+                type="button"
+                onClick={() => onDiscardMany!(discardablePaths)}
+                className="text-[10px] text-red-600 hover:underline dark:text-red-400"
+              >
+                Descartar selecionados ({discardablePaths.length})
+              </button>
+            )}
+            {canRemoveMany && (
+              <button
+                type="button"
+                onClick={() => onRemoveUntrackedMany!(untrackedPaths)}
+                className="text-[10px] text-red-600 hover:underline dark:text-red-400"
+              >
+                Remover não rastreados ({untrackedPaths.length})
               </button>
             )}
             {canStageAll && (
@@ -340,6 +424,16 @@ export function StatusPanel({
                 Unstage tudo
               </button>
             )}
+            {hasDiscardableUnstaged && !operationInProgress && onDiscardAll && (
+              <button
+                type="button"
+                onClick={onDiscardAll}
+                title="Descarta todas as alterações fora do stage"
+                className="text-[10px] text-red-600 hover:underline dark:text-red-400"
+              >
+                Descartar tudo
+              </button>
+            )}
             {total > 0 && onStash && (
               <button
                 type="button"
@@ -349,9 +443,8 @@ export function StatusPanel({
                 Guardar (stash)
               </button>
             )}
-          </div>
         </div>
-        {(canStageSelected || canUnstageSelected) && (
+        {(canStageSelected || canUnstageSelected || canDiscardSelected || canRemoveSelected) && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="min-w-0 truncate font-mono text-[10px] text-text">
               {selectedPath}
@@ -376,6 +469,26 @@ export function StatusPanel({
                 Unstage
               </button>
             )}
+            {canDiscardSelected && (
+              <button
+                type="button"
+                onClick={() => onDiscard!(selectedPath!)}
+                className="flex shrink-0 items-center gap-1 rounded border border-red-500/40 px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-500/10 dark:text-red-400"
+              >
+                <Trash2 size={12} />
+                Descartar
+              </button>
+            )}
+            {canRemoveSelected && (
+              <button
+                type="button"
+                onClick={() => onRemoveUntracked!(selectedPath!)}
+                className="flex shrink-0 items-center gap-1 rounded border border-red-500/40 px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-500/10 dark:text-red-400"
+              >
+                <Trash2 size={12} />
+                Remover
+              </button>
+            )}
           </div>
         )}
         {(checkedWorkingCount > 0 || checkedStagedCount > 0) && (
@@ -389,11 +502,29 @@ export function StatusPanel({
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
-        {total === 0 ? (
+        {operationInProgress && (
+          <div className="mb-3 rounded border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-800 dark:text-orange-200">
+            <p>{operationInProgress.message}</p>
+            {onAbortOperation && (
+              <button
+                type="button"
+                onClick={() => onAbortOperation(operationInProgress.kind)}
+                className="mt-2 text-[10px] font-medium text-orange-900 underline hover:no-underline dark:text-orange-100"
+              >
+                {operationInProgress.kind === "revert"
+                  ? "Abortar revert"
+                  : operationInProgress.kind === "merge"
+                    ? "Abortar merge"
+                    : "Abortar cherry-pick"}
+              </button>
+            )}
+          </div>
+        )}
+        {total === 0 && !operationInProgress ? (
           <p className="px-2 py-1 text-center text-xs text-muted/70">
             Working tree limpa
           </p>
-        ) : (
+        ) : total === 0 ? null : (
           <>
             <FileList
               title="Staged"
@@ -418,6 +549,7 @@ export function StatusPanel({
               onSelect={onSelectFile}
               onToggleCheck={onToggleCheck}
               onStage={onStage}
+              onDiscard={onDiscard}
             />
             <FileList
               title="Untracked"
@@ -430,6 +562,7 @@ export function StatusPanel({
               onSelect={onSelectFile}
               onToggleCheck={onToggleCheck}
               onStage={onStage}
+              onRemoveUntracked={onRemoveUntracked}
             />
           </>
         )}

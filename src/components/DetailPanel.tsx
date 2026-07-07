@@ -1,10 +1,11 @@
-import { Maximize2, Plus, Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Maximize2, Plus, Trash2, Undo2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { BlamePanel } from "@/components/BlamePanel";
 import { DiffOverlay } from "@/components/DiffOverlay";
 import { DiffViewer } from "@/components/DiffViewer";
 import { ResizableRows } from "@/components/ResizableRows";
+import { extractHunks } from "@/lib/diff-hunks";
 import type { BlameLineDto, BlameSourceDto, CommitDto } from "@/types";
 
 interface DetailPanelProps {
@@ -22,8 +23,13 @@ interface DetailPanelProps {
   workingTreeFile?: boolean;
   showStageFile?: boolean;
   showUnstageFile?: boolean;
+  showDiscardFile?: boolean;
+  showRemoveUntracked?: boolean;
   onStageFile?: () => void;
   onUnstageFile?: () => void;
+  onDiscardFile?: () => void;
+  onRemoveUntracked?: () => void;
+  onDiscardHunk?: (patch: string) => void;
 }
 
 function DiffDetailBody({
@@ -113,12 +119,21 @@ export function DetailPanel({
   workingTreeFile,
   showStageFile,
   showUnstageFile,
+  showDiscardFile,
+  showRemoveUntracked,
   onStageFile,
   onUnstageFile,
+  onDiscardFile,
+  onRemoveUntracked,
+  onDiscardHunk,
 }: DetailPanelProps) {
   const [diffExpanded, setDiffExpanded] = useState(false);
   const showBlame = Boolean(filePath);
   const hasDiffContent = Boolean(diff || loading || filePath);
+  const hunks = useMemo(
+    () => (diff && showDiscardFile ? extractHunks(diff) : []),
+    [diff, showDiscardFile],
+  );
 
   useEffect(() => {
     setDiffExpanded(false);
@@ -158,7 +173,44 @@ export function DetailPanel({
                 Unstage
               </button>
             )}
+            {showDiscardFile && onDiscardFile && (
+              <button
+                type="button"
+                onClick={onDiscardFile}
+                className="flex items-center gap-1 rounded border border-red-500/40 px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-500/10 dark:text-red-400"
+              >
+                <Trash2 size={12} />
+                Descartar arquivo
+              </button>
+            )}
+            {showRemoveUntracked && onRemoveUntracked && (
+              <button
+                type="button"
+                onClick={onRemoveUntracked}
+                className="flex items-center gap-1 rounded border border-red-500/40 px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-500/10 dark:text-red-400"
+              >
+                <Trash2 size={12} />
+                Remover
+              </button>
+            )}
           </div>
+        </div>
+      )}
+
+      {hunks.length > 0 && onDiscardHunk && (
+        <div className="flex flex-wrap gap-2 border-b border-border px-4 py-2">
+          <span className="text-[10px] text-muted">Descartar trecho:</span>
+          {hunks.map((hunk) => (
+            <button
+              key={hunk.index}
+              type="button"
+              onClick={() => onDiscardHunk(hunk.patch)}
+              title={hunk.header}
+              className="rounded border border-red-500/30 px-2 py-0.5 font-mono text-[10px] text-red-600 hover:bg-red-500/10 dark:text-red-400"
+            >
+              #{hunk.index + 1}
+            </button>
+          ))}
         </div>
       )}
 

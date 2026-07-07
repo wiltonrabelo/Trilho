@@ -383,7 +383,15 @@ function App() {
                             ? "Criar tag"
                             : ops.pending?.kind === "deleteTag"
                               ? "Excluir tag"
-                              : undefined
+                              : ops.pending?.kind === "discardWorktree" ||
+                                  ops.pending?.kind === "discardWorktreeMany" ||
+                                  ops.pending?.kind === "discardWorktreeAll" ||
+                                  ops.pending?.kind === "discardHunk"
+                                ? "Descartar alterações"
+                                : ops.pending?.kind === "removeUntracked" ||
+                                    ops.pending?.kind === "removeUntrackedMany"
+                                  ? "Remover não rastreado"
+                                  : undefined
         }
       />
       <CloneDialog
@@ -763,6 +771,7 @@ function App() {
                         staged={status?.staged ?? []}
                         unstaged={status?.unstaged ?? []}
                         untracked={status?.untracked ?? []}
+                        operationInProgress={status?.operationInProgress}
                         selectedPath={selectedFile?.path ?? null}
                         selectedStaged={selectedFile?.staged ?? null}
                         checkedPaths={checkedPaths}
@@ -820,6 +829,60 @@ function App() {
                             ? undefined
                             : () => setStashOpen(true)
                         }
+                        onDiscard={
+                          writeDisabled
+                            ? undefined
+                            : (p) =>
+                                void ops.request({
+                                  kind: "discardWorktree",
+                                  path: p,
+                                })
+                        }
+                        onDiscardMany={
+                          writeDisabled
+                            ? undefined
+                            : (paths) =>
+                                void ops.request({
+                                  kind: "discardWorktreeMany",
+                                  paths,
+                                })
+                        }
+                        onDiscardAll={
+                          writeDisabled
+                            ? undefined
+                            : () => void ops.request({ kind: "discardWorktreeAll" })
+                        }
+                        onRemoveUntracked={
+                          writeDisabled
+                            ? undefined
+                            : (p) =>
+                                void ops.request({
+                                  kind: "removeUntracked",
+                                  path: p,
+                                })
+                        }
+                        onRemoveUntrackedMany={
+                          writeDisabled
+                            ? undefined
+                            : (paths) =>
+                                void ops.request({
+                                  kind: "removeUntrackedMany",
+                                  paths,
+                                })
+                        }
+                        onAbortOperation={
+                          writeDisabled
+                            ? undefined
+                            : (kind) => {
+                                const req =
+                                  kind === "revert"
+                                    ? { kind: "abortRevert" as const }
+                                    : kind === "merge"
+                                      ? { kind: "abortMerge" as const }
+                                      : { kind: "abortCherryPick" as const };
+                                void ops.request(req);
+                              }
+                        }
                       />
                     </div>
                     {workingCopySelected &&
@@ -874,6 +937,8 @@ function App() {
                     )}
                     showStageFile={fileInUnstaged || fileInUntracked}
                     showUnstageFile={fileInStaged}
+                    showDiscardFile={fileInUnstaged && !writeDisabled}
+                    showRemoveUntracked={fileInUntracked && !writeDisabled}
                     onStageFile={
                       selectedFile &&
                       (fileInUnstaged || fileInUntracked) &&
@@ -891,6 +956,34 @@ function App() {
                             void ops.request({
                               kind: "unstage",
                               path: selectedFile.path,
+                            })
+                        : undefined
+                    }
+                    onDiscardFile={
+                      selectedFile && fileInUnstaged && !writeDisabled
+                        ? () =>
+                            void ops.request({
+                              kind: "discardWorktree",
+                              path: selectedFile.path,
+                            })
+                        : undefined
+                    }
+                    onRemoveUntracked={
+                      selectedFile && fileInUntracked && !writeDisabled
+                        ? () =>
+                            void ops.request({
+                              kind: "removeUntracked",
+                              path: selectedFile.path,
+                            })
+                        : undefined
+                    }
+                    onDiscardHunk={
+                      selectedFile && fileInUnstaged && !writeDisabled
+                        ? (patch) =>
+                            void ops.request({
+                              kind: "discardHunk",
+                              path: selectedFile.path,
+                              patch,
                             })
                         : undefined
                     }

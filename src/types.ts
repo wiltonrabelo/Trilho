@@ -71,7 +71,9 @@ export type FileChangeKind =
 
   | "renamed"
 
-  | "untracked";
+  | "untracked"
+
+  | "conflicted";
 
 
 
@@ -87,6 +89,11 @@ export interface FileChangeDto {
 
 
 
+export interface OperationInProgressDto {
+  kind: "revert" | "merge" | "cherryPick";
+  message: string;
+}
+
 export interface RepoStatusDto {
 
   staged: FileChangeDto[];
@@ -94,6 +101,8 @@ export interface RepoStatusDto {
   unstaged: FileChangeDto[];
 
   untracked: FileChangeDto[];
+
+  operationInProgress?: OperationInProgressDto | null;
 
 }
 
@@ -230,6 +239,15 @@ export type WriteRequestDto =
       pushToRemote?: boolean;
     }
   | { kind: "deleteTag"; name: string }
+  | { kind: "discardWorktree"; path: string }
+  | { kind: "discardWorktreeMany"; paths: string[] }
+  | { kind: "discardWorktreeAll" }
+  | { kind: "removeUntracked"; path: string }
+  | { kind: "removeUntrackedMany"; paths: string[] }
+  | { kind: "discardHunk"; path: string; patch: string }
+  | { kind: "abortRevert" }
+  | { kind: "abortMerge" }
+  | { kind: "abortCherryPick" }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {

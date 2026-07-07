@@ -5,8 +5,8 @@ use crate::application::{
     GitReader, RevListAheadBehind, StatusPorcelain, TrailReader,
 };
 use crate::domain::{
-    BlameLine, BlameSource, BranchOrigin, Commit, FileChange, FileChangeKind, RepoStatus, SyncInfo,
-    TrailEntry, TrailKind,
+    BlameLine, BlameSource, BranchOrigin, Commit, FileChange, FileChangeKind,
+    InProgressKind, OperationInProgress, RepoStatus, SyncInfo, TrailEntry, TrailKind,
 };
 use crate::infrastructure::blame::blame_file;
 use crate::infrastructure::git_cli::SafeGitCli;
@@ -228,11 +228,39 @@ impl TrailReader for Git2Reader {
     }
 }
 
+fn detect_operation_in_progress(repo_path: &str) -> Option<OperationInProgress> {
+    let git_dir = Path::new(repo_path).join(".git");
+    if git_dir.join("REVERT_HEAD").exists() {
+        Some(OperationInProgress {
+            kind: InProgressKind::Revert,
+            message: "Revert em andamento — resolva os conflitos ou use «Abortar revert» para cancelar."
+                .into(),
+        })
+    } else if git_dir.join("MERGE_HEAD").exists() {
+        Some(OperationInProgress {
+            kind: InProgressKind::Merge,
+            message: "Merge em andamento — resolva os conflitos ou use «Abortar merge» para cancelar."
+                .into(),
+        })
+    } else if git_dir.join("CHERRY_PICK_HEAD").exists() {
+        Some(OperationInProgress {
+            kind: InProgressKind::CherryPick,
+            message:
+                "Cherry-pick em andamento — resolva os conflitos ou use «Abortar cherry-pick» para cancelar."
+                    .into(),
+        })
+    } else {
+        None
+    }
+}
+
 impl GitReader for Git2Reader {
     fn get_status(&self) -> Result<RepoStatus, GitError> {
         let op = StatusPorcelain;
         let output = self.cli.run(&op.command())?;
-        status_parser::parse_porcelain_v2(&output)
+        let mut status = status_parser::parse_porcelain_v2(&output)?;
+        status.operation_in_progress = detect_operation_in_progress(&self.repo_path);
+        Ok(status)
     }
 
     fn get_sync_info(&self) -> Result<SyncInfo, GitError> {

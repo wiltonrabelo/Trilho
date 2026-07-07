@@ -153,6 +153,7 @@ impl GitReader for MockGitReader {
             staged: vec![],
             unstaged: vec![],
             untracked: vec![],
+            operation_in_progress: None,
         })
     }
 

@@ -113,6 +113,32 @@ pub enum WriteRequest {
     DeleteTag {
         name: String,
     },
+    /// RF-18 — descarta alterações não staged (`git restore --worktree`).
+    DiscardWorktree {
+        path: String,
+    },
+    DiscardWorktreeMany {
+        paths: Vec<String>,
+    },
+    DiscardWorktreeAll,
+    /// RF-18 — remove não rastreado (`git clean`).
+    RemoveUntracked {
+        path: String,
+    },
+    RemoveUntrackedMany {
+        paths: Vec<String>,
+    },
+    /// RF-18 — descarta hunk (`git apply --reverse`).
+    DiscardHunk {
+        path: String,
+        patch: String,
+    },
+    /// Cancela revert em andamento (`git revert --abort`).
+    AbortRevert,
+    /// Cancela merge em andamento (`git merge --abort`).
+    AbortMerge,
+    /// Cancela cherry-pick em andamento (`git cherry-pick --abort`).
+    AbortCherryPick,
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o

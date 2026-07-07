@@ -1,14 +1,15 @@
 //! Casos de uso de escrita M3 — preview (RF-08) e execução com gates.
 
 use crate::application::operations::{
-    AddRemote, CreateCommit, CreateTag, DeleteTag, GitOperation, PullFfOnly, PushSetUpstream,
-    PushTag, PushUpstream, RevertCommit, SetRemoteUrl, Stage, StageAll, StageMany, StashApply,
-    StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft, UnshallowRemote, Unstage,
-    UnstageAll, UnstageMany,
+    AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
+    DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushSetUpstream, PushTag,
+    PushUpstream, RemoveUntracked, RemoveUntrackedMany, RevertCommit, SetRemoteUrl, Stage,
+    StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
+    UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, GitWriter, RepoContext};
-use crate::domain::{OperationPreview, WriteRequest};
+use crate::domain::{FileChangeKind, InProgressKind, OperationPreview, WriteRequest};
 use crate::infrastructure::{
     list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
     validate_clone_branch, validate_git_object_id, validate_remote_name, validate_remote_url,
@@ -149,7 +150,7 @@ pub fn preview_write(
         WriteRequest::Revert { commit_id } => {
             let sha =
                 validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            let blocked = gate_revert_merge(ctx, &sha)?;
+            let blocked = gate_revert(ctx, repo_path)?.or(gate_revert_merge(ctx, &sha)?);
             let op = RevertCommit { sha };
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
@@ -270,6 +271,123 @@ pub fn preview_write(
             let description = format!("Remove a tag local «{name}».");
             (ctx.preview_op(&op), description, blocked)
         }
+        WriteRequest::DiscardWorktree { path } => {
+            let path = validate_repo_relative_path(git_path_from_display(path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_discard_worktree(ctx, std::slice::from_ref(&path))?;
+            let op = DiscardWorktree { path };
+            (
+                ctx.preview_op(&op),
+                format!("{} Esta ação não pode ser desfeita.", op.description()),
+                blocked,
+            )
+        }
+        WriteRequest::DiscardWorktreeMany { paths } => {
+            let paths = match validate_paths(paths) {
+                Ok(p) => p,
+                Err(GitError::Git(msg)) if msg.contains("Nenhum") => {
+                    return Ok(blocked_preview(repo_path, &msg));
+                }
+                Err(e) => return Err(e),
+            };
+            let blocked = gate_discard_worktree(ctx, &paths)?;
+            let count = paths.len();
+            let op = DiscardWorktreeMany { paths };
+            (
+                ctx.preview_op(&op),
+                format!(
+                    "{} ({count} arquivo(s)). Esta ação não pode ser desfeita.",
+                    op.description()
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::DiscardWorktreeAll => {
+            let blocked = gate_discard_worktree_all(ctx)?;
+            let op = DiscardWorktreeAll;
+            (
+                ctx.preview_op(&op),
+                format!(
+                    "{} Esta ação não pode ser desfeita.",
+                    op.description()
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::RemoveUntracked { path } => {
+            let path = validate_repo_relative_path(git_path_from_display(path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_remove_untracked(ctx, std::slice::from_ref(&path))?;
+            let op = RemoveUntracked { path };
+            (
+                ctx.preview_op(&op),
+                format!(
+                    "{} O arquivo será apagado do disco.",
+                    op.description()
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::RemoveUntrackedMany { paths } => {
+            let paths = match validate_paths(paths) {
+                Ok(p) => p,
+                Err(GitError::Git(msg)) if msg.contains("Nenhum") => {
+                    return Ok(blocked_preview(repo_path, &msg));
+                }
+                Err(e) => return Err(e),
+            };
+            let blocked = gate_remove_untracked(ctx, &paths)?;
+            let count = paths.len();
+            let op = RemoveUntrackedMany { paths };
+            (
+                ctx.preview_op(&op),
+                format!(
+                    "{} ({count} item(ns)). Serão apagados do disco.",
+                    op.description()
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::DiscardHunk { path, patch } => {
+            let path = validate_repo_relative_path(git_path_from_display(path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_discard_worktree(ctx, std::slice::from_ref(&path))?
+                .or(gate_reverse_patch(ctx, patch)?);
+            let op = ApplyReversePatch {
+                patch: patch.clone(),
+            };
+            (
+                ctx.preview_op(&op),
+                format!(
+                    "Descarta um trecho de «{path}». Esta ação não pode ser desfeita."
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::AbortRevert => {
+            let op = AbortRevert;
+            (
+                ctx.preview_op(&op),
+                op.description().to_string(),
+                gate_abort_revert(repo_path)?,
+            )
+        }
+        WriteRequest::AbortMerge => {
+            let op = AbortMerge;
+            (
+                ctx.preview_op(&op),
+                op.description().to_string(),
+                gate_abort_merge(repo_path)?,
+            )
+        }
+        WriteRequest::AbortCherryPick => {
+            let op = AbortCherryPick;
+            (
+                ctx.preview_op(&op),
+                op.description().to_string(),
+                gate_abort_cherry_pick(repo_path)?,
+            )
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -329,7 +447,14 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         WriteRequest::Revert { commit_id } => {
             let sha =
                 validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            ctx.execute_op(&RevertCommit { sha })?;
+            if let Err(e) = ctx.execute_op(&RevertCommit { sha }) {
+                // `git revert` falha com conflito, mas deixa REVERT_HEAD — tratar como
+                // sucesso parcial para a UI atualizar e mostrar os conflitos.
+                if revert_in_progress(ctx.repo_path()) {
+                    return Ok(());
+                }
+                return Err(e);
+            }
         }
         WriteRequest::Push => {
             ctx.execute_op(&PushUpstream)?;
@@ -402,6 +527,41 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         WriteRequest::DeleteTag { name } => {
             let name = validate_tag_name(&name)?;
             ctx.execute_op(&DeleteTag { name })?;
+        }
+        WriteRequest::DiscardWorktree { path } => {
+            let path = validate_repo_relative_path(git_path_from_display(&path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            ctx.execute_op(&DiscardWorktree { path })?;
+        }
+        WriteRequest::DiscardWorktreeMany { paths } => {
+            let paths = validate_paths(&paths)?;
+            ctx.execute_op(&DiscardWorktreeMany { paths })?;
+        }
+        WriteRequest::DiscardWorktreeAll => {
+            ctx.execute_op(&DiscardWorktreeAll)?;
+        }
+        WriteRequest::RemoveUntracked { path } => {
+            let path = validate_repo_relative_path(git_path_from_display(&path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            ctx.execute_op(&RemoveUntracked { path })?;
+        }
+        WriteRequest::RemoveUntrackedMany { paths } => {
+            let paths = validate_paths(&paths)?;
+            ctx.execute_op(&RemoveUntrackedMany { paths })?;
+        }
+        WriteRequest::DiscardHunk { path, patch } => {
+            let _path = validate_repo_relative_path(git_path_from_display(&path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            ctx.execute_op(&ApplyReversePatch { patch })?;
+        }
+        WriteRequest::AbortRevert => {
+            ctx.execute_op(&AbortRevert)?;
+        }
+        WriteRequest::AbortMerge => {
+            ctx.execute_op(&AbortMerge)?;
+        }
+        WriteRequest::AbortCherryPick => {
+            ctx.execute_op(&AbortCherryPick)?;
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -580,6 +740,63 @@ fn gate_revert_merge(ctx: &RepoContext, sha: &str) -> Result<Option<String>, Git
     Ok(None)
 }
 
+fn gate_revert(ctx: &RepoContext, repo_path: &str) -> Result<Option<String>, GitError> {
+    let git_dir = std::path::Path::new(repo_path).join(".git");
+    if git_dir.join("REVERT_HEAD").exists() {
+        return Ok(Some(
+            "Há um revert em andamento (possível conflito) — resolva os arquivos ou \
+             execute «git revert --abort» no terminal antes de tentar outro revert."
+                .into(),
+        ));
+    }
+    if git_dir.join("MERGE_HEAD").exists() {
+        return Ok(Some(
+            "Há um merge em andamento — conclua ou aborte antes de reverter.".into(),
+        ));
+    }
+    let status = ctx.reader().get_status()?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
+        return Ok(Some(
+            "Working tree com alterações — faça commit, stash ou descarte antes de reverter um commit."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn gate_abort_revert(repo_path: &str) -> Result<Option<String>, GitError> {
+    if std::path::Path::new(repo_path)
+        .join(".git/REVERT_HEAD")
+        .exists()
+    {
+        Ok(None)
+    } else {
+        Ok(Some("Não há revert em andamento.".into()))
+    }
+}
+
+fn gate_abort_merge(repo_path: &str) -> Result<Option<String>, GitError> {
+    if std::path::Path::new(repo_path)
+        .join(".git/MERGE_HEAD")
+        .exists()
+    {
+        Ok(None)
+    } else {
+        Ok(Some("Não há merge em andamento.".into()))
+    }
+}
+
+fn gate_abort_cherry_pick(repo_path: &str) -> Result<Option<String>, GitError> {
+    if std::path::Path::new(repo_path)
+        .join(".git/CHERRY_PICK_HEAD")
+        .exists()
+    {
+        Ok(None)
+    } else {
+        Ok(Some("Não há cherry-pick em andamento.".into()))
+    }
+}
+
 fn gate_uncommit(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     if head_is_local_only(ctx.reader(), ctx.writer())? {
         Ok(None)
@@ -734,6 +951,117 @@ fn gate_tag_missing(repo_path: &str, name: &str) -> Result<Option<String>, GitEr
     match gate_tag_exists(repo_path, name)? {
         Some(_) => Ok(None),
         None => Ok(Some(format!("Tag «{name}» não encontrada."))),
+    }
+}
+
+fn status_path_matches(display: &str, path: &str) -> bool {
+    git_path_from_display(display) == path
+}
+
+fn revert_in_progress(repo_path: &str) -> bool {
+    std::path::Path::new(repo_path)
+        .join(".git/REVERT_HEAD")
+        .exists()
+}
+
+fn gate_discard_blocked(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    let status = ctx.reader().get_status()?;
+    if let Some(op) = &status.operation_in_progress {
+        let abort = match op.kind {
+            InProgressKind::Revert => "«Abortar revert»",
+            InProgressKind::Merge => "«Abortar merge»",
+            InProgressKind::CherryPick => "«Abortar cherry-pick»",
+        };
+        return Ok(Some(format!(
+            "{} Descartar arquivos não cancela a operação — use {abort}.",
+            op.message
+        )));
+    }
+    let has_conflicts = status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .any(|f| f.kind == FileChangeKind::Conflicted);
+    if has_conflicts {
+        return Ok(Some(
+            "Arquivos em conflito — edite para resolver ou aborte a operação em andamento."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn gate_discard_worktree(
+    ctx: &RepoContext,
+    paths: &[String],
+) -> Result<Option<String>, GitError> {
+    if let Some(msg) = gate_discard_blocked(ctx)? {
+        return Ok(Some(msg));
+    }
+    let status = ctx.reader().get_status()?;
+    for path in paths {
+        let in_unstaged = status
+            .unstaged
+            .iter()
+            .any(|f| status_path_matches(&f.path, path));
+        if !in_unstaged {
+            return Ok(Some(format!(
+                "«{path}» não tem alterações fora do stage para descartar — use unstage se estiver só em staging."
+            )));
+        }
+    }
+    Ok(None)
+}
+
+fn gate_discard_worktree_all(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    if let Some(msg) = gate_discard_blocked(ctx)? {
+        return Ok(Some(msg));
+    }
+    let status = ctx.reader().get_status()?;
+    if status.unstaged.is_empty() {
+        return Ok(Some(
+            "Não há alterações fora do stage para descartar.".into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn gate_remove_untracked(
+    ctx: &RepoContext,
+    paths: &[String],
+) -> Result<Option<String>, GitError> {
+    let status = ctx.reader().get_status()?;
+    for path in paths {
+        let in_untracked = status
+            .untracked
+            .iter()
+            .any(|f| status_path_matches(&f.path, path));
+        if !in_untracked {
+            return Ok(Some(format!(
+                "«{path}» não é um arquivo não rastreado — use descartar para alterações em arquivos rastreados."
+            )));
+        }
+    }
+    Ok(None)
+}
+
+fn gate_reverse_patch(ctx: &RepoContext, patch: &str) -> Result<Option<String>, GitError> {
+    if patch.trim().is_empty() {
+        return Ok(Some("Nenhum trecho selecionado para descartar.".into()));
+    }
+    let cmd = crate::application::GitCommand {
+        args: vec![
+            "apply".into(),
+            "--reverse".into(),
+            "--check".into(),
+            "-".into(),
+        ],
+    };
+    match ctx.writer().run_with_stdin(&cmd, patch.as_bytes()) {
+        Ok(_) => Ok(None),
+        Err(e) => Ok(Some(format!(
+            "O trecho não pode ser revertido automaticamente: {e}"
+        ))),
     }
 }
 
@@ -925,6 +1253,39 @@ mod tests {
             "revert de merge deve vir bloqueado"
         );
         assert!(preview.blocked.unwrap().to_lowercase().contains("merge"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Revert com working tree suja deve bloquear no preview (evita conflito parcial).
+    #[test]
+    fn revert_com_working_tree_suja_e_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-revwt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::fs::write(dir.join("f.txt"), "dirty").unwrap();
+        let sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Revert { commit_id: sha },
+        )
+        .expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "revert com WT suja deve vir bloqueado"
+        );
+        assert!(preview
+            .blocked
+            .unwrap()
+            .to_lowercase()
+            .contains("working tree"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1319,6 +1680,59 @@ mod tests {
             .output()
             .unwrap();
         assert!(String::from_utf8_lossy(&out.stdout).trim().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discard_worktree_restaura_arquivo() {
+        let dir = std::env::temp_dir().join(format!("trilho-discard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::fs::write(dir.join("f.txt"), "changed").unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::DiscardWorktree {
+                path: "f.txt".into(),
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_none(), "{:?}", preview.blocked);
+
+        execute_write(
+            &ctx,
+            WriteRequest::DiscardWorktree {
+                path: "f.txt".into(),
+            },
+        )
+        .expect("discard");
+
+        let content = std::fs::read_to_string(dir.join("f.txt")).unwrap();
+        assert_eq!(content, "x");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discard_all_bloqueado_com_revert_em_andamento() {
+        let dir = std::env::temp_dir().join(format!("trilho-discrev-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::fs::write(dir.join("f.txt"), "dirty").unwrap();
+        std::fs::write(dir.join(".git/REVERT_HEAD"), "abc\n").unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(&ctx, ctx.repo_path(), &WriteRequest::DiscardWorktreeAll)
+            .expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "descartar tudo deve bloquear com revert pendente"
+        );
+        assert!(preview
+            .blocked
+            .unwrap()
+            .contains("Abortar revert"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

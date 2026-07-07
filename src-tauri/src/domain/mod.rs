@@ -8,7 +8,7 @@ pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
 pub use operation::{CloneRequest, CloneResult, OperationPreview, WriteRequest};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 /// Um commit da trilha (RF-01). Serializa em camelCase para o frontend.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +75,8 @@ pub enum FileChangeKind {
     Deleted,
     Renamed,
     Untracked,
+    /// Arquivo em conflito (entrada `u` do porcelain v2).
+    Conflicted,
 }
 
 /// Um arquivo alterado no working tree ou staging.
@@ -86,6 +88,22 @@ pub struct FileChange {
     pub staged: bool,
 }
 
+/// Operação Git interrompida (revert/merge/cherry-pick).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum InProgressKind {
+    Revert,
+    Merge,
+    CherryPick,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationInProgress {
+    pub kind: InProgressKind,
+    pub message: String,
+}
+
 /// Status agregado do repositório (RF-04).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +111,8 @@ pub struct RepoStatus {
     pub staged: Vec<FileChange>,
     pub unstaged: Vec<FileChange>,
     pub untracked: Vec<FileChange>,
+    /// Revert/merge/cherry-pick em andamento (`.git/*_HEAD`).
+    pub operation_in_progress: Option<OperationInProgress>,
 }
 
 /// Indicador de sincronização com remoto (RF-10 parcial / fetch).

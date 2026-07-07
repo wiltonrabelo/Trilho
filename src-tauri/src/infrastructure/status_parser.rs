@@ -49,6 +49,12 @@ pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
             continue;
         }
 
+        if entry.starts_with("u ") {
+            parse_u_entry(entry, &mut staged, &mut unstaged);
+            i += 1;
+            continue;
+        }
+
         i += 1;
     }
 
@@ -56,7 +62,35 @@ pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
         staged,
         unstaged,
         untracked,
+        operation_in_progress: None,
     })
+}
+
+/// Entrada `u` — paths não mesclados (conflito de merge/revert/cherry-pick).
+fn parse_u_entry(entry: &str, staged: &mut Vec<FileChange>, unstaged: &mut Vec<FileChange>) {
+    let parts: Vec<&str> = entry.split_whitespace().collect();
+    if parts.len() < 4 {
+        return;
+    }
+    let xy = parts[1];
+    let path = parts.last().unwrap().to_string();
+
+    staged.push(FileChange {
+        path: path.clone(),
+        kind: FileChangeKind::Conflicted,
+        staged: true,
+    });
+
+    if xy.len() == 2 {
+        let worktree = xy.chars().nth(1).unwrap_or('.');
+        if worktree != '.' {
+            unstaged.push(FileChange {
+                path,
+                kind: FileChangeKind::Conflicted,
+                staged: false,
+            });
+        }
+    }
 }
 
 /// Segmento NUL separado — path de origem após registro `2` (formato `-z` do git).
@@ -161,6 +195,17 @@ mod tests {
         let raw = "2 R. N... 100644 100644 100644 abcd1234 abcd1234 R100 new.ts\0";
         let status = parse_porcelain_v2(raw).expect("parse");
         assert_eq!(status.staged[0].path, "new.ts");
+    }
+
+    #[test]
+    fn parse_unmerged_uu_em_staged_e_unstaged() {
+        let raw = "u UU N... 100644 100644 100644 100644 abc def ghi Anotacoes.txt\0";
+        let status = parse_porcelain_v2(raw).expect("parse");
+        assert_eq!(status.staged.len(), 1);
+        assert_eq!(status.unstaged.len(), 1);
+        assert_eq!(status.staged[0].path, "Anotacoes.txt");
+        assert_eq!(status.staged[0].kind, FileChangeKind::Conflicted);
+        assert_eq!(status.unstaged[0].kind, FileChangeKind::Conflicted);
     }
 
     #[test]
