@@ -30,6 +30,7 @@ interface StatusPanelProps {
   onUnstage?: (path: string) => void;
   onUnstageMany?: (paths: string[]) => void;
   onUnstageAll?: () => void;
+  onStash?: () => void;
 }
 
 const KIND_BADGE: Record<
@@ -243,6 +244,7 @@ export function StatusPanel({
   onUnstage,
   onUnstageMany,
   onUnstageAll,
+  onStash,
 }: StatusPanelProps) {
   if (commit) {
     return (
@@ -336,6 +338,15 @@ export function StatusPanel({
                 className="text-[10px] text-accent hover:underline"
               >
                 Unstage tudo
+              </button>
+            )}
+            {total > 0 && onStash && (
+              <button
+                type="button"
+                onClick={onStash}
+                className="text-[10px] text-accent hover:underline"
+              >
+                Guardar (stash)
               </button>
             )}
           </div>

@@ -24,6 +24,7 @@ import type {
   CloneResultDto,
   OperationPreviewDto,
   RemoteBranchRefDto,
+  StashEntryDto,
   WriteRequestDto,
 } from "@/types";
 
@@ -418,6 +419,19 @@ export async function listRemoteBranches(): Promise<RemoteBranchRefDto[]> {
     ];
   }
   return invoke<RemoteBranchRefDto[]>("list_remote_branches");
+}
+
+export async function listStashes(): Promise<StashEntryDto[]> {
+  if (!isTauri()) {
+    return [
+      {
+        index: 0,
+        reference: "stash@{0}",
+        message: "WIP on main: mock stash",
+      },
+    ];
+  }
+  return invoke<StashEntryDto[]>("list_stashes");
 }
 
 export async function previewCloneRemote(

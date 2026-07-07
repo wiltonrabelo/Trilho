@@ -149,6 +149,12 @@ export interface RemoteBranchRefDto {
   branch: string;
 }
 
+export interface StashEntryDto {
+  index: number;
+  reference: string;
+  message: string;
+}
+
 export interface BranchOriginDto {
   currentBranch: string | null;
   candidate: string | null;
@@ -201,6 +207,14 @@ export type WriteRequestDto =
   | { kind: "pullFfOnly" }
   | { kind: "unshallowHistory" }
   | { kind: "switchBranch"; branch: string; trackRemote?: string | null }
+  | {
+      kind: "stashPush";
+      message?: string | null;
+      includeUntracked?: boolean;
+    }
+  | { kind: "stashApply"; index: number }
+  | { kind: "stashPop"; index: number }
+  | { kind: "stashDrop"; index: number }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {

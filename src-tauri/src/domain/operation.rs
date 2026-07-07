@@ -78,6 +78,25 @@ pub enum WriteRequest {
         #[serde(default, rename = "trackRemote")]
         track_remote: Option<String>,
     },
+    /// Guarda alterações em stash (`git stash push`).
+    StashPush {
+        #[serde(default)]
+        message: Option<String>,
+        #[serde(default, rename = "includeUntracked")]
+        include_untracked: bool,
+    },
+    /// RF-23 — reaplica stash (`git stash apply`).
+    StashApply {
+        index: usize,
+    },
+    /// RF-23 — reaplica e remove (`git stash pop`).
+    StashPop {
+        index: usize,
+    },
+    /// RF-23 — descarta stash (`git stash drop`).
+    StashDrop {
+        index: usize,
+    },
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o
@@ -136,6 +155,34 @@ mod tests {
             WriteRequest::Publish { url } => {
                 assert_eq!(url.as_deref(), Some("git@github.com:u/r.git"));
             }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn stash_push_deserializa_include_untracked() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"stashPush","message":"wip","includeUntracked":true}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::StashPush {
+                message,
+                include_untracked,
+            } => {
+                assert_eq!(message.as_deref(), Some("wip"));
+                assert!(include_untracked);
+            }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn stash_apply_deserializa_index() {
+        let req: WriteRequest =
+            serde_json::from_str(r#"{"kind":"stashApply","index":0}"#).unwrap();
+        match req {
+            WriteRequest::StashApply { index } => assert_eq!(index, 0),
             _ => panic!("variant errada"),
         }
     }

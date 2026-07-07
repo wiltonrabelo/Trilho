@@ -10,10 +10,11 @@ import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
-import { BranchPanel } from "@/components/BranchPanel";
+import { RefsPanel } from "@/components/RefsPanel";
 import { RepoPicker } from "@/components/RepoPicker";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
+import { StashDialog } from "@/components/StashDialog";
 import { StatusPanel } from "@/components/StatusPanel";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -27,6 +28,7 @@ import { useBranches } from "@/hooks/useBranches";
 import { useOperations } from "@/hooks/useOperations";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
+import { useStashes } from "@/hooks/useStashes";
 import { useSync } from "@/hooks/useSync";
 import { getAppInfo, getRepoInfo, runningInTauri } from "@/lib/api";
 import type { AppInfo, RepoInfo } from "@/types";
@@ -37,6 +39,7 @@ function App() {
   const [workingCopySelected, setWorkingCopySelected] = useState(true);
   const [amendIntent, setAmendIntent] = useState(0);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [stashOpen, setStashOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -102,6 +105,7 @@ function App() {
   });
 
   const branchList = useBranches(repo?.path, repo?.branch);
+  const stashList = useStashes(repo?.path);
 
   const onAfterFetch = useCallback(async () => {
     await Promise.all([
@@ -109,8 +113,9 @@ function App() {
       refreshStatus(),
       refreshOrigin(),
       branchList.refresh(),
+      stashList.refresh(),
     ]);
-  }, [refreshCommits, refreshStatus, refreshOrigin, branchList.refresh]);
+  }, [refreshCommits, refreshStatus, refreshOrigin, branchList.refresh, stashList.refresh]);
 
   const {
     sync,
@@ -139,8 +144,9 @@ function App() {
       syncRefresh(),
       refreshOrigin(),
       branchList.refresh(),
+      stashList.refresh(),
     ]);
-  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin, branchList.refresh]);
+  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin, branchList.refresh, stashList.refresh]);
 
   useRepoChanged(refreshAll);
 
@@ -194,6 +200,12 @@ function App() {
     if (clone.pending) clone.cancelPreview();
     else ops.cancel();
   }, [clone, ops]);
+
+  useEffect(() => {
+    if (ops.preview && ops.pending?.kind === "stashPush") {
+      setStashOpen(false);
+    }
+  }, [ops.preview, ops.pending]);
 
   const headCommit = commits[0] ?? null;
   const canAmend =
@@ -340,7 +352,15 @@ function App() {
                 ? "Completar histórico"
                 : ops.pending?.kind === "switchBranch"
                   ? "Trocar de branch"
-                  : undefined
+                  : ops.pending?.kind === "stashPush"
+                    ? "Guardar no stash"
+                    : ops.pending?.kind === "stashApply"
+                      ? "Aplicar stash"
+                      : ops.pending?.kind === "stashPop"
+                        ? "Aplicar e remover stash"
+                        : ops.pending?.kind === "stashDrop"
+                          ? "Excluir stash"
+                          : undefined
         }
       />
       <CloneDialog
@@ -361,6 +381,27 @@ function App() {
           ops.cancel();
         }}
         onContinue={(url) => void handlePublishWithUrl(url)}
+      />
+      <StashDialog
+        open={stashOpen}
+        counts={{
+          staged: status?.staged.length ?? 0,
+          unstaged: status?.unstaged.length ?? 0,
+          untracked: status?.untracked.length ?? 0,
+        }}
+        loading={ops.loading}
+        error={stashOpen && !ops.preview ? ops.error : null}
+        onCancel={() => {
+          setStashOpen(false);
+          ops.cancel();
+        }}
+        onContinue={(message, includeUntracked) => {
+          void ops.request({
+            kind: "stashPush",
+            message: message || null,
+            includeUntracked,
+          });
+        }}
       />
       <ConnectDialog
         open={connect.open}
@@ -517,7 +558,7 @@ function App() {
           <ResizableColumns
             defaultRight={360}
             left={
-              <>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <RepoPicker
                   recentRepos={recentRepos}
                   onOpen={handleOpenRepo}
@@ -529,11 +570,14 @@ function App() {
                   onClone={runningInTauri() ? clone.openClone : undefined}
                   loading={repoLoading}
                 />
-                <BranchPanel
+                <RefsPanel
                   branches={branchList.branches}
                   remoteBranches={branchList.remoteBranches}
+                  stashes={stashList.stashes}
                   currentBranch={repo.branch}
                   loading={branchList.loading}
+                  stashesLoading={stashList.loading}
+                  writeDisabled={writeDisabled}
                   onSwitchLocal={(branch) =>
                     void ops.request({ kind: "switchBranch", branch })
                   }
@@ -544,23 +588,34 @@ function App() {
                       trackRemote: remote,
                     })
                   }
+                  onStashApply={(index) =>
+                    void ops.request({ kind: "stashApply", index })
+                  }
+                  onStashPop={(index) =>
+                    void ops.request({ kind: "stashPop", index })
+                  }
+                  onStashDrop={(index) =>
+                    void ops.request({ kind: "stashDrop", index })
+                  }
                 />
-                <button
-                  type="button"
-                  onClick={() => void close()}
-                  disabled={repoLoading}
-                  className="mx-3 mb-2 flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface hover:text-text disabled:opacity-50"
-                >
-                  <X size={14} />
-                  Fechar repositório
-                </button>
-                <div
-                  className="mt-auto border-t border-border px-3 py-2 text-[10px] text-muted break-all"
-                  title={repo.path}
-                >
-                  {repo.path}
+                <div className="mt-auto shrink-0 border-t border-border pt-3">
+                  <button
+                    type="button"
+                    onClick={() => void close()}
+                    disabled={repoLoading}
+                    className="mx-3 mb-2 flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface hover:text-text disabled:opacity-50"
+                  >
+                    <X size={14} />
+                    Fechar repositório
+                  </button>
+                  <div
+                    className="px-3 pb-2 text-[10px] text-muted break-all"
+                    title={repo.path}
+                  >
+                    {repo.path}
+                  </div>
                 </div>
-              </>
+              </div>
             }
             center={
               !repo.hasCommits ? (
@@ -703,6 +758,11 @@ function App() {
                           writeDisabled
                             ? undefined
                             : () => void ops.request({ kind: "unstageAll" })
+                        }
+                        onStash={
+                          writeDisabled
+                            ? undefined
+                            : () => setStashOpen(true)
                         }
                       />
                     </div>

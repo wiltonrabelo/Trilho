@@ -35,7 +35,7 @@ export function RepoPicker({
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 p-3">
+    <div className="flex shrink-0 flex-col gap-3 p-3">
       <button
         type="button"
         onClick={pickFolder}

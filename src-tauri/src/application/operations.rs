@@ -359,6 +359,77 @@ impl GitOperation for SwitchBranch {
     }
 }
 
+pub struct StashPush {
+    pub message: Option<String>,
+    pub include_untracked: bool,
+}
+
+impl GitOperation for StashPush {
+    fn command(&self) -> GitCommand {
+        let mut args = vec!["stash".into(), "push".into()];
+        if self.include_untracked {
+            args.push("-u".into());
+        }
+        if let Some(msg) = self.message.as_ref().map(|m| m.trim()).filter(|m| !m.is_empty()) {
+            args.push("-m".into());
+            args.push(msg.to_string());
+        }
+        GitCommand { args }
+    }
+    fn description(&self) -> &'static str {
+        "Guarda as alterações da working tree em uma pilha (stash) temporária."
+    }
+}
+
+pub struct StashApply {
+    pub reference: String,
+}
+
+impl GitOperation for StashApply {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "stash".into(),
+                "apply".into(),
+                self.reference.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Reaplica o stash na working tree (mantém na pilha)."
+    }
+}
+
+pub struct StashPop {
+    pub reference: String,
+}
+
+impl GitOperation for StashPop {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["stash".into(), "pop".into(), self.reference.clone()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Reaplica o stash e remove da pilha."
+    }
+}
+
+pub struct StashDrop {
+    pub reference: String,
+}
+
+impl GitOperation for StashDrop {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["stash".into(), "drop".into(), self.reference.clone()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Remove o stash da pilha sem reaplicar."
+    }
+}
+
 pub struct AddRemote {
     pub name: String,
     pub url: String,

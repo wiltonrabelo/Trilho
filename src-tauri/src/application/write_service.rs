@@ -2,15 +2,16 @@
 
 use crate::application::operations::{
     AddRemote, CreateCommit, GitOperation, PullFfOnly, PushSetUpstream, PushUpstream, RevertCommit,
-    SetRemoteUrl, Stage, StageAll, StageMany, SwitchBranch, UncommitSoft, UnshallowRemote, Unstage,
-    UnstageAll, UnstageMany,
+    SetRemoteUrl, Stage, StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush,
+    SwitchBranch, UncommitSoft, UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
 use crate::application::{GitError, GitWriter, RepoContext};
 use crate::domain::{OperationPreview, WriteRequest};
 use crate::infrastructure::{
-    list_local_branches, list_remote_branches, repo_info, validate_clone_branch,
-    validate_git_object_id, validate_remote_name, validate_remote_url, validate_repo_relative_path,
+    list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
+    validate_clone_branch, validate_git_object_id, validate_remote_name, validate_remote_url,
+    validate_repo_relative_path,
 };
 use git2::Repository;
 
@@ -188,6 +189,56 @@ pub fn preview_write(
                 .collect();
             (commands, op.effect_description(), blocked)
         }
+        WriteRequest::StashPush {
+            message,
+            include_untracked,
+        } => {
+            let op = StashPush {
+                message: message.clone(),
+                include_untracked: *include_untracked,
+            };
+            let blocked = gate_stash(ctx, *include_untracked)?;
+            let description = stash_effect_description(ctx, *include_untracked)?;
+            (ctx.preview_op(&op), description, blocked)
+        }
+        WriteRequest::StashApply { index } => {
+            let reference = stash_reference(*index)?;
+            let op = StashApply {
+                reference: reference.clone(),
+            };
+            let blocked = gate_stash_restore(ctx)?
+                .or(gate_stash_index(repo_path, *index)?);
+            let description = format!(
+                "Reaplica «{reference}» ({}) na working tree.",
+                stash_label(repo_path, *index)
+            );
+            (ctx.preview_op(&op), description, blocked)
+        }
+        WriteRequest::StashPop { index } => {
+            let reference = stash_reference(*index)?;
+            let op = StashPop {
+                reference: reference.clone(),
+            };
+            let blocked = gate_stash_restore(ctx)?
+                .or(gate_stash_index(repo_path, *index)?);
+            let description = format!(
+                "Reaplica e remove «{reference}» ({}) da pilha.",
+                stash_label(repo_path, *index)
+            );
+            (ctx.preview_op(&op), description, blocked)
+        }
+        WriteRequest::StashDrop { index } => {
+            let reference = stash_reference(*index)?;
+            let op = StashDrop {
+                reference: reference.clone(),
+            };
+            let blocked = gate_stash_index(repo_path, *index)?;
+            let description = format!(
+                "Remove «{reference}» ({}) sem reaplicar.",
+                stash_label(repo_path, *index)
+            );
+            (ctx.preview_op(&op), description, blocked)
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -272,6 +323,27 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             for cmd in op.all_commands() {
                 GitWriter::run(ctx.writer(), &cmd)?;
             }
+        }
+        WriteRequest::StashPush {
+            message,
+            include_untracked,
+        } => {
+            ctx.execute_op(&StashPush {
+                message,
+                include_untracked,
+            })?;
+        }
+        WriteRequest::StashApply { index } => {
+            let reference = stash_reference(index)?;
+            ctx.execute_op(&StashApply { reference })?;
+        }
+        WriteRequest::StashPop { index } => {
+            let reference = stash_reference(index)?;
+            ctx.execute_op(&StashPop { reference })?;
+        }
+        WriteRequest::StashDrop { index } => {
+            let reference = stash_reference(index)?;
+            ctx.execute_op(&StashDrop { reference })?;
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -504,6 +576,71 @@ fn gate_unshallow(ctx: &RepoContext) -> Result<Option<String>, GitError> {
         return Ok(Some("O histórico local já está completo.".into()));
     }
     Ok(None)
+}
+
+fn gate_stash(ctx: &RepoContext, include_untracked: bool) -> Result<Option<String>, GitError> {
+    let status = ctx.reader().get_status()?;
+    let has_tracked = !status.staged.is_empty() || !status.unstaged.is_empty();
+    let has_untracked = !status.untracked.is_empty();
+    if !has_tracked && (!include_untracked || !has_untracked) {
+        return Ok(Some("Não há alterações para guardar no stash.".into()));
+    }
+    Ok(None)
+}
+
+fn stash_effect_description(
+    ctx: &RepoContext,
+    include_untracked: bool,
+) -> Result<String, GitError> {
+    let status = ctx.reader().get_status()?;
+    let mut parts = Vec::new();
+    if !status.staged.is_empty() {
+        parts.push(format!("{} em stage", status.staged.len()));
+    }
+    if !status.unstaged.is_empty() {
+        parts.push(format!("{} não staged", status.unstaged.len()));
+    }
+    if include_untracked && !status.untracked.is_empty() {
+        parts.push(format!("{} não rastreados", status.untracked.len()));
+    }
+    let detail = if parts.is_empty() {
+        "alterações rastreadas".to_string()
+    } else {
+        parts.join(", ")
+    };
+    Ok(format!(
+        "Guarda {detail} em uma pilha temporária (stash). A working tree ficará limpa."
+    ))
+}
+
+fn gate_stash_restore(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    let status = ctx.reader().get_status()?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
+        return Ok(Some(
+            "Working tree com alterações — commit, stash ou descarte antes de reaplicar.".into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn gate_stash_index(repo_path: &str, index: usize) -> Result<Option<String>, GitError> {
+    let stashes = list_stashes(repo_path)?;
+    if stashes.iter().any(|s| s.index == index) {
+        Ok(None)
+    } else {
+        Ok(Some("Stash não encontrado — a pilha pode ter mudado.".into()))
+    }
+}
+
+fn stash_label(repo_path: &str, index: usize) -> String {
+    list_stashes(repo_path)
+        .ok()
+        .and_then(|ss| {
+            ss.into_iter()
+                .find(|s| s.index == index)
+                .map(|s| s.message)
+        })
+        .unwrap_or_else(|| format!("stash@{{{index}}}"))
 }
 
 fn gate_switch_branch(
@@ -862,6 +999,60 @@ mod tests {
         // Mesma URL → sem passo de remoto (só push).
         let plan = plan_publish(&ctx, Some("git@github.com:errada/repo.git")).expect("plan");
         assert!(plan.remote_step.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stash_sem_alteracoes_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-stash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::StashPush {
+                message: None,
+                include_untracked: false,
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stash_com_alteracoes_executa() {
+        let dir = std::env::temp_dir().join(format!("trilho-stash-ok-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::fs::write(dir.join("f.txt"), "changed").unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::StashPush {
+                message: Some("wip".into()),
+                include_untracked: false,
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_none(), "{:?}", preview.blocked);
+        assert!(preview.commands.iter().any(|c| c.contains("stash")));
+
+        execute_write(
+            &ctx,
+            WriteRequest::StashPush {
+                message: Some("wip".into()),
+                include_untracked: false,
+            },
+        )
+        .expect("stash");
+
+        let status = ctx.reader().get_status().expect("status");
+        assert!(status.staged.is_empty() && status.unstaged.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

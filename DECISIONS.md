@@ -255,13 +255,13 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 
 - [x] **Checkout branch — recorte 1** — listar branches locais + `git switch` + preview RF-08 + gate WT suja
 - [x] **Checkout branch — recorte 2** — checkout de branch remota (`git switch --track origin/<branch>`)
-- [ ] **Painel Refs — recorte 1** — sidebar colapsável: Ramos + Remotos + pesquisa (estilo SourceTree)
+- [x] **Painel Refs — recorte 1** — sidebar colapsável: Ramos + Remotos + pesquisa (estilo SourceTree)
 - [ ] **Painel Refs — recorte 2** — seções Tags e Pilhas (depende RF-23/RF-24)
 
 ## Backlog F4 — RF-23 Stash ⏳
 
-- [ ] **Recorte 1** — `git stash push` (mensagem, `-u` opcional, preview RF-08) no painel Alterações
-- [ ] **Recorte 2** — listar/aplicar/excluir stashes (seção **Pilhas** no painel Refs)
+- [x] **Recorte 1** — `git stash push` (mensagem, `-u` opcional, preview RF-08) no painel Alterações
+- [x] **Recorte 2** — listar/aplicar/excluir stashes (seção **Pilhas** no painel Refs)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

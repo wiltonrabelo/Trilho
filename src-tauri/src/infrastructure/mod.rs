@@ -8,6 +8,7 @@ mod git2_reader;
 mod git_cli;
 mod repo_watcher;
 mod ssh_keys;
+mod stashes;
 mod status_parser;
 mod upstream;
 mod validation;
@@ -15,6 +16,7 @@ mod validation;
 pub use ssh_keys::{read_ssh_public_key, test_github_ssh, SshKeyInfo, SshTestResult};
 
 pub use branches::{list_local_branches, list_remote_branches, RemoteBranchRef};
+pub use stashes::{list_stashes, stash_reference, StashEntry};
 pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
 
 pub use credential::{
