@@ -76,7 +76,7 @@ pub fn infer_branch_origin(repo: &Repository) -> BranchOrigin {
 
     let mut scored: Vec<ScoredCandidate> = candidates
         .into_iter()
-        .filter_map(|name| score_candidate(repo, head_oid, &head_fp_depths, &name))
+        .filter_map(|name| score_candidate(repo, head_oid, &head_fp_depths, &name, &current))
         .collect();
 
     apply_merge_base_proximity(&mut scored);
@@ -602,6 +602,163 @@ mod tests {
         let repo = Repository::discover(&dir).unwrap();
         let origin = infer_branch_origin(&repo);
         assert_eq!(origin.confidence, OriginConfidence::Indeterminate);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn branch_irma_no_mesmo_commit_nao_e_origem() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-peer-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+        Command::new("git")
+            .args(["branch", "main_teste_3"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_ne!(
+            origin.candidate.as_deref(),
+            Some("main_teste_3"),
+            "na main, branch irmã no mesmo commit não é origem"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn integracao_no_mesmo_commit_e_origem_da_feature() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-int-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+        let default = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let default = String::from_utf8_lossy(&default.stdout).trim().to_string();
+        Command::new("git")
+            .args(["branch", "main_teste_3"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "main_teste_3"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_eq!(
+            origin.candidate.as_deref(),
+            Some(default.as_str()),
+            "feature no mesmo commit que integração deve inferir a trilha principal"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nome_com_prefixo_indica_pai() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-lin-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+        Command::new("git")
+            .args(["branch", "main_teste_3"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", "main_teste_3_1", "main_teste_3"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "b.txt", "child");
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_eq!(
+            origin.candidate.as_deref(),
+            Some("main_teste_3"),
+            "main_teste_3_1 deve derivar de main_teste_3, não de teste_origem_main"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "integração manual no GitTeste"]
+    fn gitteste_main_teste_3_origem_main() {
+        let path = std::path::Path::new(r"C:\Projetos\GitTeste");
+        if !path.exists() {
+            return;
+        }
+        Command::new("git")
+            .args(["checkout", "main_teste_3"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        let repo = Repository::open(path).unwrap();
+        let origin = infer_branch_origin(&repo);
+        eprintln!("main_teste_3: {:?}", origin.candidate);
+        eprintln!("confidence: {:?}", origin.confidence);
+        eprintln!("signals: {:?}", origin.signals);
+        assert_eq!(origin.candidate.as_deref(), Some("main"));
+    }
+
+    #[test]
+    #[ignore = "integração manual no GitTeste"]
+    fn gitteste_main_teste_3_1_origem_pai() {
+        let path = std::path::Path::new(r"C:\Projetos\GitTeste");
+        if !path.exists() {
+            return;
+        }
+        Command::new("git")
+            .args(["checkout", "main_teste_3_1"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        let repo = Repository::open(path).unwrap();
+        let origin = infer_branch_origin(&repo);
+        eprintln!("main_teste_3_1: {:?}", origin.candidate);
+        eprintln!("confidence: {:?}", origin.confidence);
+        eprintln!("signals: {:?}", origin.signals);
+        assert_eq!(origin.candidate.as_deref(), Some("main_teste_3"));
+    }
+
+    #[test]
+    fn branch_filha_a_frente_nao_e_origem_do_pai() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-child-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+        let default = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let default = String::from_utf8_lossy(&default.stdout).trim().to_string();
+        Command::new("git")
+            .args(["checkout", "-b", "main_teste_3"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "b.txt", "child work");
+        Command::new("git")
+            .args(["checkout", &default])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_ne!(
+            origin.candidate.as_deref(),
+            Some("main_teste_3"),
+            "branch filha à frente não é origem do pai"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

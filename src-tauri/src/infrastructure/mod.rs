@@ -2,6 +2,7 @@
 
 mod blame;
 mod blame_parser;
+mod branches;
 mod credential;
 mod git2_reader;
 mod git_cli;
@@ -13,7 +14,8 @@ mod validation;
 
 pub use ssh_keys::{read_ssh_public_key, test_github_ssh, SshKeyInfo, SshTestResult};
 
-pub use upstream::sync_upstream_remote_ref;
+pub use branches::{list_local_branches, list_remote_branches, RemoteBranchRef};
+pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
 
 pub use credential::{
     detect_credential_status, ensure_gcm_configured, store_github_pat, trigger_github_login,
@@ -24,7 +26,7 @@ pub use git_cli::{defensive_config_args, SafeGitCli};
 pub use repo_watcher::RepoWatcher;
 pub use validation::{
     repo_name_from_url, validate_clone_branch, validate_clone_depth, validate_clone_destination,
-    validate_folder_name, validate_git_object_id,
+    validate_folder_name, validate_git_object_id, validate_remote_name,
     validate_remote_url, validate_repo_relative_path,
 };
 

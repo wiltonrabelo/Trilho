@@ -10,6 +10,7 @@ import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
+import { BranchPanel } from "@/components/BranchPanel";
 import { RepoPicker } from "@/components/RepoPicker";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
@@ -22,6 +23,7 @@ import { useConnect } from "@/hooks/useConnect";
 import { useClone } from "@/hooks/useClone";
 import { useCommits } from "@/hooks/useCommits";
 import { useFileSelection } from "@/hooks/useFileSelection";
+import { useBranches } from "@/hooks/useBranches";
 import { useOperations } from "@/hooks/useOperations";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
@@ -99,9 +101,16 @@ function App() {
     commit: workingCopySelected ? null : selectedCommit,
   });
 
+  const branchList = useBranches(repo?.path, repo?.branch);
+
   const onAfterFetch = useCallback(async () => {
-    await Promise.all([refreshCommits(), refreshStatus(), refreshOrigin()]);
-  }, [refreshCommits, refreshStatus, refreshOrigin]);
+    await Promise.all([
+      refreshCommits(),
+      refreshStatus(),
+      refreshOrigin(),
+      branchList.refresh(),
+    ]);
+  }, [refreshCommits, refreshStatus, refreshOrigin, branchList.refresh]);
 
   const {
     sync,
@@ -117,11 +126,11 @@ function App() {
 
   const { checkedPaths, clearChecks, toggleCheck, handleSelectFile } =
     useFileSelection({
-    repoPath: repo?.path,
-    status,
-    selectedFile,
-    onSelectFile: selectFile,
-  });
+      repoPath: repo?.path,
+      status,
+      selectedFile,
+      onSelectFile: selectFile,
+    });
 
   const refreshAll = useCallback(async () => {
     await Promise.all([
@@ -129,8 +138,9 @@ function App() {
       refreshStatus(),
       syncRefresh(),
       refreshOrigin(),
+      branchList.refresh(),
     ]);
-  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin]);
+  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin, branchList.refresh]);
 
   useRepoChanged(refreshAll);
 
@@ -317,6 +327,7 @@ function App() {
       <OperationDialog
         preview={activePreview}
         loading={activeLoading}
+        error={ops.error}
         onConfirm={confirmOperation}
         onCancel={cancelOperation}
         progressLine={clone.progress}
@@ -327,7 +338,9 @@ function App() {
               ? "Confirmar publicação"
               : ops.pending?.kind === "unshallowHistory"
                 ? "Completar histórico"
-                : undefined
+                : ops.pending?.kind === "switchBranch"
+                  ? "Trocar de branch"
+                  : undefined
         }
       />
       <CloneDialog
@@ -515,6 +528,22 @@ function App() {
                   }
                   onClone={runningInTauri() ? clone.openClone : undefined}
                   loading={repoLoading}
+                />
+                <BranchPanel
+                  branches={branchList.branches}
+                  remoteBranches={branchList.remoteBranches}
+                  currentBranch={repo.branch}
+                  loading={branchList.loading}
+                  onSwitchLocal={(branch) =>
+                    void ops.request({ kind: "switchBranch", branch })
+                  }
+                  onSwitchRemote={(remote, branch) =>
+                    void ops.request({
+                      kind: "switchBranch",
+                      branch,
+                      trackRemote: remote,
+                    })
+                  }
                 />
                 <button
                   type="button"

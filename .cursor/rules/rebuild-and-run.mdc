@@ -1,0 +1,16 @@
+---
+description: Após ajustes no Trilho, rebuild e abrir o app automaticamente
+alwaysApply: true
+---
+
+# Trilho — rebuild e execução após mudanças
+
+Sempre que alterar código do **Trilho** (`C:\Projetos\Trilho`), ao concluir o ajuste:
+
+1. **Rebuild Rust** (se tocou `src-tauri/`): `cargo test --manifest-path src-tauri/Cargo.toml` ou pelo menos `cargo build --manifest-path src-tauri/Cargo.toml`
+2. **Subir o app**: `npm run dev` em `C:\Projetos\Trilho` (roda `tauri dev` — recompila e abre a janela)
+3. Rodar em **background** se o dev server ficar ativo; não pedir ao usuário para reiniciar manualmente
+4. Se a porta **1420** já estiver em uso (Vite de sessão anterior): `cargo build --manifest-path src-tauri/Cargo.toml` e `cargo run --manifest-path src-tauri/Cargo.toml --no-default-features` — o binário novo conecta ao Vite existente
+5. Se já houver `npm run dev` rodando no Trilho, o Tauri/Vite costuma recarregar sozinho — ainda assim confirme que o processo está ativo ou reinicie
+
+Não aplicar esta regra a outros projetos (ex.: SysPDV).

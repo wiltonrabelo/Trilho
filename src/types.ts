@@ -144,6 +144,11 @@ export interface SshTestResultDto {
 
 export type OriginConfidence = "high" | "medium" | "low" | "indeterminate";
 
+export interface RemoteBranchRefDto {
+  remote: string;
+  branch: string;
+}
+
 export interface BranchOriginDto {
   currentBranch: string | null;
   candidate: string | null;
@@ -195,6 +200,7 @@ export type WriteRequestDto =
   | { kind: "push" }
   | { kind: "pullFfOnly" }
   | { kind: "unshallowHistory" }
+  | { kind: "switchBranch"; branch: string; trackRemote?: string | null }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {

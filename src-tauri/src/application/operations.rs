@@ -291,6 +291,74 @@ impl GitOperation for PushSetUpstream {
     }
 }
 
+pub struct SwitchBranch {
+    pub branch: String,
+    pub track_remote: Option<String>,
+}
+
+impl SwitchBranch {
+    pub fn effect_description(&self) -> String {
+        match &self.track_remote {
+            Some(remote) => format!(
+                "Cria a branch local «{}» a partir de {}/{} e configura o upstream.",
+                self.branch, remote, self.branch
+            ),
+            None => "Troca para outra branch local.".into(),
+        }
+    }
+
+    /// Comandos Git — `switch --track` falha quando a ref remota não é
+    /// reconhecida como branch (ex.: após fetch com refspec explícito).
+    pub fn all_commands(&self) -> Vec<GitCommand> {
+        match &self.track_remote {
+            Some(remote) => {
+                let remote_ref = format!("{remote}/{}", self.branch);
+                let branch_cfg = format!("branch.{}", self.branch);
+                vec![
+                    GitCommand {
+                        args: vec![
+                            "switch".into(),
+                            "-c".into(),
+                            self.branch.clone(),
+                            remote_ref,
+                        ],
+                    },
+                    GitCommand {
+                        args: vec![
+                            "config".into(),
+                            format!("{branch_cfg}.remote"),
+                            remote.clone(),
+                        ],
+                    },
+                    GitCommand {
+                        args: vec![
+                            "config".into(),
+                            format!("{branch_cfg}.merge"),
+                            format!("refs/heads/{}", self.branch),
+                        ],
+                    },
+                ]
+            }
+            None => vec![GitCommand {
+                args: vec!["switch".into(), self.branch.clone()],
+            }],
+        }
+    }
+}
+
+impl GitOperation for SwitchBranch {
+    fn command(&self) -> GitCommand {
+        self.all_commands().into_iter().next().expect("switch tem comando")
+    }
+    fn description(&self) -> &'static str {
+        if self.track_remote.is_some() {
+            "Cria branch local rastreando o remoto e troca para ela."
+        } else {
+            "Troca para outra branch local."
+        }
+    }
+}
+
 pub struct AddRemote {
     pub name: String,
     pub url: String,
@@ -452,5 +520,35 @@ mod tests {
             branch: "master".into(),
         };
         assert_eq!(op.command().args, vec!["push", "-u", "origin", "master"]);
+    }
+
+    #[test]
+    fn switch_branch_usa_git_switch() {
+        let op = SwitchBranch {
+            branch: "feature".into(),
+            track_remote: None,
+        };
+        assert_eq!(op.command().args, vec!["switch", "feature"]);
+    }
+
+    #[test]
+    fn switch_branch_remota_usa_switch_c_e_config_upstream() {
+        let op = SwitchBranch {
+            branch: "feature".into(),
+            track_remote: Some("origin".into()),
+        };
+        let cmds = op.all_commands();
+        assert_eq!(
+            cmds[0].args,
+            vec!["switch", "-c", "feature", "origin/feature"]
+        );
+        assert_eq!(
+            cmds[1].args,
+            vec!["config", "branch.feature.remote", "origin"]
+        );
+        assert_eq!(
+            cmds[2].args,
+            vec!["config", "branch.feature.merge", "refs/heads/feature"]
+        );
     }
 }

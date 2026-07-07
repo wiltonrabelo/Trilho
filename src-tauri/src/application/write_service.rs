@@ -2,14 +2,15 @@
 
 use crate::application::operations::{
     AddRemote, CreateCommit, GitOperation, PullFfOnly, PushSetUpstream, PushUpstream, RevertCommit,
-    SetRemoteUrl, Stage, StageAll, StageMany, UncommitSoft, UnshallowRemote, Unstage, UnstageAll,
-    UnstageMany,
+    SetRemoteUrl, Stage, StageAll, StageMany, SwitchBranch, UncommitSoft, UnshallowRemote, Unstage,
+    UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::head_is_local_only;
-use crate::application::{GitError, RepoContext};
+use crate::application::{GitError, GitWriter, RepoContext};
 use crate::domain::{OperationPreview, WriteRequest};
 use crate::infrastructure::{
-    repo_info, validate_git_object_id, validate_remote_url, validate_repo_relative_path,
+    list_local_branches, list_remote_branches, repo_info, validate_clone_branch,
+    validate_git_object_id, validate_remote_name, validate_remote_url, validate_repo_relative_path,
 };
 use git2::Repository;
 
@@ -168,6 +169,25 @@ pub fn preview_write(
             let blocked = gate_unshallow(ctx)?;
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
+        WriteRequest::SwitchBranch {
+            branch,
+            track_remote,
+        } => {
+            let branch = validate_clone_branch(Some(branch))?
+                .ok_or_else(|| GitError::Git("Nome de branch inválido.".into()))?;
+            let track_remote = resolve_switch_track(repo_path, &branch, track_remote.as_deref())?;
+            let op = SwitchBranch {
+                branch: branch.clone(),
+                track_remote: track_remote.clone(),
+            };
+            let blocked = gate_switch_branch(ctx, repo_path, &branch, track_remote.as_deref())?;
+            let commands = op
+                .all_commands()
+                .iter()
+                .flat_map(|c| GitWriter::preview(ctx.writer(), c))
+                .collect();
+            (commands, op.effect_description(), blocked)
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -237,6 +257,21 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         }
         WriteRequest::UnshallowHistory => {
             ctx.execute_op(&UnshallowRemote)?;
+        }
+        WriteRequest::SwitchBranch {
+            branch,
+            track_remote,
+        } => {
+            let branch = validate_clone_branch(Some(&branch))?
+                .ok_or_else(|| GitError::Git("Nome de branch inválido.".into()))?;
+            let track_remote = resolve_switch_track(ctx.repo_path(), &branch, track_remote.as_deref())?;
+            let op = SwitchBranch {
+                branch,
+                track_remote,
+            };
+            for cmd in op.all_commands() {
+                GitWriter::run(ctx.writer(), &cmd)?;
+            }
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -471,6 +506,68 @@ fn gate_unshallow(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     Ok(None)
 }
 
+fn gate_switch_branch(
+    ctx: &RepoContext,
+    repo_path: &str,
+    branch: &str,
+    track_remote: Option<&str>,
+) -> Result<Option<String>, GitError> {
+    let origin = ctx.reader().get_branch_origin()?;
+    if origin.current_branch.as_deref() == Some(branch) {
+        return Ok(Some("Você já está nesta branch.".into()));
+    }
+
+    let status = ctx.reader().get_status()?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
+        return Ok(Some(
+            "Working tree com alterações — faça commit, stash ou descarte antes de trocar de branch."
+                .into(),
+        ));
+    }
+
+    match track_remote {
+        Some(remote) => {
+            validate_remote_name(remote)?;
+            let remotes = list_remote_branches(repo_path)?;
+            if !remotes
+                .iter()
+                .any(|r| r.remote == remote && r.branch == branch)
+            {
+                return Ok(Some(
+                    "Branch remota não encontrada — atualize com «Buscar» (fetch) e tente de novo."
+                        .into(),
+                ));
+            }
+            Ok(None)
+        }
+        None => {
+            let locals = list_local_branches(repo_path)?;
+            if !locals.iter().any(|b| b == branch) {
+                return Ok(Some("Branch local não encontrada.".into()));
+            }
+            Ok(None)
+        }
+    }
+}
+
+/// Se a branch local já existe, troca localmente em vez de `--track`.
+fn resolve_switch_track(
+    repo_path: &str,
+    branch: &str,
+    track_remote: Option<&str>,
+) -> Result<Option<String>, GitError> {
+    let Some(remote) = track_remote else {
+        return Ok(None);
+    };
+    let remote = validate_remote_name(remote)?;
+    let locals = list_local_branches(repo_path)?;
+    if locals.iter().any(|b| b == branch) {
+        Ok(None)
+    } else {
+        Ok(Some(remote))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,6 +698,142 @@ mod tests {
         assert!(
             preview.blocked.is_some(),
             "commit sem stage deve bloquear preview"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn switch_branch_bloqueado_com_wt_suja() {
+        let dir = std::env::temp_dir().join(format!("trilho-switch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::process::Command::new("git")
+            .args(["branch", "outra"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        std::fs::write(dir.join("dirty.txt"), "x").unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::SwitchBranch {
+                branch: "outra".into(),
+                track_remote: None,
+            },
+        )
+        .expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "switch com WT suja deve bloquear"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn switch_remoto_preview_usa_track() {
+        let dir = std::env::temp_dir().join(format!("trilho-switch-remote-{}", std::process::id()));
+        let work = dir.join("work");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&work).unwrap();
+
+        let bare = dir.join("origin.git");
+        std::process::Command::new("git")
+            .args(["init", "--bare", "-b", "main"])
+            .arg(&bare)
+            .output()
+            .unwrap();
+        std::fs::write(work.join("f.txt"), "a").unwrap();
+        std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["add", "f.txt"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["remote", "add", "origin"])
+            .arg(&bare)
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["push", "-u", "origin", "main"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["branch", "only-remote"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["push", "origin", "only-remote"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["switch", "main"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["branch", "-D", "only-remote"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["fetch", "origin"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+
+        let ctx = RepoContext::open(&work.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::SwitchBranch {
+                branch: "only-remote".into(),
+                track_remote: Some("origin".into()),
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_none(), "{:?}", preview.blocked);
+        let joined = preview.commands.join(" ");
+        assert!(
+            joined.contains("switch") && joined.contains("-c") && joined.contains("only-remote"),
+            "preview deve usar switch -c: {joined}"
+        );
+        assert!(
+            joined.contains("branch.only-remote.remote"),
+            "preview deve configurar upstream via config: {joined}"
+        );
+
+        let result = execute_write(
+            &ctx,
+            WriteRequest::SwitchBranch {
+                branch: "only-remote".into(),
+                track_remote: Some("origin".into()),
+            },
+        );
+        assert!(result.is_ok(), "{result:?}");
+        let current = std::process::Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&current.stdout).trim(),
+            "only-remote"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

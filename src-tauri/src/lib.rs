@@ -45,6 +45,8 @@ pub fn run() {
             commands::preview_write_operation,
             commands::execute_write_operation,
             commands::preview_clone_remote,
+            commands::list_local_branches,
+            commands::list_remote_branches,
             commands::list_clone_remote_branches,
             commands::execute_clone_remote,
         ])

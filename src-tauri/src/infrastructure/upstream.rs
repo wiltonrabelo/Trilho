@@ -120,6 +120,39 @@ pub fn sync_upstream_remote_ref(repo_path: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+/// Baixa todas as heads de cada remoto (`+refs/heads/*:refs/remotes/<remote>/*`).
+///
+/// Ignora refspec restrito no config (ex.: SourceTree que só busca `main`).
+pub fn fetch_all_remote_branch_refs(repo_path: &str) -> Result<(), GitError> {
+    use std::process::Command;
+
+    let repo = Repository::discover(repo_path).map_err(|_| GitError::NotARepository)?;
+    let remotes = repo
+        .remotes()
+        .map_err(|e| GitError::Git(format!("Não foi possível listar remotos: {e}")))?;
+
+    for remote in remotes.iter().flatten() {
+        if remote.is_empty() {
+            continue;
+        }
+        let spec = format!("+refs/heads/*:refs/remotes/{remote}/*");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["fetch", remote, &spec, "--prune"])
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "always")
+            .output()
+            .map_err(|e| GitError::Io(format!("git fetch ({remote}): {e}")))?;
+        if !output.status.success() {
+            return Err(GitError::from_git_stderr(&String::from_utf8_lossy(
+                &output.stderr,
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +315,79 @@ mod tests {
                 .is_err(),
             "refspec restrito não cria origin/main_teste_3 no fetch padrão"
         );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fetch_all_refs_supera_refspec_restrito() {
+        let root =
+            std::env::temp_dir().join(format!("trilho-fetch-all-{}", std::process::id()));
+        let bare = root.join("remote.git");
+        let local = root.join("local");
+        let _ = fs::remove_dir_all(&root);
+        init_bare_repo(&bare);
+        init_repo_with_commit(&local);
+
+        Command::new("git")
+            .args(["remote", "add", "origin"])
+            .arg(&bare)
+            .current_dir(&local)
+            .output()
+            .expect("remote add");
+        Command::new("git")
+            .args([
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/main:refs/remotes/origin/main",
+            ])
+            .current_dir(&local)
+            .output()
+            .expect("refspec");
+        Command::new("git")
+            .args(["push", "-u", "origin", "HEAD:main"])
+            .current_dir(&local)
+            .output()
+            .expect("push main");
+        for name in ["main_teste_3", "teste_origem_main", "teste2_branch_main"] {
+            Command::new("git")
+                .args(["checkout", "-b", name])
+                .current_dir(&local)
+                .output()
+                .expect("branch");
+            Command::new("git")
+                .args(["push", "-u", "origin", name])
+                .current_dir(&local)
+                .output()
+                .expect("push");
+        }
+        Command::new("git")
+            .args(["checkout", "main_teste_3"])
+            .current_dir(&local)
+            .output()
+            .expect("checkout");
+        Command::new("git")
+            .args(["fetch", "origin"])
+            .current_dir(&local)
+            .output()
+            .expect("fetch");
+
+        let repo = Repository::discover(&local).expect("discover");
+        assert!(
+            repo.find_branch("origin/teste_origem_main", BranchType::Remote)
+                .is_err(),
+            "fetch padrão com refspec restrito não traz todas as branches"
+        );
+
+        fetch_all_remote_branch_refs(&local.to_string_lossy()).expect("fetch all");
+        let repo = Repository::discover(&local).expect("discover after");
+        for name in ["main", "main_teste_3", "teste_origem_main", "teste2_branch_main"] {
+            let ref_name = format!("origin/{name}");
+            assert!(
+                repo.find_branch(&ref_name, BranchType::Remote).is_ok(),
+                "faltando {ref_name}"
+            );
+        }
 
         let _ = fs::remove_dir_all(&root);
     }

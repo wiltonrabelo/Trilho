@@ -23,6 +23,7 @@ import type {
   CloneRequestDto,
   CloneResultDto,
   OperationPreviewDto,
+  RemoteBranchRefDto,
   WriteRequestDto,
 } from "@/types";
 
@@ -400,6 +401,23 @@ export async function listCloneRemoteBranches(url: string): Promise<string[]> {
     return ["main", "develop"];
   }
   return invoke<string[]>("list_clone_remote_branches", { url });
+}
+
+export async function listLocalBranches(): Promise<string[]> {
+  if (!isTauri()) {
+    return ["main", "feature-mock"];
+  }
+  return invoke<string[]>("list_local_branches");
+}
+
+export async function listRemoteBranches(): Promise<RemoteBranchRefDto[]> {
+  if (!isTauri()) {
+    return [
+      { remote: "origin", branch: "main" },
+      { remote: "origin", branch: "develop" },
+    ];
+  }
+  return invoke<RemoteBranchRefDto[]>("list_remote_branches");
 }
 
 export async function previewCloneRemote(

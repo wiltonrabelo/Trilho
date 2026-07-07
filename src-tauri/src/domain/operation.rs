@@ -71,6 +71,13 @@ pub enum WriteRequest {
     PullFfOnly,
     /// Completa clone raso (`git fetch --unshallow`).
     UnshallowHistory,
+    /// Troca para branch local (`git switch`).
+    SwitchBranch {
+        branch: String,
+        /// Se preenchido, cria/rastreia `remote/branch` (`git switch --track`).
+        #[serde(default, rename = "trackRemote")]
+        track_remote: Option<String>,
+    },
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o
@@ -128,6 +135,24 @@ mod tests {
         match req {
             WriteRequest::Publish { url } => {
                 assert_eq!(url.as_deref(), Some("git@github.com:u/r.git"));
+            }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn switch_branch_deserializa_track_remote() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"switchBranch","branch":"feature","trackRemote":"origin"}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::SwitchBranch {
+                branch,
+                track_remote,
+            } => {
+                assert_eq!(branch, "feature");
+                assert_eq!(track_remote.as_deref(), Some("origin"));
             }
             _ => panic!("variant errada"),
         }

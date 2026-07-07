@@ -2,13 +2,15 @@
 
 use crate::application::{
     execute_clone, execute_write, list_clone_remote_branches as fetch_clone_remote_branches,
-    preview_clone, preview_write, validate_post_clone, AppState, CommitFileDiff, FetchRemote,
-    FileDiff, GitError, RepoContext, ShowCommit, TrailReader,
+    preview_clone, preview_write, validate_post_clone, AppState, CommitFileDiff, FileDiff,
+    GitError, RepoContext, ShowCommit, TrailReader,
 };
 use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
-    detect_credential_status, ensure_gcm_configured, repo_info, sync_upstream_remote_ref,
-    validate_git_object_id, validate_repo_relative_path, CredentialStatus, MockGitReader,
+    detect_credential_status, ensure_gcm_configured, fetch_all_remote_branch_refs,
+    list_local_branches as fetch_local_branches, list_remote_branches as fetch_remote_branches,
+    repo_info, validate_git_object_id, validate_repo_relative_path, CredentialStatus,
+    MockGitReader, RemoteBranchRef,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -204,8 +206,7 @@ pub async fn fetch_remote(app: AppHandle, state: State<'_, AppState>) -> Result<
     let ctx = repo_context(&state)?;
     state
         .with_watch_suppressed(&app, || {
-            ctx.execute(&FetchRemote)?;
-            sync_upstream_remote_ref(ctx.repo_path())?;
+            fetch_all_remote_branch_refs(ctx.repo_path())?;
             Ok(String::new())
         })
         .map_err(|e: GitError| e.to_string())?;
@@ -301,6 +302,26 @@ pub async fn execute_write_operation(
         .map_err(|e: GitError| e.to_string())?;
     let _ = app.emit("repo-changed", ());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_local_branches(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_local_branches(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Listagem de branches interrompida: {e}"))?
+}
+
+#[tauri::command]
+pub async fn list_remote_branches(state: State<'_, AppState>) -> Result<Vec<RemoteBranchRef>, String> {
+    let path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_remote_branches(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Listagem de branches remotas interrompida: {e}"))?
 }
 
 #[tauri::command]

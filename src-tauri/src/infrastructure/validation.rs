@@ -96,6 +96,20 @@ pub fn validate_clone_branch(branch: Option<&str>) -> Result<Option<String>, Git
     }
 }
 
+/// Nome de remoto Git (`origin`, `upstream`, …).
+pub fn validate_remote_name(name: &str) -> Result<String, GitError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains(' ')
+        || trimmed.starts_with('-')
+    {
+        return Err(GitError::Git("Nome de remoto inválido.".into()));
+    }
+    Ok(trimmed.to_string())
+}
+
 /// Profundidade shallow (`--depth`).
 pub fn validate_clone_depth(depth: Option<u32>) -> Result<Option<u32>, GitError> {
     match depth {

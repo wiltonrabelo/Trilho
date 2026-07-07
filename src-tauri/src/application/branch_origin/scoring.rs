@@ -26,9 +26,34 @@ pub(super) fn score_candidate(
     head_oid: Oid,
     head_fp_depths: &HashMap<Oid, usize>,
     candidate: &str,
+    current_branch: &str,
 ) -> Option<ScoredCandidate> {
     let tip = branch_tip(repo, candidate)?;
     let merge_base = repo.merge_base(head_oid, tip).ok()?;
+
+    // Mesmo commit: só trilha de integração (main/develop) pode ser origem da feature.
+    if tip == head_oid {
+        let cur_prio = name_priority(current_branch);
+        let cand_prio = name_priority(candidate);
+        if cand_prio <= cur_prio {
+            return None;
+        }
+        return Some(ScoredCandidate {
+            name: candidate.to_string(),
+            score: 50.0 + cand_prio as f64,
+            structural: 30.0,
+            signals: vec![format!(
+                "trilha de integração «{candidate}» no mesmo commit que «{current_branch}»"
+            )],
+            merge_base: tip,
+            depth: 0,
+        });
+    }
+
+    // Candidata à frente da HEAD: branch filha, não origem.
+    if merge_base == head_oid {
+        return None;
+    }
 
     // Fork verdadeiro: o merge-base precisa estar na trilha first-parent da
     // HEAD. Caso contrário a candidata foi MERGEADA para dentro (convergência),
@@ -61,6 +86,13 @@ pub(super) fn score_candidate(
         score += 30.0;
         structural += 30.0;
         signals.push("primeiro commit exclusivo tem pai no merge-base".into());
+    }
+
+    let (lineage_boost, lineage_signal) = name_lineage_boost(current_branch, candidate);
+    if lineage_boost > 0.0 {
+        score += lineage_boost;
+        structural += lineage_boost;
+        signals.push(lineage_signal);
     }
 
     score += name_priority(candidate) as f64;
@@ -179,6 +211,23 @@ fn first_unique_parent_is_merge_base(
         }
     }
     false
+}
+
+/// «main_teste_3_1» costuma derivar de «main_teste_3» — sinal forte de linhagem.
+fn name_lineage_boost(current: &str, candidate: &str) -> (f64, String) {
+    if current == candidate {
+        return (0.0, String::new());
+    }
+    if current.starts_with(candidate) {
+        let rest = &current[candidate.len()..];
+        if rest.starts_with('_') || rest.starts_with('/') {
+            return (
+                40.0,
+                format!("nome «{current}» indica derivação de «{candidate}»"),
+            );
+        }
+    }
+    (0.0, String::new())
 }
 
 /// Prioridade do nome para fins de ORIGEM. Working branches (feature/bugfix/
