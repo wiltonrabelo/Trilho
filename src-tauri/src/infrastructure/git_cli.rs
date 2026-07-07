@@ -102,7 +102,13 @@ impl SafeGitCli {
         let output = self.raw_output(command, stdin, extra_env)?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            return Err(GitError::from_git_stderr(&stderr));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let detail = if stderr.trim().is_empty() {
+                stdout.as_ref()
+            } else {
+                stderr.as_ref()
+            };
+            return Err(GitError::from_git_stderr(detail));
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
@@ -157,6 +163,65 @@ impl SafeGitCli {
         }
 
         Ok(output)
+    }
+
+    /// Finaliza revert após resolver conflitos. Se não houver alterações para
+    /// commitar (`nothing to commit`), usa `git revert --skip` — mesmo fluxo do Git
+    /// quando a resolução já deixou o working tree igual ao resultado esperado.
+    pub fn finish_revert(&self) -> Result<(), GitError> {
+        self.finish_sequencer(
+            &["revert", "--continue", "--no-edit"],
+            Some(&["revert", "--skip"]),
+        )
+    }
+
+    pub fn finish_cherry_pick(&self) -> Result<(), GitError> {
+        self.finish_sequencer(
+            &["cherry-pick", "--continue", "--no-edit"],
+            Some(&["cherry-pick", "--skip"]),
+        )
+    }
+
+    pub fn finish_merge(&self) -> Result<(), GitError> {
+        self.finish_sequencer(&["merge", "--continue", "--no-edit"], None)
+    }
+
+    fn finish_sequencer(
+        &self,
+        continue_args: &[&str],
+        skip_args: Option<&[&str]>,
+    ) -> Result<(), GitError> {
+        let continue_cmd = GitCommand {
+            args: continue_args.iter().map(|s| (*s).to_string()).collect(),
+        };
+        let output = self.raw_output(&continue_cmd, None, &[])?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let combined = format!("{stderr}\n{stdout}");
+        let lower = combined.to_lowercase();
+        if output.status.code() == Some(1)
+            && lower.contains("nothing to commit")
+            && skip_args.is_some()
+        {
+            let skip_cmd = GitCommand {
+                args: skip_args
+                    .unwrap()
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            };
+            self.run(&skip_cmd)?;
+            return Ok(());
+        }
+        let detail = if stderr.trim().is_empty() {
+            combined
+        } else {
+            stderr.into_owned()
+        };
+        Err(GitError::from_git_stderr(&detail))
     }
 }
 

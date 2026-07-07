@@ -163,6 +163,11 @@ fn map_git_stderr(stderr: &str) -> String {
     if lower.contains("has only 0 lines") {
         return "Arquivo vazio nesta versão — sem linhas para blame.".into();
     }
+    if lower.contains("nothing to commit") && lower.contains("reverting") {
+        return "O revert não gerou alterações para commitar — o Trilho tentará pular \
+                este patch automaticamente."
+            .into();
+    }
     // Demais falhas: primeira linha, sem o prefixo técnico "fatal:"/"error:".
     let first = trimmed.lines().next().unwrap_or(trimmed);
     first

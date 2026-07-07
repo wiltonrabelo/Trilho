@@ -249,15 +249,21 @@ function App() {
   );
   const canReword =
     Boolean(
-      selectedCommit?.isLocalOnly && !isSelectedHead && !workingCopySelected,
+      selectedCommit &&
+        !isSelectedHead &&
+        !workingCopySelected &&
+        (selectedCommit.isLocalOnly || upstreamConfigured),
     ) && !writeDisabled;
+  const rewordRequiresForcePush = Boolean(
+    selectedCommit && !selectedCommit.isLocalOnly && upstreamConfigured,
+  );
   const canEditMessageOnHead = Boolean(isSelectedHead && canAmend) && !writeDisabled;
   const messageEditHint =
     selectedCommit && !workingCopySelected && !writeDisabled
       ? isSelectedHead && !canAmend
         ? "Este commit já está no remoto. Para corrigir a mensagem antes de enviar, use Amend em «Alterações locais» (só vale para o último commit local)."
-        : !isSelectedHead && !selectedCommit.isLocalOnly
-          ? "Este commit já foi enviado ao remoto — reword exige push forçado (em breve)."
+        : !isSelectedHead && !selectedCommit.isLocalOnly && !upstreamConfigured
+          ? "Este commit já foi enviado, mas a branch não tem upstream — configure o remoto antes do reword."
           : null
       : null;
 
@@ -402,7 +408,9 @@ function App() {
                             : ops.pending?.kind === "deleteTag"
                               ? "Excluir tag"
                               : ops.pending?.kind === "reword"
-                                ? "Reescrever mensagem"
+                                ? ops.pending.forcePush
+                                  ? "Reescrever e enviar ao remoto"
+                                  : "Reescrever mensagem"
                                 : ops.pending?.kind === "discardWorktree" ||
                                   ops.pending?.kind === "discardWorktreeMany" ||
                                   ops.pending?.kind === "discardWorktreeAll" ||
@@ -411,7 +419,13 @@ function App() {
                                 : ops.pending?.kind === "removeUntracked" ||
                                     ops.pending?.kind === "removeUntrackedMany"
                                   ? "Remover não rastreado"
-                                  : undefined
+                                  : ops.pending?.kind === "continueRevert"
+                                    ? "Finalizar revert"
+                                    : ops.pending?.kind === "continueMerge"
+                                      ? "Finalizar merge"
+                                      : ops.pending?.kind === "continueCherryPick"
+                                        ? "Finalizar cherry-pick"
+                                        : undefined
         }
       />
       <CloneDialog
@@ -459,19 +473,21 @@ function App() {
         shortId={selectedCommit?.shortId ?? "—"}
         initialSummary={selectedCommit?.summary ?? ""}
         initialBody={selectedCommit?.body ?? ""}
+        requiresForcePush={rewordRequiresForcePush}
         loading={ops.loading}
         error={rewordOpen && !ops.preview ? ops.error : null}
         onCancel={() => {
           setRewordOpen(false);
           ops.cancel();
         }}
-        onContinue={(summary, body) => {
+        onContinue={(summary, body, forcePush) => {
           if (!selectedCommit) return;
           void ops.request({
             kind: "reword",
             commitId: selectedCommit.id,
             summary,
             body: body || null,
+            forcePush,
           });
         }}
       />
@@ -511,6 +527,8 @@ function App() {
         onConfigureGcm={() => void connect.configureGcm()}
         onTestSsh={() => void connect.testSsh()}
         onCopyPublicKey={(name) => void connect.copyPublicKey(name)}
+        onLogoutAccount={(username) => void connect.logoutAccount(username)}
+        onEnableUseHttpPath={() => void connect.enableUseHttpPath()}
       />
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
@@ -914,6 +932,19 @@ function App() {
                                     : kind === "merge"
                                       ? { kind: "abortMerge" as const }
                                       : { kind: "abortCherryPick" as const };
+                                void ops.request(req);
+                              }
+                        }
+                        onContinueOperation={
+                          writeDisabled
+                            ? undefined
+                            : (kind) => {
+                                const req =
+                                  kind === "revert"
+                                    ? { kind: "continueRevert" as const }
+                                    : kind === "merge"
+                                      ? { kind: "continueMerge" as const }
+                                      : { kind: "continueCherryPick" as const };
                                 void ops.request(req);
                               }
                         }

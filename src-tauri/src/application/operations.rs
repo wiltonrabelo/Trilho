@@ -392,6 +392,23 @@ impl GitOperation for AbortRevert {
     }
 }
 
+pub struct ContinueRevert;
+
+impl GitOperation for ContinueRevert {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "revert".into(),
+                "--continue".into(),
+                "--no-edit".into(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Finaliza o revert em andamento (cria o commit reverso após resolver conflitos)."
+    }
+}
+
 pub struct AbortMerge;
 
 impl GitOperation for AbortMerge {
@@ -405,6 +422,19 @@ impl GitOperation for AbortMerge {
     }
 }
 
+pub struct ContinueMerge;
+
+impl GitOperation for ContinueMerge {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["merge".into(), "--continue".into(), "--no-edit".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Finaliza o merge em andamento após resolver conflitos."
+    }
+}
+
 pub struct AbortCherryPick;
 
 impl GitOperation for AbortCherryPick {
@@ -415,6 +445,23 @@ impl GitOperation for AbortCherryPick {
     }
     fn description(&self) -> &'static str {
         "Cancela o cherry-pick em andamento e restaura o estado anterior."
+    }
+}
+
+pub struct ContinueCherryPick;
+
+impl GitOperation for ContinueCherryPick {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "cherry-pick".into(),
+                "--continue".into(),
+                "--no-edit".into(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Finaliza o cherry-pick em andamento após resolver conflitos."
     }
 }
 
@@ -719,6 +766,20 @@ impl GitOperation for PushUpstream {
     }
 }
 
+/// RF-09 / RF-16 recorte 2 — reescreve histórico no remoto com proteção de lease.
+pub struct PushForceWithLease;
+
+impl GitOperation for PushForceWithLease {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["push".into(), "--force-with-lease".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Envia o histórico reescrito ao remoto (push forçado com lease)."
+    }
+}
+
 pub struct PullFfOnly;
 
 impl GitOperation for PullFfOnly {
@@ -753,6 +814,21 @@ impl GitOperation for UnshallowRemote {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn continue_revert_usa_continue_no_edit() {
+        let op = ContinueRevert;
+        assert_eq!(
+            op.command().args,
+            vec!["revert", "--continue", "--no-edit"]
+        );
+    }
+
+    #[test]
+    fn push_force_with_lease_preview_estavel() {
+        let op = PushForceWithLease;
+        assert_eq!(op.command().args, vec!["push", "--force-with-lease"]);
+    }
 
     #[test]
     fn unshallow_preview_estavel() {

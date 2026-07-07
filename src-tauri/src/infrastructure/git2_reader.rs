@@ -228,26 +228,52 @@ impl TrailReader for Git2Reader {
     }
 }
 
-fn detect_operation_in_progress(repo_path: &str) -> Option<OperationInProgress> {
+fn has_merge_conflicts(status: &RepoStatus) -> bool {
+    status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .any(|f| f.kind == FileChangeKind::Conflicted)
+}
+
+fn detect_operation_in_progress(repo_path: &str, status: &RepoStatus) -> Option<OperationInProgress> {
     let git_dir = Path::new(repo_path).join(".git");
+    let conflicts = has_merge_conflicts(status);
     if git_dir.join("REVERT_HEAD").exists() {
         Some(OperationInProgress {
             kind: InProgressKind::Revert,
-            message: "Revert em andamento — resolva os conflitos ou use «Abortar revert» para cancelar."
-                .into(),
+            message: if conflicts {
+                "Revert em andamento — resolva os conflitos nos arquivos e depois use «Continuar revert»."
+                    .into()
+            } else {
+                "Revert em andamento — conflitos resolvidos. Finalize com «Continuar revert» ou cancele."
+                    .into()
+            },
+            can_continue: !conflicts,
         })
     } else if git_dir.join("MERGE_HEAD").exists() {
         Some(OperationInProgress {
             kind: InProgressKind::Merge,
-            message: "Merge em andamento — resolva os conflitos ou use «Abortar merge» para cancelar."
-                .into(),
+            message: if conflicts {
+                "Merge em andamento — resolva os conflitos nos arquivos e depois use «Continuar merge»."
+                    .into()
+            } else {
+                "Merge em andamento — conflitos resolvidos. Finalize com «Continuar merge» ou cancele."
+                    .into()
+            },
+            can_continue: !conflicts,
         })
     } else if git_dir.join("CHERRY_PICK_HEAD").exists() {
         Some(OperationInProgress {
             kind: InProgressKind::CherryPick,
-            message:
-                "Cherry-pick em andamento — resolva os conflitos ou use «Abortar cherry-pick» para cancelar."
-                    .into(),
+            message: if conflicts {
+                "Cherry-pick em andamento — resolva os conflitos e depois use «Continuar cherry-pick»."
+                    .into()
+            } else {
+                "Cherry-pick em andamento — conflitos resolvidos. Finalize com «Continuar cherry-pick» ou cancele."
+                    .into()
+            },
+            can_continue: !conflicts,
         })
     } else {
         None
@@ -259,7 +285,7 @@ impl GitReader for Git2Reader {
         let op = StatusPorcelain;
         let output = self.cli.run(&op.command())?;
         let mut status = status_parser::parse_porcelain_v2(&output)?;
-        status.operation_in_progress = detect_operation_in_progress(&self.repo_path);
+        status.operation_in_progress = detect_operation_in_progress(&self.repo_path, &status);
         Ok(status)
     }
 

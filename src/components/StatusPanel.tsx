@@ -13,6 +13,7 @@ interface StatusPanelProps {
   untracked: FileChangeDto[];
   operationInProgress?: OperationInProgressDto | null;
   onAbortOperation?: (kind: OperationInProgressDto["kind"]) => void;
+  onContinueOperation?: (kind: OperationInProgressDto["kind"]) => void;
   selectedPath: string | null;
   selectedStaged: boolean | null;
   checkedPaths: ReadonlySet<string>;
@@ -268,6 +269,7 @@ export function StatusPanel({
   untracked,
   operationInProgress,
   onAbortOperation,
+  onContinueOperation,
   selectedPath,
   selectedStaged,
   checkedPaths,
@@ -505,19 +507,34 @@ export function StatusPanel({
         {operationInProgress && (
           <div className="mb-3 rounded border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-800 dark:text-orange-200">
             <p>{operationInProgress.message}</p>
-            {onAbortOperation && (
-              <button
-                type="button"
-                onClick={() => onAbortOperation(operationInProgress.kind)}
-                className="mt-2 text-[10px] font-medium text-orange-900 underline hover:no-underline dark:text-orange-100"
-              >
-                {operationInProgress.kind === "revert"
-                  ? "Abortar revert"
-                  : operationInProgress.kind === "merge"
-                    ? "Abortar merge"
-                    : "Abortar cherry-pick"}
-              </button>
-            )}
+            <div className="mt-2 flex flex-wrap gap-3">
+              {operationInProgress.canContinue && onContinueOperation && (
+                <button
+                  type="button"
+                  onClick={() => onContinueOperation(operationInProgress.kind)}
+                  className="text-[10px] font-medium text-orange-900 underline hover:no-underline dark:text-orange-100"
+                >
+                  {operationInProgress.kind === "revert"
+                    ? "Continuar revert"
+                    : operationInProgress.kind === "merge"
+                      ? "Continuar merge"
+                      : "Continuar cherry-pick"}
+                </button>
+              )}
+              {onAbortOperation && (
+                <button
+                  type="button"
+                  onClick={() => onAbortOperation(operationInProgress.kind)}
+                  className="text-[10px] font-medium text-orange-900 underline hover:no-underline dark:text-orange-100"
+                >
+                  {operationInProgress.kind === "revert"
+                    ? "Abortar revert"
+                    : operationInProgress.kind === "merge"
+                      ? "Abortar merge"
+                      : "Abortar cherry-pick"}
+                </button>
+              )}
+            </div>
           </div>
         )}
         {total === 0 && !operationInProgress ? (

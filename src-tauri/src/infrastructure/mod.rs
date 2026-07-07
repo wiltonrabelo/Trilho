@@ -23,8 +23,8 @@ pub use tags::{list_tags, TagEntry};
 pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
 
 pub use credential::{
-    detect_credential_status, ensure_gcm_configured, store_github_pat, trigger_github_login,
-    CredentialStatus,
+    detect_credential_status, enable_github_use_http_path, ensure_gcm_configured,
+    logout_github_account, store_github_pat, trigger_github_login, CredentialStatus, GithubAccount,
 };
 pub use git2_reader::{repo_info, Git2Reader};
 pub use git_cli::{defensive_config_args, SafeGitCli};

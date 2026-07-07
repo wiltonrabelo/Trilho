@@ -92,6 +92,7 @@ export interface FileChangeDto {
 export interface OperationInProgressDto {
   kind: "revert" | "merge" | "cherryPick";
   message: string;
+  canContinue?: boolean;
 }
 
 export interface RepoStatusDto {
@@ -122,6 +123,11 @@ export interface SyncInfoDto {
 
 
 
+export interface GithubAccountDto {
+  username: string;
+  isActive: boolean;
+}
+
 export interface CredentialStatusDto {
 
   helperConfigured: boolean;
@@ -135,6 +141,10 @@ export interface CredentialStatusDto {
   githubConnected: boolean;
 
   githubUsername: string | null;
+
+  githubAccounts?: GithubAccountDto[];
+
+  useHttpPath?: boolean;
 
   sshKeys: SshKeyInfoDto[];
 
@@ -246,13 +256,17 @@ export type WriteRequestDto =
   | { kind: "removeUntrackedMany"; paths: string[] }
   | { kind: "discardHunk"; path: string; patch: string }
   | { kind: "abortRevert" }
+  | { kind: "continueRevert" }
   | { kind: "abortMerge" }
+  | { kind: "continueMerge" }
   | { kind: "abortCherryPick" }
+  | { kind: "continueCherryPick" }
   | {
       kind: "reword";
       commitId: string;
       summary: string;
       body?: string | null;
+      forcePush?: boolean;
     }
   | { kind: "publish"; url: string | null };
 

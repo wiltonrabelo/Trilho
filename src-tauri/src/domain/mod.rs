@@ -102,6 +102,8 @@ pub enum InProgressKind {
 pub struct OperationInProgress {
     pub kind: InProgressKind,
     pub message: String,
+    /// Conflitos resolvidos — pode usar `git revert|merge|cherry-pick --continue`.
+    pub can_continue: bool,
 }
 
 /// Status agregado do repositório (RF-04).

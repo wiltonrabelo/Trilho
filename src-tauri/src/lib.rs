@@ -36,6 +36,8 @@ pub fn run() {
             commands::configure_gcm_helper,
             commands::trigger_github_login,
             commands::store_github_pat,
+            commands::logout_github_account,
+            commands::enable_github_use_http_path,
             commands::test_github_ssh,
             commands::get_ssh_public_key,
             commands::fetch_remote,

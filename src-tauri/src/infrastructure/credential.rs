@@ -7,6 +7,13 @@ use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct GithubAccount {
+    pub username: String,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct CredentialStatus {
     pub helper_configured: bool,
     pub gcm_available: bool,
@@ -17,6 +24,10 @@ pub struct CredentialStatus {
     pub github_connected: bool,
     /// Usuário retornado pelo helper, quando disponível.
     pub github_username: Option<String>,
+    /// Contas HTTPS salvas no GCM (`git credential-manager github list`).
+    pub github_accounts: Vec<GithubAccount>,
+    /// `credential.https://github.com.useHttpPath` — separa credenciais por repositório.
+    pub use_http_path: bool,
     /// Chaves privadas detectadas em `~/.ssh`.
     pub ssh_keys: Vec<crate::infrastructure::SshKeyInfo>,
 }
@@ -42,7 +53,9 @@ pub fn detect_credential_status() -> CredentialStatus {
 
     let probe = probe_github_credential();
     let github_connected = probe.connected;
-    let github_username = probe.username;
+    let github_username = probe.username.clone();
+    let use_http_path = read_github_use_http_path();
+    let github_accounts = list_github_accounts(github_username.as_deref());
     let ssh_keys = list_ssh_keys();
 
     let hint = if gcm_available {
@@ -68,8 +81,153 @@ pub fn detect_credential_status() -> CredentialStatus {
         hint,
         github_connected,
         github_username,
+        github_accounts,
+        use_http_path,
         ssh_keys,
     }
+}
+
+/// Lista contas GitHub salvas no GCM. Se o comando não existir, devolve só a conta ativa.
+pub fn list_github_accounts(active_username: Option<&str>) -> Vec<GithubAccount> {
+    let mut usernames = run_gcm_github_list().unwrap_or_default();
+    if usernames.is_empty() {
+        if let Some(user) = active_username.filter(|u| !u.is_empty() && *u != "git") {
+            usernames.push(user.to_string());
+        }
+    }
+    usernames.sort();
+    usernames.dedup();
+    usernames
+        .into_iter()
+        .map(|username| GithubAccount {
+            is_active: active_username == Some(username.as_str()),
+            username,
+        })
+        .collect()
+}
+
+/// Remove conta GitHub do GCM (`git credential-manager github logout`).
+pub fn logout_github_account(username: &str) -> Result<(), String> {
+    let username = username.trim();
+    if username.is_empty() || username == "git" {
+        return Err("Informe o usuário GitHub a remover.".into());
+    }
+    if username.contains('\n') || username.contains(' ') {
+        return Err("Nome de usuário inválido.".into());
+    }
+    let output = run_gcm_github(&["logout", username])?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(format!(
+        "Não foi possível remover a conta: {}",
+        if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        }
+    ))
+}
+
+pub fn read_github_use_http_path() -> bool {
+    Command::new("git")
+        .args([
+            "config",
+            "--global",
+            "--get",
+            "credential.https://github.com.useHttpPath",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|v| {
+            let v = v.trim().to_lowercase();
+            v == "true" || v == "1" || v == "yes"
+        })
+        .unwrap_or(false)
+}
+
+/// Recomendado para múltiplas contas HTTPS no mesmo PC (credencial por caminho do repo).
+pub fn enable_github_use_http_path() -> Result<(), String> {
+    let output = Command::new("git")
+        .args([
+            "config",
+            "--global",
+            "credential.https://github.com.useHttpPath",
+            "true",
+        ])
+        .output()
+        .map_err(|e| format!("Não foi possível executar git: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Falha ao configurar useHttpPath: {stderr}"))
+    }
+}
+
+fn run_gcm_github_list() -> Result<Vec<String>, String> {
+    let output = run_gcm_github(&["list"])?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+    }
+    Ok(parse_github_list_output(&String::from_utf8_lossy(&output.stdout)))
+}
+
+fn run_gcm_github(args: &[&str]) -> Result<std::process::Output, String> {
+    let mut last_err = String::new();
+    for invocation in [
+        ("git", vec!["credential-manager"]),
+        ("git-credential-manager", vec![]),
+        ("git-credential-manager.exe", vec![]),
+    ] {
+        let (bin, prefix): (&str, Vec<&str>) = invocation;
+        let mut cmd_args: Vec<&str> = prefix.iter().copied().collect();
+        cmd_args.push("github");
+        cmd_args.extend(args);
+        let output = Command::new(bin)
+            .args(&cmd_args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+        match output {
+            Ok(o) => return Ok(o),
+            Err(e) => last_err = format!("{bin}: {e}"),
+        }
+    }
+    Err(last_err)
+}
+
+fn parse_github_list_output(stdout: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let lower = line.to_lowercase();
+        if lower.contains("no accounts")
+            || lower.contains("nenhuma conta")
+            || lower.starts_with("usage:")
+            || lower.starts_with("description:")
+        {
+            continue;
+        }
+        let user = line
+            .strip_prefix('@')
+            .or_else(|| line.strip_prefix("login:").map(str::trim))
+            .or_else(|| line.strip_prefix("username:").map(str::trim))
+            .unwrap_or(line);
+        let user = user.split_whitespace().next().unwrap_or(user).trim();
+        if user.is_empty() || user == "git" || user.contains('/') {
+            continue;
+        }
+        out.push(user.to_string());
+    }
+    out
 }
 
 /// Configura `credential.helper manager` globalmente quando ausente.
@@ -374,6 +532,18 @@ mod tests {
     fn parse_credential_fill_sem_password() {
         let probe = parse_credential_fill("protocol=https\nhost=github.com\n");
         assert!(!probe.connected);
+    }
+
+    #[test]
+    fn parse_github_list_output_ignora_vazio() {
+        assert!(parse_github_list_output("").is_empty());
+        assert!(parse_github_list_output("No accounts found.\n").is_empty());
+    }
+
+    #[test]
+    fn parse_github_list_output_usernames() {
+        let list = parse_github_list_output("octocat\n@hubot\nlogin: devuser\n");
+        assert_eq!(list, vec!["octocat", "hubot", "devuser"]);
     }
 
     #[test]

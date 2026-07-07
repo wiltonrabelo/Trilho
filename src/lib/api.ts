@@ -256,6 +256,10 @@ export async function getCredentialStatus(): Promise<CredentialStatusDto> {
 
       githubUsername: null,
 
+      githubAccounts: [],
+
+      useHttpPath: false,
+
       sshKeys: [],
 
     };
@@ -281,6 +285,16 @@ export async function triggerGithubLogin(
 export async function storeGithubPat(pat: string): Promise<void> {
   if (!isTauri()) return;
   return invoke("store_github_pat", { pat });
+}
+
+export async function logoutGithubAccount(username: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("logout_github_account", { username });
+}
+
+export async function enableGithubUseHttpPath(): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("enable_github_use_http_path");
 }
 
 export async function testGithubSsh(): Promise<SshTestResultDto> {

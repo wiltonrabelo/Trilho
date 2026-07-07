@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   configureGcmHelper,
+  enableGithubUseHttpPath,
   getSshPublicKey,
+  logoutGithubAccount,
   storeGithubPat,
   testGithubSsh,
   triggerGithubLogin,
@@ -113,6 +115,32 @@ export function useConnect(
     }
   }
 
+  async function logoutAccount(username: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      await logoutGithubAccount(username);
+      onSuccess?.();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function enableUseHttpPath() {
+    setLoading(true);
+    setError(null);
+    try {
+      await enableGithubUseHttpPath();
+      onSuccess?.();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return {
     open,
     loading,
@@ -126,5 +154,7 @@ export function useConnect(
     configureGcm,
     testSsh,
     copyPublicKey,
+    logoutAccount,
+    enableUseHttpPath,
   };
 }

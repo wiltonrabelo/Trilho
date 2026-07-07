@@ -1,8 +1,10 @@
 //! Casos de uso de escrita M3 — preview (RF-08) e execução com gates.
 
 use crate::application::operations::{
-    AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
-    DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushSetUpstream, PushTag,
+    AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, ContinueMerge,
+    CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
+    DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushForceWithLease,
+    PushSetUpstream, PushTag,
     PushUpstream, RemoveUntracked, RemoveUntrackedMany, RevertCommit, SetRemoteUrl, Stage,
     StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
     UnshallowRemote, Unstage, UnstageAll, UnstageMany,
@@ -372,12 +374,33 @@ pub fn preview_write(
                 gate_abort_revert(repo_path)?,
             )
         }
+        WriteRequest::ContinueRevert => {
+            let blocked = gate_continue_revert(repo_path, ctx)?;
+            (
+                vec![
+                    "git revert --continue --no-edit".into(),
+                    "# se não houver alterações: git revert --skip".into(),
+                ],
+                "Finaliza o revert em andamento. Se a resolução dos conflitos não \
+                 gerou alterações, o patch é pulado automaticamente."
+                    .into(),
+                blocked,
+            )
+        }
         WriteRequest::AbortMerge => {
             let op = AbortMerge;
             (
                 ctx.preview_op(&op),
                 op.description().to_string(),
                 gate_abort_merge(repo_path)?,
+            )
+        }
+        WriteRequest::ContinueMerge => {
+            let op = ContinueMerge;
+            (
+                ctx.preview_op(&op),
+                op.description().to_string(),
+                gate_continue_merge(repo_path, ctx)?,
             )
         }
         WriteRequest::AbortCherryPick => {
@@ -388,26 +411,50 @@ pub fn preview_write(
                 gate_abort_cherry_pick(repo_path)?,
             )
         }
+        WriteRequest::ContinueCherryPick => {
+            let blocked = gate_continue_cherry_pick(repo_path, ctx)?;
+            (
+                vec![
+                    "git cherry-pick --continue --no-edit".into(),
+                    "# se não houver alterações: git cherry-pick --skip".into(),
+                ],
+                "Finaliza o cherry-pick em andamento. Se a resolução dos conflitos não \
+                 gerou alterações, o patch é pulado automaticamente."
+                    .into(),
+                blocked,
+            )
+        }
         WriteRequest::Reword {
             commit_id,
             summary,
             body: _body,
+            force_push,
         } => {
             let sha =
                 validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            let blocked = gate_reword(ctx, repo_path, &sha, summary)?;
-            let description = format!(
+            let on_remote = reword_target_on_remote(ctx, &sha)?;
+            let blocked = gate_reword(ctx, repo_path, &sha, summary, *force_push)?;
+            let short = &sha[..sha.len().min(7)];
+            let mut description = format!(
                 "Reescreve a mensagem do commit {} e reaplica os commits seguintes — \
                  cada um receberá um novo SHA.",
-                &sha[..sha.len().min(7)]
+                short
             );
-            let short = &sha[..sha.len().min(7)];
-            let commands = vec![
+            if on_remote && *force_push {
+                description.push_str(
+                    " Em seguida envia o histórico reescrito ao remoto com push forçado \
+                     (--force-with-lease).",
+                );
+            }
+            let mut commands = vec![
                 format!("git checkout --detach {short}^"),
                 format!("git cherry-pick -n {short} && git commit -F -  # «{summary}»"),
                 "# cherry-pick dos commits seguintes até HEAD".into(),
                 "git branch -f <branch-atual> HEAD && git checkout <branch-atual>".into(),
             ];
+            if on_remote && *force_push {
+                commands.push("git push --force-with-lease".into());
+            }
             (commands, description, blocked)
         }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
@@ -579,21 +626,34 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         WriteRequest::AbortRevert => {
             ctx.execute_op(&AbortRevert)?;
         }
+        WriteRequest::ContinueRevert => {
+            ctx.writer().finish_revert()?;
+        }
         WriteRequest::AbortMerge => {
             ctx.execute_op(&AbortMerge)?;
         }
+        WriteRequest::ContinueMerge => {
+            ctx.writer().finish_merge()?;
+        }
         WriteRequest::AbortCherryPick => {
             ctx.execute_op(&AbortCherryPick)?;
+        }
+        WriteRequest::ContinueCherryPick => {
+            ctx.writer().finish_cherry_pick()?;
         }
         WriteRequest::Reword {
             commit_id,
             summary,
             body,
+            force_push,
         } => {
             let sha =
                 validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
             let message = format_reword_message(&summary, body.as_deref());
             execute_reword(ctx.writer(), &sha, &message)?;
+            if force_push && reword_target_on_remote(ctx, &sha)? {
+                ctx.execute_op(&PushForceWithLease)?;
+            }
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -776,8 +836,7 @@ fn gate_revert(ctx: &RepoContext, repo_path: &str) -> Result<Option<String>, Git
     let git_dir = std::path::Path::new(repo_path).join(".git");
     if git_dir.join("REVERT_HEAD").exists() {
         return Ok(Some(
-            "Há um revert em andamento (possível conflito) — resolva os arquivos ou \
-             execute «git revert --abort» no terminal antes de tentar outro revert."
+            "Há um revert em andamento — finalize com «Continuar revert» ou cancele com «Abortar revert»."
                 .into(),
         ));
     }
@@ -807,6 +866,28 @@ fn gate_abort_revert(repo_path: &str) -> Result<Option<String>, GitError> {
     }
 }
 
+fn gate_continue_revert(repo_path: &str, ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    if !std::path::Path::new(repo_path)
+        .join(".git/REVERT_HEAD")
+        .exists()
+    {
+        return Ok(Some("Não há revert em andamento.".into()));
+    }
+    let status = ctx.reader().get_status()?;
+    if status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .any(|f| f.kind == FileChangeKind::Conflicted)
+    {
+        return Ok(Some(
+            "Ainda há conflitos não resolvidos — resolva os arquivos antes de continuar o revert."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
 fn gate_abort_merge(repo_path: &str) -> Result<Option<String>, GitError> {
     if std::path::Path::new(repo_path)
         .join(".git/MERGE_HEAD")
@@ -818,6 +899,28 @@ fn gate_abort_merge(repo_path: &str) -> Result<Option<String>, GitError> {
     }
 }
 
+fn gate_continue_merge(repo_path: &str, ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    if !std::path::Path::new(repo_path)
+        .join(".git/MERGE_HEAD")
+        .exists()
+    {
+        return Ok(Some("Não há merge em andamento.".into()));
+    }
+    let status = ctx.reader().get_status()?;
+    if status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .any(|f| f.kind == FileChangeKind::Conflicted)
+    {
+        return Ok(Some(
+            "Ainda há conflitos não resolvidos — resolva os arquivos antes de continuar o merge."
+                .into(),
+        ));
+    }
+    Ok(None)
+}
+
 fn gate_abort_cherry_pick(repo_path: &str) -> Result<Option<String>, GitError> {
     if std::path::Path::new(repo_path)
         .join(".git/CHERRY_PICK_HEAD")
@@ -827,6 +930,28 @@ fn gate_abort_cherry_pick(repo_path: &str) -> Result<Option<String>, GitError> {
     } else {
         Ok(Some("Não há cherry-pick em andamento.".into()))
     }
+}
+
+fn gate_continue_cherry_pick(repo_path: &str, ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    if !std::path::Path::new(repo_path)
+        .join(".git/CHERRY_PICK_HEAD")
+        .exists()
+    {
+        return Ok(Some("Não há cherry-pick em andamento.".into()));
+    }
+    let status = ctx.reader().get_status()?;
+    if status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .any(|f| f.kind == FileChangeKind::Conflicted)
+    {
+        return Ok(Some(
+            "Ainda há conflitos não resolvidos — resolva os arquivos antes de continuar o cherry-pick."
+                .into(),
+        ));
+    }
+    Ok(None)
 }
 
 fn format_reword_message(summary: &str, body: Option<&str>) -> String {
@@ -866,6 +991,7 @@ fn gate_reword(
     repo_path: &str,
     sha: &str,
     summary: &str,
+    force_push: bool,
 ) -> Result<Option<String>, GitError> {
     if summary.trim().is_empty() {
         return Ok(Some("A mensagem do commit não pode ficar vazia.".into()));
@@ -889,15 +1015,35 @@ fn gate_reword(
             "Commit de merge — reword exige operação avançada fora do MVP.".into(),
         ));
     }
-    let sync = ctx.reader().get_sync_info()?;
-    if let Some(upstream) = sync.upstream.as_deref() {
-        if is_commit_on_remote(ctx.writer(), upstream, sha)? {
+    let on_remote = reword_target_on_remote(ctx, sha)?;
+    if on_remote {
+        if !force_push {
             return Ok(Some(
-                "Este commit já foi enviado ao remoto — reword de commits publicados \
-                 exige push forçado (RF-16 recorte 2, ainda não disponível)."
+                "Este commit já foi enviado ao remoto — confirme o push forçado para concluir o reword."
                     .into(),
             ));
         }
+        if let Some(msg) = gate_force_push_upstream(ctx)? {
+            return Ok(Some(msg));
+        }
+    }
+    Ok(None)
+}
+
+fn reword_target_on_remote(ctx: &RepoContext, sha: &str) -> Result<bool, GitError> {
+    let sync = ctx.reader().get_sync_info()?;
+    let Some(upstream) = sync.upstream.as_deref() else {
+        return Ok(false);
+    };
+    is_commit_on_remote(ctx.writer(), upstream, sha)
+}
+
+fn gate_force_push_upstream(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    let sync = ctx.reader().get_sync_info()?;
+    if sync.upstream.is_none() {
+        return Ok(Some(
+            "Branch sem upstream — configure o remoto antes do push forçado.".into(),
+        ));
     }
     Ok(None)
 }

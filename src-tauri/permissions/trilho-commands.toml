@@ -29,6 +29,8 @@ commands.allow = [
   "configure_gcm_helper",
   "trigger_github_login",
   "store_github_pat",
+  "logout_github_account",
+  "enable_github_use_http_path",
   "test_github_ssh",
   "get_ssh_public_key",
   "fetch_remote",

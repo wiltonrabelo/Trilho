@@ -8,10 +8,12 @@ interface RewordDialogProps {
   shortId: string;
   initialSummary: string;
   initialBody: string;
+  /** Commit já enviado — exige push forçado após reword. */
+  requiresForcePush?: boolean;
   loading?: boolean;
   error?: string | null;
   onCancel: () => void;
-  onContinue: (summary: string, body: string) => void;
+  onContinue: (summary: string, body: string, forcePush: boolean) => void;
 }
 
 export function RewordDialog({
@@ -19,6 +21,7 @@ export function RewordDialog({
   shortId,
   initialSummary,
   initialBody,
+  requiresForcePush = false,
   loading,
   error,
   onCancel,
@@ -26,6 +29,7 @@ export function RewordDialog({
 }: RewordDialogProps) {
   const [summary, setSummary] = useState(initialSummary);
   const [body, setBody] = useState(initialBody);
+  const [forcePush, setForcePush] = useState(requiresForcePush);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useDialogA11y(isOpen, onCancel, panelRef);
@@ -34,10 +38,14 @@ export function RewordDialog({
     if (isOpen) {
       setSummary(initialSummary);
       setBody(initialBody);
+      setForcePush(requiresForcePush);
     }
-  }, [isOpen, initialSummary, initialBody]);
+  }, [isOpen, initialSummary, initialBody, requiresForcePush]);
 
   if (!isOpen) return null;
+
+  const canContinue =
+    summary.trim().length > 0 && (!requiresForcePush || forcePush);
 
   return (
     <div
@@ -63,8 +71,25 @@ export function RewordDialog({
 
         <p className="mb-3 text-xs text-muted">
           Reescreve a mensagem e reaplica os commits seguintes — todos receberão novos SHAs.
-          Só vale para commits ainda não enviados ao remoto.
+          {requiresForcePush
+            ? " Como este commit já está no remoto, o histórico reescrito será enviado com push forçado (--force-with-lease)."
+            : " Só vale para commits ainda não enviados ao remoto."}
         </p>
+
+        {requiresForcePush && (
+          <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            <input
+              type="checkbox"
+              checked={forcePush}
+              onChange={(e) => setForcePush(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Enviar histórico reescrito ao remoto com{" "}
+              <span className="font-mono">push --force-with-lease</span> (obrigatório)
+            </span>
+          </label>
+        )}
 
         <label className="mb-3 block text-xs text-muted">
           Resumo
@@ -104,8 +129,8 @@ export function RewordDialog({
           </button>
           <button
             type="button"
-            disabled={loading || !summary.trim()}
-            onClick={() => onContinue(summary.trim(), body.trim())}
+            disabled={loading || !canContinue}
+            onClick={() => onContinue(summary.trim(), body.trim(), forcePush)}
             className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             {loading ? "Abrindo preview…" : "Continuar"}

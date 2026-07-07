@@ -192,6 +192,16 @@ pub fn store_github_pat(pat: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn logout_github_account(username: String) -> Result<(), String> {
+    crate::infrastructure::logout_github_account(&username)
+}
+
+#[tauri::command]
+pub fn enable_github_use_http_path() -> Result<(), String> {
+    crate::infrastructure::enable_github_use_http_path()
+}
+
+#[tauri::command]
 pub fn test_github_ssh() -> crate::infrastructure::SshTestResult {
     crate::infrastructure::test_github_ssh()
 }

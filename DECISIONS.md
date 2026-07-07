@@ -245,11 +245,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Completar histórico** — `fetch --unshallow` na barra de sync (clone raso)
 - [x] **Checklist pós-clone** — validar upstream/hasRemote após clone (`validate_post_clone` + teste + aviso na UI)
 
-## Backlog F3 — RF-10 Conexão GitHub 🚧
+## Backlog F3 — RF-10 Conexão GitHub ✅
 
 - [x] **Recorte 1** — `ConnectDialog` (login GCM + PAT), `configure_gcm_helper`, status `githubConnected` / `githubUsername`, botão «Conectar» no sync e header
 - [x] **Recorte 2** — detecção de chaves `~/.ssh`, aba SSH no assistente, copiar `.pub`, `test_github_ssh` (`ssh -T git@github.com`)
-- [ ] **Recorte 3** — gestão de múltiplas contas / troca de credencial
+- [x] **Recorte 3** — listar/remover contas GCM (`github list` / `logout`), «Adicionar conta», ativar `useHttpPath` para múltiplas contas HTTPS
 
 ## Backlog F4 — Navegação e refs 🚧
 
@@ -268,11 +268,12 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — descartar arquivo inteiro (`git restore --worktree`) + remover não rastreado (`git clean`)
 - [x] **Recorte 2** — descartar hunk (`git apply --reverse`) no painel de diff
 - [x] **Conflitos de revert** — parser `u`, abortar revert, gates de descarte
+- [x] **Continuar revert/merge/cherry-pick** — após resolver conflitos (`--continue`), mensagem correta quando WT limpa mas `*_HEAD` persiste
 
-## Backlog F5 — RF-16 Reword 🚧
+## Backlog F5 — RF-16 Reword ✅
 
-- [x] **Recorte 1** — reword de commit local não-HEAD via `git rebase -i` automatizado + diálogo
-- [ ] **Recorte 2** — reword de commit já enviado + `push --force-with-lease` (RF-09)
+- [x] **Recorte 1** — reword de commit local não-HEAD via cherry-pick automatizado + diálogo
+- [x] **Recorte 2** — reword de commit já enviado + `push --force-with-lease` (RF-09)
 
 ## Backlog F4 — RF-23 Stash ⏳
 

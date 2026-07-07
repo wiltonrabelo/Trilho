@@ -135,10 +135,16 @@ pub enum WriteRequest {
     },
     /// Cancela revert em andamento (`git revert --abort`).
     AbortRevert,
+    /// Finaliza revert após resolver conflitos (`git revert --continue`).
+    ContinueRevert,
     /// Cancela merge em andamento (`git merge --abort`).
     AbortMerge,
+    /// Finaliza merge após resolver conflitos (`git merge --continue`).
+    ContinueMerge,
     /// Cancela cherry-pick em andamento (`git cherry-pick --abort`).
     AbortCherryPick,
+    /// Finaliza cherry-pick após resolver conflitos (`git cherry-pick --continue`).
+    ContinueCherryPick,
     /// RF-16 — reescreve mensagem de commit local via rebase (`git rebase -i`).
     Reword {
         #[serde(rename = "commitId")]
@@ -146,6 +152,9 @@ pub enum WriteRequest {
         summary: String,
         #[serde(default)]
         body: Option<String>,
+        /// RF-16 recorte 2 — obrigatório quando o commit já está no remoto.
+        #[serde(default, rename = "forcePush")]
+        force_push: bool,
     },
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
@@ -226,6 +235,27 @@ mod tests {
             } => {
                 assert_eq!(message.as_deref(), Some("wip"));
                 assert!(include_untracked);
+            }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn reword_deserializa_force_push() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"reword","commitId":"abcdef0123456789abcdef0123456789abcdef01","summary":"novo","forcePush":true}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::Reword {
+                commit_id,
+                summary,
+                force_push,
+                ..
+            } => {
+                assert_eq!(commit_id.len(), 40);
+                assert_eq!(summary, "novo");
+                assert!(force_push);
             }
             _ => panic!("variant errada"),
         }

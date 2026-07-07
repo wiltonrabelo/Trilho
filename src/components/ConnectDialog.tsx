@@ -18,6 +18,8 @@ interface ConnectDialogProps {
   onConfigureGcm: () => void;
   onTestSsh: () => void;
   onCopyPublicKey: (name: string) => void;
+  onLogoutAccount?: (username: string) => void;
+  onEnableUseHttpPath?: () => void;
 }
 
 export function ConnectDialog({
@@ -33,6 +35,8 @@ export function ConnectDialog({
   onConfigureGcm,
   onTestSsh,
   onCopyPublicKey,
+  onLogoutAccount,
+  onEnableUseHttpPath,
 }: ConnectDialogProps) {
   const [mode, setMode] = useState<ConnectMode>("gcm");
   const [pat, setPat] = useState("");
@@ -55,6 +59,8 @@ export function ConnectDialog({
 
   const httpsConnected = credential?.githubConnected;
   const httpsUsername = credential?.githubUsername;
+  const githubAccounts = credential?.githubAccounts ?? [];
+  const useHttpPath = credential?.useHttpPath ?? false;
   const sshKeys = credential?.sshKeys ?? [];
   function submitPat() {
     const trimmed = pat.trim();
@@ -133,7 +139,8 @@ export function ConnectDialog({
             </p>
           )}
 
-          {credential?.hint && !usesSshRemote && (            <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+          {credential?.hint && !usesSshRemote && (
+            <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
               <p>{credential.hint}</p>
               <button
                 type="button"
@@ -143,6 +150,74 @@ export function ConnectDialog({
               >
                 Configurar GCM
               </button>
+            </div>
+          )}
+
+          {credential?.gcmAvailable && !usesSshRemote && (
+            <div className="space-y-2 rounded-md border border-border bg-bg/50 px-2 py-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-text">Contas GitHub (HTTPS)</span>
+                <button
+                  type="button"
+                  onClick={onGcmLogin}
+                  disabled={loading}
+                  className="text-[10px] text-accent hover:underline disabled:opacity-50"
+                >
+                  + Adicionar conta
+                </button>
+              </div>
+              {githubAccounts.length === 0 ? (
+                <p className="text-muted">Nenhuma conta salva no Credential Manager.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {githubAccounts.map((account) => (
+                    <li
+                      key={account.username}
+                      className="flex items-center justify-between gap-2 rounded border border-border/60 px-2 py-1"
+                    >
+                      <span>
+                        @{account.username}
+                        {account.isActive && (
+                          <span className="ml-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+                            ativa
+                          </span>
+                        )}
+                      </span>
+                      {onLogoutAccount && (
+                        <button
+                          type="button"
+                          onClick={() => onLogoutAccount(account.username)}
+                          disabled={loading}
+                          className="text-[10px] text-red-600 hover:underline disabled:opacity-50 dark:text-red-400"
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!useHttpPath && onEnableUseHttpPath && (
+                <div className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-200">
+                  <p>
+                    Para usar <strong>várias contas</strong> no mesmo PC, ative credencial por
+                    repositório (<code className="font-mono">useHttpPath</code>).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onEnableUseHttpPath}
+                    disabled={loading}
+                    className="mt-1 text-[10px] font-medium text-amber-900 underline hover:no-underline dark:text-amber-100"
+                  >
+                    Ativar separação por repositório
+                  </button>
+                </div>
+              )}
+              {useHttpPath && (
+                <p className="text-[10px] text-muted">
+                  Separação por repositório ativa — cada URL HTTPS pode usar uma conta diferente.
+                </p>
+              )}
             </div>
           )}
 
