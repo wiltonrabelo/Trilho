@@ -6,7 +6,7 @@ mod operation;
 
 pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
-pub use operation::{CloneRequest, CloneResult, OperationPreview, WriteRequest};
+pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetModeDto, WriteRequest};
 
 use serde::{Deserialize, Serialize};
 /// Um commit da trilha (RF-01). Serializa em camelCase para o frontend.

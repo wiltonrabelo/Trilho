@@ -1,4 +1,4 @@
-import { Coffee, Monitor, Moon, Sun } from "lucide-react";
+import { Coffee, Monitor, Moon, Sparkles, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   getStoredPreference,
@@ -9,6 +9,7 @@ import {
 const OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Claro", icon: Sun },
   { value: "dark", label: "Escuro", icon: Moon },
+  { value: "violet", label: "Violeta", icon: Sparkles },
   { value: "coffee", label: "Café", icon: Coffee },
   { value: "system", label: "Sistema", icon: Monitor },
 ];
@@ -21,7 +22,11 @@ export function ThemeToggle() {
   }, [pref]);
 
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+    <div
+      className="inline-flex items-center rounded-md border border-border bg-bg p-0.5"
+      role="group"
+      aria-label="Tema da interface"
+    >
       {OPTIONS.map(({ value, label, icon: Icon }) => {
         const active = pref === value;
         return (
@@ -30,16 +35,16 @@ export function ThemeToggle() {
             type="button"
             aria-label={`Tema ${label}`}
             aria-pressed={active}
+            title={label}
             onClick={() => setPref(value)}
             className={
-              "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors " +
+              "rounded px-2 py-1 transition-colors " +
               (active
-                ? "bg-accent text-white"
-                : "text-muted hover:text-text hover:bg-border/40")
+                ? "bg-accent text-white shadow-sm"
+                : "text-muted hover:bg-surface hover:text-text")
             }
           >
             <Icon size={14} />
-            <span>{label}</span>
           </button>
         );
       })}

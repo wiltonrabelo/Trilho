@@ -5,13 +5,14 @@ use crate::application::operations::{
     ContinueMerge, CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
     DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushForceWithLease,
     PushSetUpstream, PushTag,
-    PushUpstream, RemoveUntracked, RemoveUntrackedMany, RevertCommit, SetRemoteUrl, Stage,
+    PushUpstream, RemoveUntracked, RemoveUntrackedMany, ResetCommit, ResetMode, RevertCommit,
+    SetRemoteUrl, Stage,
     StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
     UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::{head_is_local_only, is_commit_on_remote};
 use crate::application::{GitCommand, GitError, GitWriter, RepoContext};
-use crate::domain::{FileChangeKind, InProgressKind, OperationPreview, WriteRequest};
+use crate::domain::{FileChangeKind, InProgressKind, OperationPreview, ResetModeDto, WriteRequest};
 use crate::infrastructure::{
     list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
     validate_clone_branch, validate_git_object_id, validate_remote_name, validate_remote_url,
@@ -476,6 +477,41 @@ pub fn preview_write(
             }
             (commands, description, blocked)
         }
+        WriteRequest::Reset {
+            commit_id,
+            mode,
+            force_push,
+        } => {
+            let sha =
+                validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            let reset_mode = reset_mode_from_dto(*mode);
+            let needs_force = reset_needs_force_push(ctx, &sha)?;
+            let blocked = gate_reset(ctx, repo_path, &sha, reset_mode, *force_push, needs_force)?;
+            let short = &sha[..sha.len().min(7)];
+            let op = ResetCommit {
+                sha: sha.clone(),
+                mode: reset_mode,
+            };
+            let mut commands = ctx.preview_op(&op);
+            let mut description = format!(
+                "Move o HEAD para o commit {short} (modo {}). Commits mais recentes na branch \
+                 deixam de fazer parte do histórico local.",
+                reset_mode.label()
+            );
+            if reset_mode == ResetMode::Hard {
+                description.push_str(
+                    " Alterações não commitadas em arquivos rastreados serão descartadas.",
+                );
+            }
+            if needs_force {
+                description.push_str(
+                    " Commits posteriores já estão no remoto — será necessário push forçado \
+                     (--force-with-lease) após o reset.",
+                );
+                commands.push("git push --force-with-lease".into());
+            }
+            (commands, description, blocked)
+        }
         WriteRequest::Publish { url } => preview_publish(ctx, url.as_deref())?,
     };
 
@@ -687,6 +723,22 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             let message = format_reword_message(&summary, body.as_deref());
             execute_reword(ctx.writer(), &sha, &message)?;
             if force_push && reword_target_on_remote(ctx, &sha)? {
+                ctx.execute_op(&PushForceWithLease)?;
+            }
+        }
+        WriteRequest::Reset {
+            commit_id,
+            mode,
+            force_push,
+        } => {
+            let sha =
+                validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
+            let reset_mode = reset_mode_from_dto(mode);
+            ctx.execute_op(&ResetCommit {
+                sha,
+                mode: reset_mode,
+            })?;
+            if force_push && reset_needs_force_push(ctx, &commit_id)? {
                 ctx.execute_op(&PushForceWithLease)?;
             }
         }
@@ -1225,6 +1277,87 @@ fn gate_force_push_upstream(ctx: &RepoContext) -> Result<Option<String>, GitErro
     Ok(None)
 }
 
+fn reset_mode_from_dto(mode: ResetModeDto) -> ResetMode {
+    match mode {
+        ResetModeDto::Soft => ResetMode::Soft,
+        ResetModeDto::Mixed => ResetMode::Mixed,
+        ResetModeDto::Hard => ResetMode::Hard,
+    }
+}
+
+/// `true` se o upstream aponta para um commit estritamente posterior ao alvo do reset.
+fn reset_needs_force_push(ctx: &RepoContext, sha: &str) -> Result<bool, GitError> {
+    let sync = ctx.reader().get_sync_info()?;
+    let Some(upstream) = sync.upstream else {
+        return Ok(false);
+    };
+    let upstream_sha = ctx
+        .writer()
+        .run(&GitCommand {
+            args: vec!["rev-parse".into(), upstream.clone()],
+        })?
+        .trim()
+        .to_string();
+    if upstream_sha.eq_ignore_ascii_case(sha) {
+        return Ok(false);
+    }
+    is_commit_on_remote(ctx.writer(), &upstream, sha)
+}
+
+fn gate_reset(
+    ctx: &RepoContext,
+    repo_path: &str,
+    sha: &str,
+    mode: ResetMode,
+    force_push: bool,
+    needs_force: bool,
+) -> Result<Option<String>, GitError> {
+    let info = repo_info(repo_path)?;
+    if info.is_detached {
+        return Ok(Some(
+            "Repositório em detached HEAD — troque para uma branch antes de resetar.".into(),
+        ));
+    }
+    if let Some(msg) = gate_sequencer_idle(repo_path, "resetar")? {
+        return Ok(Some(msg));
+    }
+    if is_head_commit(repo_path, sha)? {
+        return Ok(Some(
+            "Este já é o último commit (HEAD) — escolha um commit anterior para resetar.".into(),
+        ));
+    }
+    if !is_ancestor_of_head(ctx.writer(), sha)? {
+        return Ok(Some(
+            "Este commit não faz parte do histórico atual da branch — só é possível resetar \
+             para commits ancestrais do HEAD."
+                .into(),
+        ));
+    }
+    if needs_force {
+        if !force_push {
+            return Ok(Some(
+                "Commits posteriores já foram enviados ao remoto — confirme o push forçado \
+                 (--force-with-lease) para concluir o reset."
+                    .into(),
+            ));
+        }
+        if let Some(msg) = gate_force_push_upstream(ctx)? {
+            return Ok(Some(msg));
+        }
+    }
+    if mode == ResetMode::Hard {
+        let status = ctx.reader().get_status()?;
+        if !status.staged.is_empty() || !status.unstaged.is_empty() {
+            return Ok(Some(
+                "Reset hard com alterações locais — faça commit, stash ou descarte antes, ou \
+                 use soft/mixed se quiser preservar o conteúdo."
+                    .into(),
+            ));
+        }
+    }
+    Ok(None)
+}
+
 fn gate_uncommit(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     if head_is_local_only(ctx.reader(), ctx.writer())? {
         Ok(None)
@@ -1650,6 +1783,34 @@ mod tests {
 
     /// Regressão fix 3: revert de merge é bloqueado no preview (não explode
     /// depois da confirmação com o erro críptico do `git revert`).
+    #[test]
+    fn reset_para_head_e_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-rsthd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        let sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Reset {
+                commit_id: sha,
+                mode: crate::domain::ResetModeDto::Mixed,
+                force_push: false,
+            },
+        )
+        .expect("preview");
+        assert!(preview.blocked.is_some());
+        assert!(preview.blocked.unwrap().contains("HEAD"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn revert_de_merge_e_bloqueado() {
         let dir = std::env::temp_dir().join(format!("trilho-revmrg-{}", std::process::id()));

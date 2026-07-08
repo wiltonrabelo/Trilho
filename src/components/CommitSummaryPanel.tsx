@@ -6,6 +6,8 @@ interface CommitSummaryPanelProps {
   canEditMessage?: boolean;
   messageEditHint?: string | null;
   onRevert?: () => void;
+  onReset?: () => void;
+  resetHint?: string | null;
   onCherryPick?: () => void;
   cherryPickHint?: string | null;
   onUncommit?: () => void;
@@ -19,6 +21,8 @@ export function CommitSummaryPanel({
   canEditMessage,
   messageEditHint,
   onRevert,
+  onReset,
+  resetHint,
   onCherryPick,
   cherryPickHint,
   onUncommit,
@@ -35,39 +39,33 @@ export function CommitSummaryPanel({
 
   const showActions =
     onRevert ||
+    onReset ||
     onCherryPick ||
     onCreateTag ||
     (canUncommit && onUncommit) ||
     (canEditMessage && onEditMessage);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-auto border-t border-border px-4 py-3">
+    <div className="flex h-full min-h-0 flex-col overflow-auto border-t border-border bg-surface/50 px-4 py-3">
       {showActions && (
         <div className="mb-2 flex flex-wrap gap-2">
           {onRevert && (
-            <button
-              type="button"
-              onClick={onRevert}
-              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
-            >
+            <button type="button" onClick={onRevert} className="btn-toolbar">
               Reverter commit
             </button>
           )}
+          {onReset && (
+            <button type="button" onClick={onReset} className="btn-toolbar">
+              Resetar para aqui…
+            </button>
+          )}
           {onCherryPick && (
-            <button
-              type="button"
-              onClick={onCherryPick}
-              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
-            >
+            <button type="button" onClick={onCherryPick} className="btn-toolbar">
               Cherry-pick
             </button>
           )}
           {onCreateTag && (
-            <button
-              type="button"
-              onClick={onCreateTag}
-              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
-            >
+            <button type="button" onClick={onCreateTag} className="btn-toolbar">
               Criar tag…
             </button>
           )}
@@ -75,17 +73,13 @@ export function CommitSummaryPanel({
             <button
               type="button"
               onClick={onEditMessage}
-              className="rounded border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] text-accent hover:bg-accent/20"
+              className="btn-toolbar-primary"
             >
               Editar mensagem
             </button>
           )}
           {canUncommit && onUncommit && (
-            <button
-              type="button"
-              onClick={onUncommit}
-              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
-            >
+            <button type="button" onClick={onUncommit} className="btn-toolbar">
               Uncommit (soft)
             </button>
           )}
@@ -107,6 +101,9 @@ export function CommitSummaryPanel({
       )}
       {cherryPickHint && (
         <p className="mt-2 text-[10px] leading-snug text-muted">{cherryPickHint}</p>
+      )}
+      {resetHint && (
+        <p className="mt-2 text-[10px] leading-snug text-muted">{resetHint}</p>
       )}
     </div>
   );

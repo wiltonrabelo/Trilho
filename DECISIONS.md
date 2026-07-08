@@ -89,6 +89,7 @@
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
 | Média | RF-18 hunk | Descartar por trecho (hunk) | F5 |
+| Média | **Lista de arquivos no commit** | Prévia na mensagem: `+` adicionado, `-` excluído, `~` alterado | F4 |
 
 ### 4. Histórico e metadados
 | Prioridade | ID | Entrega | Fase |
@@ -137,6 +138,29 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
   desmarcada por padrão); resumo de quantos arquivos entram; aviso se untracked; preview RF-08.
   **Recorte 1:** `git stash push` de tudo (staged+unstaged+opcional untracked). **Recorte 2:**
   listar/aplicar/excluir stashes.
+
+- **Lista de arquivos na mensagem do commit** (pedido do stakeholder, 2026-07-07): complemento
+  ao **RF-15** (`CommitForm`). A listagem dos arquivos em staging entra **pré-preenchida no campo
+  Descrição (opcional)** — o usuário edita ou apaga à vontade. Campos permanecem só Resumo + Descrição.
+
+  | Sinal | Significado | Origem no status |
+  |-------|-------------|------------------|
+  | `+` | Adicionado | arquivo novo (untracked → staged ou `A`) |
+  | `-` | Excluído | remoção (`D`) |
+  | `~` | Alterado | modificação em arquivo existente (`M`, rename `R`) |
+
+  **Formato** (uma linha por arquivo, fonte mono na descrição):
+
+  ```
+  + src/novo.ts
+  ~ src/App.tsx
+  - src/legado.ts
+  ```
+
+  **UX:** ao stagear/desstagear, atualiza a descrição **somente** se o corpo ainda for a listagem
+  automática (ou estiver vazio); se o usuário editou, não sobrescreve. Amend usa a mensagem do HEAD.
+  **Recorte 1:** pré-preencher descrição com a listagem. **Recorte 2 (opcional):** preferência para
+  desligar o pré-preenchimento.
 
 - **RF-24 — Criar tag** (pedido do stakeholder, 2026-07-05): PLANO §RF-24.
 
@@ -284,6 +308,17 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 
 - [x] **Recorte 1** — cherry-pick de um commit no painel do commit + preview RF-08 + gates (WT limpa, não-HEAD, não merge) + conflitos via continue/abort existentes
 - [x] **Recorte 2** — cherry-pick múltiplo (visão exclusiva de branch) + flag `-x` (registrar origem)
+
+## Backlog F5 — RF-07 Reset 🚧
+
+- [x] **Recorte 1** — reset para commit ancestral (soft/mixed/hard) no painel do commit + preview RF-08 + push forçado quando commits posteriores já estão no remoto
+- [ ] **Recorte 2** — backup automático (stash/ref) antes de hard reset; RF-09 push forçado standalone
+
+## Backlog F4 — Lista de arquivos no commit 🚧
+
+- [x] **Recorte 1** — pré-preencher a descrição opcional com a listagem staged (`+` / `-` / `~`);
+  editável/apagável; atualiza ao mudar o stage se o usuário não customizou o texto
+- [ ] **Recorte 2** — preferência para desligar o pré-preenchimento (opt-out)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

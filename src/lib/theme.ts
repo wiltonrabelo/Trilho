@@ -1,13 +1,14 @@
 /**
- * Gerenciamento de tema (RF-17): Claro / Escuro / Café / Seguir o sistema.
- * Preferência persistida em localStorage; aplica as classes de tema no <html>.
- * "Café" é um tema escuro quente: carrega `.dark` (pras variantes `dark:` do
- * Tailwind) e `.coffee` (que sobrescreve os tokens com tons de café).
+ * Gerenciamento de tema (RF-17): Claro / Escuro / Violeta / Café / Sistema.
+ * Claro e escuro usam paleta neutra + acento azul (estilo GitHub Desktop).
  */
-export type ThemePreference = "light" | "dark" | "system" | "coffee";
-export type EffectiveTheme = "light" | "dark" | "coffee";
+export type ThemePreference = "light" | "dark" | "system" | "coffee" | "violet";
+export type EffectiveTheme = "light" | "dark" | "coffee" | "violet";
 
 const STORAGE_KEY = "trilho.theme";
+
+/** Tema padrão em instalações novas (sem preferência salva). */
+const DEFAULT_PREFERENCE: ThemePreference = "light";
 
 export function getStoredPreference(): ThemePreference {
   const value = localStorage.getItem(STORAGE_KEY);
@@ -15,18 +16,19 @@ export function getStoredPreference(): ThemePreference {
     value === "light" ||
     value === "dark" ||
     value === "system" ||
-    value === "coffee"
+    value === "coffee" ||
+    value === "violet"
   ) {
     return value;
   }
-  return "system";
+  return DEFAULT_PREFERENCE;
 }
 
 function prefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-/** Resolve a preferência para o tema efetivo (light/dark/coffee). */
+/** Resolve a preferência para o tema efetivo. */
 export function resolveTheme(pref: ThemePreference): EffectiveTheme {
   if (pref === "system") return prefersDark() ? "dark" : "light";
   return pref;
@@ -35,10 +37,9 @@ export function resolveTheme(pref: ThemePreference): EffectiveTheme {
 export function applyTheme(pref: ThemePreference): void {
   const effective = resolveTheme(pref);
   const root = document.documentElement;
-  // Café herda o esquema escuro (variantes `dark:` + scrollbars) e adiciona
-  // seus próprios tokens por cima via `.coffee`.
   root.classList.toggle("dark", effective === "dark" || effective === "coffee");
   root.classList.toggle("coffee", effective === "coffee");
+  root.classList.toggle("violet", effective === "violet");
 }
 
 export function setPreference(pref: ThemePreference): void {
@@ -48,7 +49,6 @@ export function setPreference(pref: ThemePreference): void {
 
 /**
  * Inicializa o tema e reage a mudanças do sistema quando a preferência é "system".
- * Retorna uma função de limpeza do listener.
  */
 export function initTheme(): () => void {
   applyTheme(getStoredPreference());

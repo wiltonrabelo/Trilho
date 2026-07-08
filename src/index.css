@@ -3,45 +3,49 @@
 @tailwind utilities;
 
 /*
- * Tokens de tema (RF-17). Contraste AA nos temas.
- * Valores em canais RGB (sem vírgulas) para uso com <alpha-value> do Tailwind.
+ * Tokens de tema (RF-17). Paleta neutra estilo GitHub Desktop / SourceTree;
+ * acento azul no claro/escuro; violeta e café como alternativas.
  */
 @layer base {
   :root {
-    /* Branco neve (não branco puro): fundo levemente frio #F0F4F5; painéis um
-     * tom acima (#F6F7F9) para um leve relevo; borda cinza-fria discreta. */
-    --bg: 240 244 245;
-    --surface: 246 247 249;
-    --border: 222 229 231;
+    --bg: 255 255 255;
+    --surface: 246 248 250;
+    --border: 208 215 222;
     --text: 31 35 40;
-    --muted: 104 112 126;
-    /* PLANO §8 — violeta suave */
-    --accent: 110 86 207;
+    --muted: 101 109 118;
+    --accent: 9 105 218;
+    --header: 246 248 250;
+    --header-fg: 31 35 40;
   }
 
   .dark {
-    --bg: 14 17 22;
+    --bg: 13 17 23;
     --surface: 22 27 34;
-    --border: 39 45 56;
+    --border: 48 54 61;
     --text: 230 237 243;
-    --muted: 138 147 163;
+    --muted: 139 148 158;
+    --accent: 88 166 255;
+    --header: 22 27 34;
+    --header-fg: 230 237 243;
+  }
+
+  /* Identidade violeta original (PLANO §8) — alternativa ao azul profissional. */
+  .violet {
+    --accent: 110 86 207;
+  }
+  .dark.violet {
     --accent: 155 138 251;
   }
 
-  /*
-   * Tema Café — tons de café (bebida e grãos): fundo espresso, painéis de grão
-   * torrado, texto espuma de leite, acento caramelo/crema. Definido após `.dark`
-   * para vencer quando ambas as classes coexistem (café herda o esquema escuro).
-   */
   .coffee {
-    /* Fundo em moca profundo (não espresso quase-preto): contraste mais suave
-     * com o texto (~11:1 em vez de ~14:1), sem sacrificar o texto secundário. */
     --bg: 62 40 30;
     --surface: 78 51 38;
     --border: 107 74 55;
     --text: 242 231 219;
     --muted: 199 176 152;
     --accent: 216 168 116;
+    --header: 52 34 25;
+    --header-fg: 242 231 219;
     color-scheme: dark;
   }
 
@@ -52,8 +56,10 @@
   }
 
   body {
-    @apply bg-bg text-text font-sans antialiased;
-    margin: 0;
+    @apply bg-bg text-text antialiased;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
   }
 
   button {
@@ -61,12 +67,25 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Transição suave ao trocar de tema. */
   :root {
     color-scheme: light;
   }
   .dark {
     color-scheme: dark;
+  }
+}
+
+@layer components {
+  .btn-toolbar {
+    @apply rounded px-2 py-1 text-xs text-muted transition-colors hover:bg-border/50 hover:text-text;
+  }
+
+  .btn-toolbar-primary {
+    @apply rounded px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10;
+  }
+
+  .panel-section-title {
+    @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted;
   }
 }
 

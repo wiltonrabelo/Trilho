@@ -274,6 +274,12 @@ export type WriteRequestDto =
       body?: string | null;
       forcePush?: boolean;
     }
+  | {
+      kind: "reset";
+      commitId: string;
+      mode?: "soft" | "mixed" | "hard";
+      forcePush?: boolean;
+    }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {

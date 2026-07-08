@@ -17,8 +17,10 @@ import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
 import { StashDialog } from "@/components/StashDialog";
 import { StatusPanel } from "@/components/StatusPanel";
+import { ResetDialog } from "@/components/ResetDialog";
 import { RewordDialog } from "@/components/RewordDialog";
 import { TagDialog } from "@/components/TagDialog";
+import { StatusBar } from "@/components/StatusBar";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
@@ -47,6 +49,7 @@ function App() {
   const [tagOpen, setTagOpen] = useState(false);
   const [rewordOpen, setRewordOpen] = useState(false);
   const [cherryPickOpen, setCherryPickOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -273,6 +276,12 @@ function App() {
     }
   }, [ops.preview, ops.pending]);
 
+  useEffect(() => {
+    if (ops.preview && ops.pending?.kind === "reset") {
+      setResetOpen(false);
+    }
+  }, [ops.preview, ops.pending]);
+
   const headCommit = checkoutHeadCommit ?? commits[0] ?? null;
   const canAmend =
     Boolean(headCommit?.isLocalOnly) && !repo?.isDetached;
@@ -297,11 +306,27 @@ function App() {
       selectedCommit &&
         !isSelectedHead &&
         !workingCopySelected &&
+        !focusedBranch &&
         (selectedCommit.isLocalOnly || upstreamConfigured),
     ) && !writeDisabled;
   const rewordRequiresForcePush = Boolean(
     selectedCommit && !selectedCommit.isLocalOnly && upstreamConfigured,
   );
+  const canReset = Boolean(
+    selectedCommit &&
+      headCommit &&
+      selectedCommit.id !== headCommit.id &&
+      !workingCopySelected &&
+      !writeDisabled &&
+      !focusedBranch,
+  );
+  const resetRequiresForcePush = Boolean(
+    canReset && headCommit && !headCommit.isLocalOnly && upstreamConfigured,
+  );
+  const resetHint =
+    canReset && headCommit && !headCommit.isLocalOnly
+      ? "Reset reescreve o histórico local; se já enviado, exige push forçado. Para desfazer sem reescrever, use Reverter."
+      : null;
   const canEditMessageOnHead = Boolean(isSelectedHead && canAmend) && !writeDisabled;
   const messageEditHint =
     selectedCommit && !workingCopySelected && !writeDisabled
@@ -319,6 +344,11 @@ function App() {
     if (selectedCommit.id === headCommit.id) return;
     setCherryPickOpen(true);
   }, [writeDisabled, selectedCommit, headCommit]);
+
+  const handleReset = useCallback(() => {
+    if (!canReset || !selectedCommit) return;
+    setResetOpen(true);
+  }, [canReset, selectedCommit]);
 
   const handlePublish = useCallback(() => {
     if (!repo || writeDisabled) return;
@@ -568,6 +598,27 @@ function App() {
           });
         }}
       />
+      <ResetDialog
+        open={resetOpen}
+        shortId={selectedCommit?.shortId ?? "—"}
+        commitId={selectedCommit?.id ?? null}
+        requiresForcePush={resetRequiresForcePush}
+        loading={ops.loading}
+        error={resetOpen && !ops.preview ? ops.error : null}
+        onCancel={() => {
+          setResetOpen(false);
+          ops.cancel();
+        }}
+        onContinue={(mode, forcePush) => {
+          if (!selectedCommit) return;
+          void ops.request({
+            kind: "reset",
+            commitId: selectedCommit.id,
+            mode,
+            forcePush,
+          });
+        }}
+      />
       <TagDialog
         open={tagOpen}
         commitShortId={selectedCommit?.shortId ?? "—"}
@@ -612,22 +663,22 @@ function App() {
           {ops.error}
         </div>
       )}
-      <header className="flex items-center justify-between border-b border-border bg-surface px-5 py-3">
-        <div className="flex items-center gap-2.5">
-          <TrainFront className="text-accent" size={22} />
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-header px-4 py-2 text-headerFg">
+        <div className="flex items-center gap-3">
+          <TrainFront className="text-accent" size={20} />
           <div className="flex items-baseline gap-2">
-            <h1 className="text-lg font-semibold tracking-tight">Trilho</h1>
-            <span className="text-xs text-muted">
+            <h1 className="text-sm font-semibold tracking-tight">Trilho</h1>
+            <span className="text-[11px] text-muted">
               {info ? `v${info.version}` : "…"}
             </span>
           </div>
           {repo && (
-            <div className="ml-4 flex items-center gap-1.5 text-xs text-muted">
-              <GitBranch size={14} />
+            <div className="ml-2 flex items-center gap-1.5 border-l border-border pl-3 text-xs text-muted">
+              <GitBranch size={13} />
               {repo.isDetached ? (
-                <span className="text-amber-500">detached HEAD</span>
+                <span className="text-amber-600 dark:text-amber-400">detached HEAD</span>
               ) : (
-                <span>{repo.branch ?? "—"}</span>
+                <span className="font-medium text-text">{repo.branch ?? "—"}</span>
               )}
               <BranchOriginBadge origin={origin} loading={originLoading} />
             </div>
@@ -870,7 +921,7 @@ function App() {
                       }
                       messageEditHint={messageEditHint}
                       onRevert={
-                        selectedCommit && !writeDisabled
+                        selectedCommit && !writeDisabled && !focusedBranch
                           ? () =>
                               void ops.request({
                                 kind: "revert",
@@ -878,6 +929,10 @@ function App() {
                               })
                           : undefined
                       }
+                      onReset={
+                        canReset && !writeDisabled ? handleReset : undefined
+                      }
+                      resetHint={resetHint}
                       cherryPickHint={
                         selectedCommit &&
                         headCommit &&
@@ -1062,6 +1117,7 @@ function App() {
                         <CommitForm
                         canAmend={canAmend}
                         stagedCount={status?.staged.length ?? 0}
+                        stagedFiles={status?.staged ?? []}
                         amendUnavailableReason={amendUnavailableReason}
                         amendSeed={
                           headCommit
@@ -1163,6 +1219,17 @@ function App() {
             }
           />
         </main>
+      )}
+
+      {repo && (
+        <StatusBar
+          branch={repo.branch}
+          isDetached={repo.isDetached}
+          repoPath={repo.path}
+          sync={sync}
+          changeCount={changeCount}
+          upstreamConfigured={Boolean(repo.upstream || sync?.upstream)}
+        />
       )}
     </div>
   );

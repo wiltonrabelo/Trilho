@@ -12,9 +12,11 @@ export default {
         text: "rgb(var(--text) / <alpha-value>)",
         muted: "rgb(var(--muted) / <alpha-value>)",
         accent: "rgb(var(--accent) / <alpha-value>)",
+        header: "rgb(var(--header) / <alpha-value>)",
+        headerFg: "rgb(var(--header-fg) / <alpha-value>)",
       },
       fontFamily: {
-        sans: ["Inter", "Segoe UI", "system-ui", "sans-serif"],
+        sans: ["Segoe UI", "system-ui", "-apple-system", "sans-serif"],
         mono: ["JetBrains Mono", "Consolas", "monospace"],
       },
     },

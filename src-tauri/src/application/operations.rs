@@ -364,6 +364,62 @@ impl GitOperation for UncommitSoft {
     }
 }
 
+/// RF-07 — move HEAD para um commit ancestral (`git reset --soft|--mixed|--hard`).
+pub struct ResetCommit {
+    pub sha: String,
+    pub mode: ResetMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetMode {
+    Soft,
+    Mixed,
+    Hard,
+}
+
+impl ResetMode {
+    pub fn flag(self) -> &'static str {
+        match self {
+            ResetMode::Soft => "--soft",
+            ResetMode::Mixed => "--mixed",
+            ResetMode::Hard => "--hard",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ResetMode::Soft => "soft",
+            ResetMode::Mixed => "mixed",
+            ResetMode::Hard => "hard",
+        }
+    }
+}
+
+impl GitOperation for ResetCommit {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "reset".into(),
+                self.mode.flag().into(),
+                self.sha.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        match self.mode {
+            ResetMode::Soft => {
+                "Move o HEAD para o commit selecionado; mantém alterações no staging."
+            }
+            ResetMode::Mixed => {
+                "Move o HEAD para o commit selecionado; mantém alterações na working tree (fora do stage)."
+            }
+            ResetMode::Hard => {
+                "Move o HEAD e descarta alterações de staging e working tree (irreversível)."
+            }
+        }
+    }
+}
+
 pub struct RevertCommit {
     pub sha: String,
 }
@@ -834,6 +890,18 @@ impl GitOperation for UnshallowRemote {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reset_hard_usa_sha() {
+        let op = ResetCommit {
+            sha: "abc123".into(),
+            mode: ResetMode::Hard,
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["reset", "--hard", "abc123"]
+        );
+    }
 
     #[test]
     fn cherry_pick_usa_no_edit() {

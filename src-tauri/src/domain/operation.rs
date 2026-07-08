@@ -169,6 +169,15 @@ pub enum WriteRequest {
         #[serde(default, rename = "forcePush")]
         force_push: bool,
     },
+    /// RF-07 — move HEAD para commit ancestral (`git reset`).
+    Reset {
+        #[serde(rename = "commitId")]
+        commit_id: String,
+        #[serde(default = "default_reset_mode")]
+        mode: ResetModeDto,
+        #[serde(default, rename = "forcePush")]
+        force_push: bool,
+    },
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o
@@ -180,6 +189,19 @@ pub enum WriteRequest {
 
 fn default_true() -> bool {
     true
+}
+
+/// Modo de `git reset` exposto ao frontend (RF-07).
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ResetModeDto {
+    Soft,
+    Mixed,
+    Hard,
+}
+
+fn default_reset_mode() -> ResetModeDto {
+    ResetModeDto::Mixed
 }
 
 #[cfg(test)]
@@ -228,6 +250,26 @@ mod tests {
             } => {
                 assert_eq!(commit_ids.len(), 2);
                 assert!(record_origin);
+            }
+            _ => panic!("variant errada"),
+        }
+    }
+
+    #[test]
+    fn reset_deserializa_modo_e_force_push() {
+        let req: WriteRequest = serde_json::from_str(
+            r#"{"kind":"reset","commitId":"abcdef0123456789abcdef0123456789abcdef01","mode":"hard","forcePush":true}"#,
+        )
+        .unwrap();
+        match req {
+            WriteRequest::Reset {
+                commit_id,
+                mode,
+                force_push,
+            } => {
+                assert_eq!(commit_id.len(), 40);
+                assert_eq!(mode, ResetModeDto::Hard);
+                assert!(force_push);
             }
             _ => panic!("variant errada"),
         }

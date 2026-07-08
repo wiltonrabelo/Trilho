@@ -119,8 +119,8 @@ export function CommitRow({
           onClick={() => onSelect(commit)}
           title={`${commit.summary}\n${commit.shortId} · ${commit.authorName} · ${absTime}`}
           aria-selected={selected}
-          className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
-            selected ? "bg-surface ring-1 ring-border" : "hover:bg-surface/60"
+          className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-[13px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
+            selected ? "bg-accent/10 ring-1 ring-accent/25" : "hover:bg-surface"
           }`}
         >
           <span className="min-w-0 flex-1 truncate">

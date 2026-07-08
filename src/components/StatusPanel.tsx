@@ -369,7 +369,7 @@ export function StatusPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted">
+      <div className="panel-section-title shrink-0 border-b border-border">
         <span>Alterações {total > 0 ? `(${total})` : ""}</span>
         <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
             {canStageMany && (
