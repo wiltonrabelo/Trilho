@@ -26,6 +26,9 @@ import type {
   RemoteBranchRefDto,
   StashEntryDto,
   TagEntryDto,
+  BranchDiffModeDto,
+  BranchDiffSummaryDto,
+  BranchPrStatusDto,
   WriteRequestDto,
 } from "@/types";
 
@@ -337,6 +340,19 @@ export async function getBranchOrigin(): Promise<BranchOriginDto> {
   return invoke<BranchOriginDto>("get_branch_origin");
 }
 
+export async function getBranchPrStatus(): Promise<BranchPrStatusDto> {
+  if (!isTauri()) {
+    return {
+      visible: true,
+      open: [{ number: 42, title: "Mock PR aberto", url: "https://github.com/mock/repo/pull/42" }],
+      merged: [],
+      closed: [],
+      notice: null,
+    };
+  }
+  return invoke<BranchPrStatusDto>("get_branch_pr_status");
+}
+
 export async function getFileBlame(
   path: string,
   source: BlameSourceDto,
@@ -468,6 +484,56 @@ export async function listTags(): Promise<TagEntryDto[]> {
     return [];
   }
   return invoke<TagEntryDto[]>("list_tags");
+}
+
+export async function listOrderedCompareRefs(
+  refs: string[],
+): Promise<string[]> {
+  if (!isTauri()) {
+    return refs;
+  }
+  return invoke<string[]>("list_ordered_compare_refs", { refs });
+}
+
+export async function listBranchDiffFiles(
+  left: string,
+  right: string,
+  mode: BranchDiffModeDto = "mergeBase",
+): Promise<BranchDiffSummaryDto> {
+  if (!isTauri()) {
+    return {
+      left,
+      right,
+      mode,
+      range: mode === "tips" ? `${left}..${right}` : `${left}...${right}`,
+      files: [
+        { path: "src/App.tsx", kind: "modified", additions: 3, deletions: 1 },
+        { path: "README.md", kind: "added", additions: 10, deletions: 0 },
+      ],
+    };
+  }
+  return invoke<BranchDiffSummaryDto>("list_branch_diff_files", {
+    left,
+    right,
+    mode,
+  });
+}
+
+export async function getBranchFileDiff(
+  left: string,
+  right: string,
+  path: string,
+  mode: BranchDiffModeDto = "mergeBase",
+): Promise<string> {
+  if (!isTauri()) {
+    return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new\n`;
+  }
+  return invoke<string>("get_branch_file_diff_cmd", {
+    left,
+    right,
+    path,
+    mode,
+  });
 }
 
 export async function previewCloneRemote(

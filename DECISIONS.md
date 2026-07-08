@@ -317,6 +317,16 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 
 - [x] **Standalone** — botão «Force push» quando remoto à frente (`behind > 0`); `--force-with-lease`; backup ref antes do envio; preview com SHAs afetados no remoto
 
+## Backlog F5 — RF-14 Diff entre branches ✅
+
+- [x] **Recorte 1** — diálogo Comparar branches (Ramos → ícone): escolher A/B (local ou remota), modo `A...B` (padrão) / `A..B`, lista de arquivos com +/- e diff por arquivo
+- [x] **Recorte 2** — ordenar selects por checkouts recentes do reflog (só reordena refs conhecidas); toggle layout lado a lado / unificado
+
+## Backlog F5 — RF-12 Status de PR ✅
+
+- [x] **Recorte 1** — badge no header quando remoto é GitHub e há credencial HTTPS: PR aberto / mergeado / fechado (link para o navegador); cache 60s; falha graciosa (rate limit, rede)
+- [ ] **Recorte 2** — GitHub Enterprise / múltiplos PRs com menu (opcional)
+
 ## Backlog F4 — Lista de arquivos no commit ✅
 
 - [x] **Recorte 1** — pré-preencher a descrição opcional com a listagem staged (`+` / `-` / `~`);

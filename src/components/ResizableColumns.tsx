@@ -154,7 +154,7 @@ export function ResizableColumns({
   return (
     <div ref={containerRef} className="flex min-h-0 flex-1 overflow-hidden">
       <aside
-        className="flex h-full shrink-0 flex-col overflow-hidden bg-bg"
+        className="flex h-full shrink-0 flex-col overflow-hidden bg-header"
         style={{ width: sizes.left }}
       >
         {left}
@@ -162,14 +162,14 @@ export function ResizableColumns({
 
       <ResizeHandle onDrag={onDragLeft} />
 
-      <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
         {center}
       </section>
 
       <ResizeHandle onDrag={onDragRight} />
 
       <section
-        className="flex h-full shrink-0 flex-col overflow-hidden"
+        className="flex h-full shrink-0 flex-col overflow-hidden bg-header"
         style={{ width: sizes.right }}
       >
         {right}

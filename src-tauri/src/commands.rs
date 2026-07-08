@@ -8,9 +8,12 @@ use crate::application::{
 use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
 use crate::infrastructure::{
     detect_credential_status, ensure_gcm_configured, fetch_all_remote_branch_refs,
-    list_local_branches as fetch_local_branches, list_remote_branches as fetch_remote_branches,
-    list_stashes as fetch_stashes, list_tags as fetch_tags, repo_info, validate_git_object_id, validate_repo_relative_path,
-    CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry, TagEntry,
+    get_branch_file_diff, list_branch_diff, list_local_branches as fetch_local_branches,
+    list_remote_branches as fetch_remote_branches, list_stashes as fetch_stashes,
+    list_tags as fetch_tags, order_refs_by_recent_checkout, repo_info,
+    get_branch_pr_status as fetch_branch_pr_status, validate_compare_ref,
+    validate_git_object_id, validate_repo_relative_path, BranchDiffMode, BranchDiffSummary,
+    BranchPrStatus, CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry, TagEntry,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -443,6 +446,58 @@ pub async fn list_tags(state: State<'_, AppState>) -> Result<Vec<TagEntry>, Stri
 }
 
 #[tauri::command]
+pub async fn list_ordered_compare_refs(
+    refs: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let mut known = Vec::with_capacity(refs.len());
+    for r in refs {
+        known.push(validate_compare_ref(&r).map_err(|e| e.to_string())?);
+    }
+    let ctx = repo_context(&state)?;
+    order_refs_by_recent_checkout(ctx.writer(), &known).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_branch_diff_files(
+    left: String,
+    right: String,
+    mode: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<BranchDiffSummary, String> {
+    let left = validate_compare_ref(&left).map_err(|e| e.to_string())?;
+    let right = validate_compare_ref(&right).map_err(|e| e.to_string())?;
+    if left == right {
+        return Err("Escolha duas branches diferentes para comparar.".into());
+    }
+    let mode = match mode.as_deref() {
+        Some("tips") | Some("Tips") => BranchDiffMode::Tips,
+        _ => BranchDiffMode::MergeBase,
+    };
+    let ctx = repo_context(&state)?;
+    list_branch_diff(ctx.writer(), &left, &right, mode).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_branch_file_diff_cmd(
+    left: String,
+    right: String,
+    path: String,
+    mode: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let left = validate_compare_ref(&left).map_err(|e| e.to_string())?;
+    let right = validate_compare_ref(&right).map_err(|e| e.to_string())?;
+    let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
+    let mode = match mode.as_deref() {
+        Some("tips") | Some("Tips") => BranchDiffMode::Tips,
+        _ => BranchDiffMode::MergeBase,
+    };
+    let ctx = repo_context(&state)?;
+    get_branch_file_diff(ctx.writer(), &left, &right, mode, &path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn list_clone_remote_branches(url: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         fetch_clone_remote_branches(&url).map_err(|e| e.to_string())
@@ -472,4 +527,23 @@ pub async fn execute_clone_remote(
     let _ = app.emit("repo-changed", ());
     let repo = repo_info(&path).map_err(|e| e.to_string())?;
     Ok(CloneResult { repo, warning })
+}
+
+/// RF-12 — status de PR da branch atual no GitHub (oculto se não aplicável).
+#[tauri::command]
+pub async fn get_branch_pr_status(state: State<'_, AppState>) -> Result<BranchPrStatus, String> {
+    let path = match state.repo_path() {
+        Ok(p) => p,
+        Err(_) => return Ok(fetch_branch_pr_status("", "")),
+    };
+    let info = repo_info(&path).map_err(|e| e.to_string())?;
+    let Some(branch) = info.branch.filter(|b| !b.is_empty()) else {
+        return Ok(fetch_branch_pr_status("", ""));
+    };
+    let Some(remote_url) = info.remote_url.filter(|u| !u.is_empty()) else {
+        return Ok(fetch_branch_pr_status("", ""));
+    };
+    tauri::async_runtime::spawn_blocking(move || fetch_branch_pr_status(&remote_url, &branch))
+        .await
+        .map_err(|e| format!("Consulta de PR interrompida: {e}"))
 }

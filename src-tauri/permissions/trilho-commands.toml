@@ -45,6 +45,10 @@ commands.allow = [
   "list_remote_branches",
   "list_stashes",
   "list_tags",
+  "list_ordered_compare_refs",
+  "list_branch_diff_files",
+  "get_branch_file_diff_cmd",
   "list_clone_remote_branches",
   "execute_clone_remote",
+  "get_branch_pr_status",
 ]

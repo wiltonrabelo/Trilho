@@ -2,8 +2,11 @@
 
 mod blame;
 mod blame_parser;
+mod branch_diff;
+mod branch_order;
 mod branches;
 mod credential;
+mod github_pr;
 mod git2_reader;
 mod git_cli;
 mod reword;
@@ -17,6 +20,10 @@ mod validation;
 
 pub use ssh_keys::{read_ssh_public_key, test_github_ssh, SshKeyInfo, SshTestResult};
 
+pub use branch_diff::{
+    get_branch_file_diff, list_branch_diff, BranchDiffMode, BranchDiffSummary,
+};
+pub use branch_order::order_refs_by_recent_checkout;
 pub use branches::{list_local_branches, list_remote_branches, RemoteBranchRef};
 pub use stashes::{list_stashes, stash_reference, StashEntry};
 pub use tags::{list_tags, TagEntry};
@@ -24,16 +31,19 @@ pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
 
 pub use credential::{
     detect_credential_status, enable_github_use_http_path, ensure_gcm_configured,
-    logout_github_account, store_github_pat, trigger_github_login, CredentialStatus, GithubAccount,
+    get_github_api_token, logout_github_account, store_github_pat, trigger_github_login,
+    CredentialStatus, GithubAccount,
 };
+pub use github_pr::{get_branch_pr_status, BranchPrStatus, PrSummary};
 pub use git2_reader::{repo_info, Git2Reader};
 pub use git_cli::{defensive_config_args, SafeGitCli};
 pub use reword::execute_reword;
 pub use repo_watcher::RepoWatcher;
 pub use validation::{
     repo_name_from_url, validate_clone_branch, validate_clone_depth, validate_clone_destination,
-    validate_folder_name, validate_git_object_id, validate_remote_name,
-    validate_remote_url, validate_repo_relative_path, validate_tag_name,
+    validate_compare_ref, validate_folder_name, validate_git_object_id, validate_remote_name,
+    validate_remote_url, validate_repo_relative_path, validate_tag_name, GithubSlug,
+    github_credential_path, parse_github_slug_from_remote,
 };
 
 use crate::application::{BlameProvider, GitError, GitReader, TrailReader};

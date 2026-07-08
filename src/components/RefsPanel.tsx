@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Cloud,
   GitBranch,
+  GitCompare,
   Search,
   Tag,
 } from "lucide-react";
@@ -71,6 +72,7 @@ interface RefsPanelProps {
   onStashDrop: (index: number) => void;
   onTagSelect: (commitId: string) => void;
   onTagDelete: (name: string) => void;
+  onCompareBranches?: () => void;
 }
 
 function CollapsibleSection({
@@ -127,6 +129,7 @@ export function RefsPanel({
   onStashDrop,
   onTagSelect,
   onTagDelete,
+  onCompareBranches,
 }: RefsPanelProps) {
   const [query, setQuery] = useState("");
   const [sections, setSections] = useState<SectionState>(loadSectionState);
@@ -182,19 +185,32 @@ export function RefsPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3">
-      <div className="relative mb-2 shrink-0">
-        <Search
-          size={12}
-          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filtrar ramos, tags…"
-          aria-label="Filtrar branches, remotos, tags e pilhas"
-          className="w-full rounded-md border border-border bg-bg py-1.5 pl-7 pr-2 text-xs text-text placeholder:text-muted focus:border-accent focus:outline-none"
-        />
+      <div className="mb-2 flex shrink-0 items-center gap-1">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={12}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filtrar ramos, tags…"
+            aria-label="Filtrar branches, remotos, tags e pilhas"
+            className="w-full rounded-md border border-border bg-bg py-1.5 pl-7 pr-2 text-xs text-text placeholder:text-muted focus:border-accent focus:outline-none"
+          />
+        </div>
+        {onCompareBranches ? (
+          <button
+            type="button"
+            onClick={onCompareBranches}
+            title="Comparar duas branches (diff de arquivos)"
+            aria-label="Comparar branches"
+            className="shrink-0 rounded-md border border-border p-1.5 text-muted hover:bg-surface hover:text-accent"
+          >
+            <GitCompare size={14} />
+          </button>
+        ) : null}
       </div>
 
       {loading && branches.length === 0 && stashes.length === 0 ? (

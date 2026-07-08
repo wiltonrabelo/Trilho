@@ -1,9 +1,12 @@
 import { useMemo } from "react";
-import { parseUnifiedDiff } from "@/lib/diff-parse";
+import { parseUnifiedDiff, type DiffRow } from "@/lib/diff-parse";
+
+export type DiffLayout = "sideBySide" | "unified";
 
 interface DiffViewerProps {
   diff: string | null;
   loading?: boolean;
+  layout?: DiffLayout;
   onLineClick?: (lineNo: number) => void;
   selectedLine?: number | null;
 }
@@ -19,9 +22,51 @@ function lineClass(kind: string): string {
   }
 }
 
+function flattenUnifiedRows(rows: DiffRow[]): {
+  lineNo: number | undefined;
+  text: string;
+  kind: string;
+  prefix: string;
+}[] {
+  const out: {
+    lineNo: number | undefined;
+    text: string;
+    kind: string;
+    prefix: string;
+  }[] = [];
+  for (const row of rows) {
+    if (row.left.kind === "remove") {
+      out.push({
+        lineNo: row.left.lineNo,
+        text: row.left.text,
+        kind: "remove",
+        prefix: "-",
+      });
+    }
+    if (row.right.kind === "add") {
+      out.push({
+        lineNo: row.right.lineNo,
+        text: row.right.text,
+        kind: "add",
+        prefix: "+",
+      });
+    }
+    if (row.left.kind === "context" && row.right.kind === "context") {
+      out.push({
+        lineNo: row.right.lineNo ?? row.left.lineNo,
+        text: row.left.text,
+        kind: "context",
+        prefix: " ",
+      });
+    }
+  }
+  return out;
+}
+
 export function DiffViewer({
   diff,
   loading,
+  layout = "sideBySide",
   onLineClick,
   selectedLine,
 }: DiffViewerProps) {
@@ -48,6 +93,52 @@ export function DiffViewer({
       <pre className="h-full overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">
         {parsed.rawFallback}
       </pre>
+    );
+  }
+
+  if (layout === "unified") {
+    return (
+      <div className="h-full overflow-auto">
+        {parsed.files.map((file) => (
+          <div
+            key={`${file.oldPath}-${file.newPath}`}
+            className="border-b border-border"
+          >
+            <div className="sticky top-0 border-b border-border bg-surface px-3 py-1.5 font-mono text-xs text-muted">
+              {file.oldPath !== file.newPath
+                ? `${file.oldPath} → ${file.newPath}`
+                : file.newPath}
+            </div>
+            <table className="w-full border-collapse font-mono text-xs">
+              <tbody>
+                {flattenUnifiedRows(file.rows).map((row, i) => {
+                  const isSelected =
+                    selectedLine != null && row.lineNo === selectedLine;
+                  return (
+                    <tr
+                      key={i}
+                      className={`hover:bg-surface/50 ${isSelected ? "ring-1 ring-inset ring-accent/40" : ""} ${onLineClick && row.lineNo ? "cursor-pointer" : ""}`}
+                      onClick={() => {
+                        if (onLineClick && row.lineNo) onLineClick(row.lineNo);
+                      }}
+                    >
+                      <td className="w-10 select-none border-r border-border px-2 py-0.5 text-right text-muted">
+                        {row.lineNo ?? ""}
+                      </td>
+                      <td
+                        className={`px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.kind)}`}
+                      >
+                        <span className="select-none text-muted">{row.prefix}</span>
+                        {row.text || "\u00a0"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
     );
   }
 

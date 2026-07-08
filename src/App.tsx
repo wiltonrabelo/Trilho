@@ -1,7 +1,9 @@
 import { GitBranch, KeyRound, TrainFront, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { BranchCompareDialog } from "@/components/BranchCompareDialog";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
+import { PrStatusBadge } from "@/components/PrStatusBadge";
 import { ConnectDialog } from "@/components/ConnectDialog";
 import { CloneDialog } from "@/components/CloneDialog";
 import { CherryPickDialog } from "@/components/CherryPickDialog";
@@ -31,6 +33,7 @@ import { useCommits } from "@/hooks/useCommits";
 import { useFileSelection } from "@/hooks/useFileSelection";
 import { useBranches } from "@/hooks/useBranches";
 import { useOperations } from "@/hooks/useOperations";
+import { usePrStatus } from "@/hooks/usePrStatus";
 import { useRepo } from "@/hooks/useRepo";
 import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useStashes } from "@/hooks/useStashes";
@@ -50,6 +53,7 @@ function App() {
   const [rewordOpen, setRewordOpen] = useState(false);
   const [cherryPickOpen, setCherryPickOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [branchCompareOpen, setBranchCompareOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -143,6 +147,8 @@ function App() {
     fetch,
     refreshCredential,
   } = useSync(repo, setRepo, onAfterFetch);
+
+  const { prStatus, prLoading } = usePrStatus(repo, credential);
 
   const connect = useConnect(repo?.remoteUrl, refreshCredential);
 
@@ -620,6 +626,13 @@ function App() {
           });
         }}
       />
+      <BranchCompareDialog
+        open={branchCompareOpen}
+        localBranches={branchList.branches}
+        remoteBranches={branchList.remoteBranches}
+        currentBranch={repo?.branch}
+        onClose={() => setBranchCompareOpen(false)}
+      />
       <TagDialog
         open={tagOpen}
         commitShortId={selectedCommit?.shortId ?? "—"}
@@ -682,6 +695,7 @@ function App() {
                 <span className="font-medium text-text">{repo.branch ?? "—"}</span>
               )}
               <BranchOriginBadge origin={origin} loading={originLoading} />
+              <PrStatusBadge status={prStatus} loading={prLoading} />
             </div>
           )}
         </div>
@@ -851,6 +865,7 @@ function App() {
                   onTagDelete={(name) =>
                     void ops.request({ kind: "deleteTag", name })
                   }
+                  onCompareBranches={() => setBranchCompareOpen(true)}
                 />
                 <div className="mt-auto shrink-0 border-t border-border pt-3">
                   <button

@@ -134,6 +134,35 @@ pub fn validate_remote_name(name: &str) -> Result<String, GitError> {
     Ok(trimmed.to_string())
 }
 
+/// Ref local (`main`) ou remota (`origin/feature`) para comparação RF-14.
+/// Rejeita flags (`-`), path traversal e caracteres perigosos do Git.
+pub fn validate_compare_ref(name: &str) -> Result<String, GitError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::Git("Nome da branch vazio.".into()));
+    }
+    if trimmed.starts_with('-') {
+        return Err(GitError::Git(
+            "Nome de branch inválido (não pode começar com '-').".into(),
+        ));
+    }
+    if trimmed.contains("..")
+        || trimmed.contains("@{")
+        || trimmed.contains("//")
+        || trimmed.contains('\0')
+        || trimmed.contains(' ')
+    {
+        return Err(GitError::Git("Nome de branch inválido.".into()));
+    }
+    const INVALID: &[char] = &['~', '^', ':', '?', '*', '[', '\\'];
+    if trimmed.chars().any(|c| INVALID.contains(&c) || c.is_control()) {
+        return Err(GitError::Git(
+            "Nome de branch contém caracteres inválidos.".into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
 /// Profundidade shallow (`--depth`).
 pub fn validate_clone_depth(depth: Option<u32>) -> Result<Option<u32>, GitError> {
     match depth {
@@ -163,6 +192,43 @@ pub fn validate_clone_destination(path: &std::path::Path) -> Result<(), GitError
         ));
     }
     Ok(())
+}
+
+/// Owner e repositório em github.com (RF-12).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubSlug {
+    pub owner: String,
+    pub repo: String,
+}
+
+/// Caminho `owner/repo.git` para credential fill com `useHttpPath`.
+pub fn github_credential_path(slug: &GithubSlug) -> String {
+    format!("{}/{}.git", slug.owner, slug.repo)
+}
+
+/// Extrai owner/repo de URLs HTTPS ou SSH do GitHub.
+pub fn parse_github_slug_from_remote(url: &str) -> Option<GithubSlug> {
+    let trimmed = url.trim().trim_end_matches('/');
+    let segment = trimmed
+        .strip_prefix("https://github.com/")
+        .or_else(|| trimmed.strip_prefix("http://github.com/"))
+        .or_else(|| trimmed.strip_prefix("git@github.com:"))
+        .or_else(|| trimmed.strip_prefix("ssh://git@github.com/"))?;
+    parse_github_owner_repo_segment(segment)
+}
+
+fn parse_github_owner_repo_segment(segment: &str) -> Option<GithubSlug> {
+    let segment = segment.strip_suffix(".git").unwrap_or(segment);
+    let mut parts = segment.split('/');
+    let owner = parts.next()?.trim();
+    let repo = parts.next()?.trim();
+    if owner.is_empty() || repo.is_empty() || parts.next().is_some() {
+        return None;
+    }
+    Some(GithubSlug {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+    })
 }
 
 /// Extrai nome do repositório a partir da URL (último segmento, sem `.git`).
@@ -219,6 +285,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_github_slug_https_e_ssh() {
+        let slug = parse_github_slug_from_remote("https://github.com/octo/Hello-World.git")
+            .expect("https");
+        assert_eq!(slug.owner, "octo");
+        assert_eq!(slug.repo, "Hello-World");
+        let ssh = parse_github_slug_from_remote("git@github.com:octo/Hello-World.git").expect("ssh");
+        assert_eq!(ssh, slug);
+    }
+
+    #[test]
+    fn parse_github_slug_rejeita_outros_hosts() {
+        assert!(parse_github_slug_from_remote("https://gitlab.com/u/r.git").is_none());
+    }
+
+    #[test]
     fn aceita_tag_valida() {
         assert!(validate_tag_name("v1.0.0").is_ok());
         assert!(validate_tag_name("release/2026-07").is_ok());
@@ -229,6 +310,23 @@ mod tests {
         assert!(validate_tag_name("").is_err());
         assert!(validate_tag_name("bad name").is_err());
         assert!(validate_tag_name("..").is_err());
+    }
+
+    #[test]
+    fn aceita_compare_ref_local_e_remoto() {
+        assert_eq!(validate_compare_ref("main").unwrap(), "main");
+        assert_eq!(
+            validate_compare_ref("origin/feature-x").unwrap(),
+            "origin/feature-x"
+        );
+    }
+
+    #[test]
+    fn rejeita_compare_ref_invalido() {
+        assert!(validate_compare_ref("").is_err());
+        assert!(validate_compare_ref("-main").is_err());
+        assert!(validate_compare_ref("a..b").is_err());
+        assert!(validate_compare_ref("bad name").is_err());
     }
 
     #[test]

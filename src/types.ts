@@ -180,6 +180,24 @@ export interface TagEntryDto {
   shortId: string;
 }
 
+/** RF-14 — modo de comparação entre branches. */
+export type BranchDiffModeDto = "mergeBase" | "tips";
+
+export interface BranchDiffFileDto {
+  path: string;
+  kind: FileChangeKind;
+  additions: number;
+  deletions: number;
+}
+
+export interface BranchDiffSummaryDto {
+  left: string;
+  right: string;
+  mode: BranchDiffModeDto;
+  range: string;
+  files: BranchDiffFileDto[];
+}
+
 export interface BranchOriginDto {
   currentBranch: string | null;
   candidate: string | null;
@@ -188,6 +206,21 @@ export interface BranchOriginDto {
   signals: string[];
   /** Ponto de divergência (merge-base) com a candidata — marca a Trilha. */
   mergeBaseId: string | null;
+}
+
+/** RF-12 — Pull Request(s) da branch no GitHub. */
+export interface PrSummaryDto {
+  number: number;
+  title: string;
+  url: string;
+}
+
+export interface BranchPrStatusDto {
+  visible: boolean;
+  open: PrSummaryDto[];
+  merged: PrSummaryDto[];
+  closed: PrSummaryDto[];
+  notice: string | null;
 }
 
 /** Linha da trilha dupla a que o commit pertence. */

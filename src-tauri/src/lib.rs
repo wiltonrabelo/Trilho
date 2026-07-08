@@ -52,8 +52,12 @@ pub fn run() {
             commands::list_remote_branches,
             commands::list_stashes,
             commands::list_tags,
+            commands::list_ordered_compare_refs,
+            commands::list_branch_diff_files,
+            commands::get_branch_file_diff_cmd,
             commands::list_clone_remote_branches,
             commands::execute_clone_remote,
+            commands::get_branch_pr_status,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Trilho");

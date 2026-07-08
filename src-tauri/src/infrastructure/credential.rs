@@ -358,7 +358,34 @@ fn try_gcm_github_login() -> bool {
 }
 
 fn probe_github_credential() -> GithubCredentialProbe {
-    let input = b"protocol=https\nhost=github.com\n\n";
+    let fill = run_credential_fill(b"protocol=https\nhost=github.com\n\n");
+    GithubCredentialProbe {
+        connected: fill.password.as_ref().is_some_and(|p| !p.is_empty()),
+        username: fill.username,
+    }
+}
+
+/// Token HTTPS para a API GitHub (password do credential helper).
+pub fn get_github_api_token(credential_path: Option<&str>) -> Option<String> {
+    let mut input = String::from("protocol=https\nhost=github.com\n");
+    if read_github_use_http_path() {
+        if let Some(path) = credential_path.filter(|p| !p.is_empty()) {
+            let path = path.trim_start_matches('/');
+            input.push_str(&format!("path={path}\n"));
+        }
+    }
+    input.push('\n');
+    let fill = run_credential_fill(input.as_bytes());
+    fill.password.filter(|p| !p.is_empty())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CredentialFill {
+    username: Option<String>,
+    password: Option<String>,
+}
+
+fn run_credential_fill(input: &[u8]) -> CredentialFill {
     let mut child = match Command::new("git")
         .args([
             "-c",
@@ -375,9 +402,9 @@ fn probe_github_credential() -> GithubCredentialProbe {
     {
         Ok(c) => c,
         Err(_) => {
-            return GithubCredentialProbe {
-                connected: false,
+            return CredentialFill {
                 username: None,
+                password: None,
             }
         }
     };
@@ -389,26 +416,26 @@ fn probe_github_credential() -> GithubCredentialProbe {
     let output = match child.wait_with_output() {
         Ok(o) => o,
         Err(_) => {
-            return GithubCredentialProbe {
-                connected: false,
+            return CredentialFill {
                 username: None,
+                password: None,
             }
         }
     };
 
     if !output.status.success() {
-        return GithubCredentialProbe {
-            connected: false,
+        return CredentialFill {
             username: None,
+            password: None,
         };
     }
 
-    parse_credential_fill(&String::from_utf8_lossy(&output.stdout))
+    parse_credential_fill_full(&String::from_utf8_lossy(&output.stdout))
 }
 
-fn parse_credential_fill(stdout: &str) -> GithubCredentialProbe {
+fn parse_credential_fill_full(stdout: &str) -> CredentialFill {
     let mut username: Option<String> = None;
-    let mut has_password = false;
+    let mut password: Option<String> = None;
 
     for line in stdout.lines() {
         if let Some(u) = line.strip_prefix("username=") {
@@ -417,14 +444,13 @@ fn parse_credential_fill(stdout: &str) -> GithubCredentialProbe {
             }
         }
         if let Some(p) = line.strip_prefix("password=") {
-            has_password = !p.is_empty();
+            if !p.is_empty() {
+                password = Some(p.to_string());
+            }
         }
     }
 
-    GithubCredentialProbe {
-        connected: has_password,
-        username: if has_password { username } else { None },
-    }
+    CredentialFill { username, password }
 }
 
 fn read_credential_helpers() -> Vec<String> {
@@ -521,17 +547,17 @@ mod tests {
 
     #[test]
     fn parse_credential_fill_detecta_password() {
-        let probe = parse_credential_fill(
+        let fill = parse_credential_fill_full(
             "protocol=https\nhost=github.com\nusername=octocat\npassword=secret\n",
         );
-        assert!(probe.connected);
-        assert_eq!(probe.username.as_deref(), Some("octocat"));
+        assert_eq!(fill.password.as_deref(), Some("secret"));
+        assert_eq!(fill.username.as_deref(), Some("octocat"));
     }
 
     #[test]
     fn parse_credential_fill_sem_password() {
-        let probe = parse_credential_fill("protocol=https\nhost=github.com\n");
-        assert!(!probe.connected);
+        let fill = parse_credential_fill_full("protocol=https\nhost=github.com\n");
+        assert!(fill.password.is_none());
     }
 
     #[test]
