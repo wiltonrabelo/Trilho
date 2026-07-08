@@ -308,10 +308,14 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — cherry-pick de um commit no painel do commit + preview RF-08 + gates (WT limpa, não-HEAD, não merge) + conflitos via continue/abort existentes
 - [x] **Recorte 2** — cherry-pick múltiplo (visão exclusiva de branch) + flag `-x` (registrar origem)
 
-## Backlog F5 — RF-07 Reset 🚧
+## Backlog F5 — RF-07 Reset ✅
 
-- [x] **Recorte 1** — reset para commit ancestral (soft/mixed/hard) no painel do commit + preview RF-08 + push forçado quando commits posteriores já estão no remoto
-- [ ] **Recorte 2** — backup automático (stash/ref) antes de hard reset; RF-09 push forçado standalone
+- [x] **Recorte 1** — reset para commit ancestral (soft/mixed/hard) no painel do commit + preview RF-08; push forçado fica no sync (RF-09), não embutido no reset
+- [x] **Recorte 2** — backup automático (ref `trilho/backup`) + stash antes de hard reset com WT suja; RF-09 push forçado standalone no sync
+
+## Backlog F5 — RF-09 Push forçado ✅
+
+- [x] **Standalone** — botão «Force push» quando remoto à frente (`behind > 0`); `--force-with-lease`; backup ref antes do envio; preview com SHAs afetados no remoto
 
 ## Backlog F4 — Lista de arquivos no commit ✅
 

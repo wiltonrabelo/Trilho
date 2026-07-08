@@ -280,6 +280,7 @@ export type WriteRequestDto =
       mode?: "soft" | "mixed" | "hard";
       forcePush?: boolean;
     }
+  | { kind: "pushForce" }
   | { kind: "publish"; url: string | null };
 
 export interface CloneRequestDto {

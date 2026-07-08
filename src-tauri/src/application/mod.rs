@@ -1,5 +1,6 @@
 //! Camada de Aplicação — portas (traits) e estado compartilhado.
 
+mod backup_ref;
 mod clone_post_check;
 mod clone_service;
 mod app_state;
@@ -149,11 +150,34 @@ fn map_git_stderr(stderr: &str) -> String {
                 repositório para exibir o blame. Faça o commit para acompanhá-lo."
             .into();
     }
+    // --force-with-lease: lease desatualizado (≠ remoto à frente sem force).
+    if lower.contains("stale info") {
+        return "O remoto mudou desde a última sincronização — o push forçado \
+                (--force-with-lease) foi bloqueado por segurança. O Trilho atualiza \
+                o tracking e tenta de novo; se persistir, faça «Fetch» e confirme \
+                o Force push outra vez."
+            .into();
+    }
+    if lower.contains("not possible to fast-forward") || lower.contains("diverging branches")
+    {
+        return "Históricos local e remoto divergiram — pull --ff-only não resolve. \
+                Se você reescreveu commits (reword/reset) e quer sobrescrever o remoto, \
+                use «Force push». Caso contrário, resolva com merge/rebase fora do Trilho."
+            .into();
+    }
     if lower.contains("non-fast-forward")
         || lower.contains("rejected")
         || lower.contains("fetch first")
     {
-        return "O remoto está à frente — use «Atualizar (pull --ff-only)» e tente o push de novo."
+        return "O remoto está à frente — use «Atualizar (pull --ff-only)» e tente o push de novo \
+                (ou «Force push» se reescreveu o histórico local)."
+            .into();
+    }
+    // Reword/rebase: «could not apply <sha>... <subject>» = conflito ao reaplicar.
+    if lower.contains("could not apply") {
+        return "Não foi possível reaplicar um commit posterior (conflito ou histórico com merge). \
+                O Trilho abortou a operação e manteve a branch como estava. \
+                Reword só funciona em trechos lineares, sem merges entre o commit e o HEAD."
             .into();
     }
     if lower.contains("is unmerged") || lower.contains("unmerged") {
@@ -168,9 +192,17 @@ fn map_git_stderr(stderr: &str) -> String {
                 este patch automaticamente."
             .into();
     }
-    // Demais falhas: primeira linha, sem o prefixo técnico "fatal:"/"error:".
-    let first = trimmed.lines().next().unwrap_or(trimmed);
-    first
+    // Preferir a última linha fatal:/error: — fetch/pull costumam prefixar com
+    // «From https://…», que não é o diagnóstico.
+    let useful = trimmed
+        .lines()
+        .rev()
+        .find(|line| {
+            let t = line.trim().to_lowercase();
+            t.starts_with("fatal:") || t.starts_with("error:")
+        })
+        .unwrap_or_else(|| trimmed.lines().next().unwrap_or(trimmed));
+    useful
         .trim_start_matches("fatal: ")
         .trim_start_matches("error: ")
         .trim()
@@ -267,6 +299,51 @@ mod tests {
     fn falha_de_auth_e_classificada() {
         let err = GitError::from_git_stderr("fatal: Authentication failed for 'https://...'");
         assert!(err.is_auth());
+    }
+
+    #[test]
+    fn could_not_apply_vira_mensagem_de_reword() {
+        let err = GitError::from_git_stderr(
+            "error: could not apply f3a08da... Update Anotacoes.txt\n",
+        );
+        let msg = err.to_string();
+        assert!(
+            !msg.to_lowercase().contains("could not apply"),
+            "não deve vazar stderr cru: {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("merge") || msg.to_lowercase().contains("reaplicar"),
+            "deve explicar conflito/merge: {msg}"
+        );
+    }
+
+    #[test]
+    fn stale_info_nao_pede_pull() {
+        let err = GitError::from_git_stderr(
+            "! [rejected] main -> main (stale info)\n\
+             error: failed to push some refs to 'https://github.com/u/r.git'\n",
+        );
+        let msg = err.to_string().to_lowercase();
+        assert!(msg.contains("force") || msg.contains("lease") || msg.contains("sincroniza"));
+        assert!(!msg.contains("pull --ff-only"), "não deve mandar fazer pull: {msg}");
+    }
+
+    #[test]
+    fn pull_divergente_nao_vaza_from_https() {
+        let err = GitError::from_git_stderr(
+            "From https://github.com/wiltonrabelo/GitTeste\n\
+             * branch main_teste_3_1 -> FETCH_HEAD\n\
+             fatal: Not possible to fast-forward, aborting.\n",
+        );
+        let msg = err.to_string();
+        assert!(
+            !msg.to_lowercase().starts_with("from http"),
+            "não deve vazar «From https»: {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("diverg") || msg.to_lowercase().contains("force"),
+            "deve explicar divergência: {msg}"
+        );
     }
 
     /// Regressão: negação de acesso do GitHub via SSH não pode vazar crua.

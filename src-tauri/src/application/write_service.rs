@@ -1,5 +1,6 @@
 //! Casos de uso de escrita M3 — preview (RF-08) e execução com gates.
 
+use crate::application::backup_ref::{backup_ref_preview_command, create_backup_ref};
 use crate::application::operations::{
     AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, CherryPickCommit,
     ContinueMerge, CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
@@ -499,16 +500,63 @@ pub fn preview_write(
                 reset_mode.label()
             );
             if reset_mode == ResetMode::Hard {
+                let branch = branch_name_for_backup(repo_path)?;
+                commands.insert(0, backup_ref_preview_command(&branch));
                 description.push_str(
-                    " Alterações não commitadas em arquivos rastreados serão descartadas.",
+                    " Cria backup local (ref trilho/backup) do HEAD atual.",
                 );
+                if has_tracked_worktree_changes(ctx)? {
+                    commands.insert(
+                        1,
+                        format!("git stash push -m \"{RESET_HARD_STASH_MSG}\""),
+                    );
+                    description.push_str(
+                        " Alterações locais em arquivos rastreados serão guardadas em stash \
+                         antes do reset.",
+                    );
+                } else {
+                    description.push_str(
+                        " Alterações não commitadas em arquivos rastreados serão descartadas.",
+                    );
+                }
             }
             if needs_force {
                 description.push_str(
-                    " Commits posteriores já estão no remoto — será necessário push forçado \
-                     (--force-with-lease) após o reset.",
+                    " Commits posteriores já estão no remoto — o reset é só local. Quando \
+                     quiser publicar o histórico novo, use «Force push» no sync \
+                     (--force-with-lease); não é feito automaticamente.",
                 );
-                commands.push("git push --force-with-lease".into());
+                if *force_push {
+                    commands.push("git push --force-with-lease".into());
+                }
+            }
+            (commands, description, blocked)
+        }
+        WriteRequest::PushForce => {
+            let blocked = gate_force_push_standalone(ctx)?;
+            let branch = branch_name_for_backup(repo_path)?;
+            let remote_commits = remote_only_commit_short_ids(ctx)?;
+            let mut commands = vec!["git push --force-with-lease".into()];
+            commands.insert(0, backup_ref_preview_command(&branch));
+            commands.insert(
+                1,
+                format!("git fetch origin +refs/heads/{branch}:refs/remotes/origin/{branch}"),
+            );
+            let mut description = String::from(
+                "Reescreve a branch remota com o HEAD local (--force-with-lease). Operação \
+                 irreversível para quem já baseou trabalho nos commits que existirem só no remoto. \
+                 Atualiza o tracking remoto e cria backup local (ref trilho/backup) do HEAD atual.",
+            );
+            if !remote_commits.is_empty() {
+                description.push_str(&format!(
+                    " Commits que deixarão de fazer parte da branch no remoto: {}.",
+                    remote_commits.join(", ")
+                ));
+            }
+            if is_likely_protected_branch(&branch) {
+                description.push_str(
+                    " ATENÇÃO: branch sensível (main/master) — confirme com a equipe.",
+                );
             }
             (commands, description, blocked)
         }
@@ -723,7 +771,7 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             let message = format_reword_message(&summary, body.as_deref());
             execute_reword(ctx.writer(), &sha, &message)?;
             if force_push && reword_target_on_remote(ctx, &sha)? {
-                ctx.execute_op(&PushForceWithLease)?;
+                execute_force_push_with_lease(ctx)?;
             }
         }
         WriteRequest::Reset {
@@ -734,13 +782,30 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             let sha =
                 validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
             let reset_mode = reset_mode_from_dto(mode);
+            if reset_mode == ResetMode::Hard {
+                let branch = branch_name_for_backup(ctx.repo_path())?;
+                create_backup_ref(ctx.writer(), &branch)?;
+                if has_tracked_worktree_changes(ctx)? {
+                    ctx.execute_op(&StashPush {
+                        message: Some(RESET_HARD_STASH_MSG.into()),
+                        include_untracked: false,
+                    })?;
+                }
+            }
             ctx.execute_op(&ResetCommit {
                 sha,
                 mode: reset_mode,
             })?;
             if force_push && reset_needs_force_push(ctx, &commit_id)? {
-                ctx.execute_op(&PushForceWithLease)?;
+                let branch = branch_name_for_backup(ctx.repo_path())?;
+                create_backup_ref(ctx.writer(), &branch)?;
+                execute_force_push_with_lease(ctx)?;
             }
+        }
+        WriteRequest::PushForce => {
+            let branch = branch_name_for_backup(ctx.repo_path())?;
+            create_backup_ref(ctx.writer(), &branch)?;
+            execute_force_push_with_lease(ctx)?;
         }
         WriteRequest::Publish { url } => execute_publish(ctx, url.as_deref())?,
     }
@@ -1244,6 +1309,16 @@ fn gate_reword(
             "Commit de merge — reword exige operação avançada fora do MVP.".into(),
         ));
     }
+    // Reword reaplica com cherry-pick linear; merges no caminho trazem
+    // commits laterais e costumam gerar conflito (ex.: «could not apply …»).
+    if range_has_merge_commits(ctx.writer(), sha)? {
+        return Ok(Some(
+            "Há merges no histórico após este commit — o Trilho ainda não reaplica \
+             merges no reword. Escolha um commit mais recente (após o último merge) \
+             ou reescreva a mensagem só em histórico linear."
+                .into(),
+        ));
+    }
     let on_remote = reword_target_on_remote(ctx, sha)?;
     if on_remote {
         if !force_push {
@@ -1267,6 +1342,20 @@ fn reword_target_on_remote(ctx: &RepoContext, sha: &str) -> Result<bool, GitErro
     is_commit_on_remote(ctx.writer(), upstream, sha)
 }
 
+/// `true` se existir algum merge em `sha..HEAD` (histórico não linear).
+fn range_has_merge_commits(cli: &dyn GitWriter, sha: &str) -> Result<bool, GitError> {
+    let out = cli.run(&GitCommand {
+        args: vec![
+            "rev-list".into(),
+            "--merges".into(),
+            "--count".into(),
+            format!("{sha}..HEAD"),
+        ],
+    })?;
+    let count: u64 = out.trim().parse().unwrap_or(0);
+    Ok(count > 0)
+}
+
 fn gate_force_push_upstream(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     let sync = ctx.reader().get_sync_info()?;
     if sync.upstream.is_none() {
@@ -1283,6 +1372,47 @@ fn reset_mode_from_dto(mode: ResetModeDto) -> ResetMode {
         ResetModeDto::Mixed => ResetMode::Mixed,
         ResetModeDto::Hard => ResetMode::Hard,
     }
+}
+
+const RESET_HARD_STASH_MSG: &str = "trilho: backup antes de reset --hard";
+
+fn branch_name_for_backup(repo_path: &str) -> Result<String, GitError> {
+    repo_info(repo_path)?
+        .branch
+        .ok_or_else(|| GitError::Git("Branch atual não identificada.".into()))
+}
+
+fn has_tracked_worktree_changes(ctx: &RepoContext) -> Result<bool, GitError> {
+    let status = ctx.reader().get_status()?;
+    Ok(!status.staged.is_empty() || !status.unstaged.is_empty())
+}
+
+fn is_likely_protected_branch(branch: &str) -> bool {
+    matches!(
+        branch,
+        "main" | "master" | "develop" | "production" | "release"
+    )
+}
+
+fn remote_only_commit_short_ids(ctx: &RepoContext) -> Result<Vec<String>, GitError> {
+    let sync = ctx.reader().get_sync_info()?;
+    let Some(upstream) = sync.upstream else {
+        return Ok(vec![]);
+    };
+    let out = ctx.writer().run(&GitCommand {
+        args: vec![
+            "rev-list".into(),
+            "--max-count=10".into(),
+            upstream,
+            "--not".into(),
+            "HEAD".into(),
+        ],
+    })?;
+    Ok(out
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|sha| sha[..sha.len().min(7)].to_string())
+        .collect())
 }
 
 /// `true` se o upstream aponta para um commit estritamente posterior ao alvo do reset.
@@ -1308,7 +1438,7 @@ fn gate_reset(
     ctx: &RepoContext,
     repo_path: &str,
     sha: &str,
-    mode: ResetMode,
+    _mode: ResetMode,
     force_push: bool,
     needs_force: bool,
 ) -> Result<Option<String>, GitError> {
@@ -1333,27 +1463,34 @@ fn gate_reset(
                 .into(),
         ));
     }
-    if needs_force {
-        if !force_push {
-            return Ok(Some(
-                "Commits posteriores já foram enviados ao remoto — confirme o push forçado \
-                 (--force-with-lease) para concluir o reset."
-                    .into(),
-            ));
-        }
+    if needs_force && force_push {
         if let Some(msg) = gate_force_push_upstream(ctx)? {
             return Ok(Some(msg));
         }
     }
-    if mode == ResetMode::Hard {
-        let status = ctx.reader().get_status()?;
-        if !status.staged.is_empty() || !status.unstaged.is_empty() {
-            return Ok(Some(
-                "Reset hard com alterações locais — faça commit, stash ou descarte antes, ou \
-                 use soft/mixed se quiser preservar o conteúdo."
-                    .into(),
-            ));
-        }
+    Ok(None)
+}
+
+fn gate_force_push_standalone(ctx: &RepoContext) -> Result<Option<String>, GitError> {
+    let info = repo_info(ctx.repo_path())?;
+    if info.is_detached {
+        return Ok(Some(
+            "Repositório em detached HEAD — troque para uma branch antes do push forçado.".into(),
+        ));
+    }
+    if let Some(msg) = gate_sequencer_idle(ctx.repo_path(), "enviar com push forçado")? {
+        return Ok(Some(msg));
+    }
+    if let Some(msg) = gate_force_push_upstream(ctx)? {
+        return Ok(Some(msg));
+    }
+    let sync = ctx.reader().get_sync_info()?;
+    if sync.behind == 0 {
+        return Ok(Some(
+            "O remoto não está à frente — use o push normal ou confirme o push forçado \
+             no fluxo de reset/reword se reescreveu o histórico local."
+                .into(),
+        ));
     }
     Ok(None)
 }
@@ -1379,6 +1516,13 @@ fn gate_push(ctx: &RepoContext) -> Result<Option<String>, GitError> {
         return Ok(Some("Não há commits locais para enviar.".into()));
     }
     if sync.behind > 0 {
+        if sync.ahead > 0 {
+            return Ok(Some(
+                "Históricos local e remoto divergiram — push normal não funciona. \
+                 Se você reescreveu commits e quer sobrescrever o remoto, use «Force push»."
+                    .into(),
+            ));
+        }
         return Ok(Some(
             "O remoto está à frente. Atualize com «pull --ff-only» antes de enviar.".into(),
         ));
@@ -1393,12 +1537,90 @@ fn gate_pull(ctx: &RepoContext) -> Result<Option<String>, GitError> {
             "Branch sem upstream — use «Publicar» no Trilho antes de puxar.".into(),
         ));
     }
+    if sync.ahead > 0 && sync.behind > 0 {
+        return Ok(Some(
+            "Históricos local e remoto divergiram — pull --ff-only não resolve. \
+             Se você reescreveu commits (reword/reset) e quer sobrescrever o remoto, \
+             use «Force push». Caso contrário, resolva com merge/rebase fora do Trilho."
+                .into(),
+        ));
+    }
     if sync.behind == 0 {
         return Ok(Some(
             "Já está em dia com o remoto (nada para puxar).".into(),
         ));
     }
     Ok(None)
+}
+
+/// Atualiza o ref de tracking do upstream e envia com `--force-with-lease`.
+/// Evita `stale info` quando o fetch padrão do remoto não cobre esta branch
+/// (refspec restrito, ex.: só `main`).
+fn execute_force_push_with_lease(ctx: &RepoContext) -> Result<(), GitError> {
+    let (remote, branch, expect_sha) = refresh_upstream_tracking_ref(ctx)?;
+    ctx.execute_op(&PushForceWithLease {
+        remote: remote.clone(),
+        branch: branch.clone(),
+        expect_sha,
+    })?;
+    // Alinha o tracking local ao HEAD enviado (fetch padrão pode não cobrir).
+    let head = ctx
+        .writer()
+        .run(&GitCommand {
+            args: vec!["rev-parse".into(), "HEAD".into()],
+        })?
+        .trim()
+        .to_string();
+    let _ = ctx.writer().run(&GitCommand {
+        args: vec![
+            "update-ref".into(),
+            format!("refs/remotes/{remote}/{branch}"),
+            head,
+        ],
+    });
+    Ok(())
+}
+
+/// Fetch explícito do branch de tracking; retorna (remote, branch, tip_sha).
+fn refresh_upstream_tracking_ref(ctx: &RepoContext) -> Result<(String, String, String), GitError> {
+    let sync = ctx.reader().get_sync_info()?;
+    let upstream = sync.upstream.ok_or_else(|| {
+        GitError::Git("Branch sem upstream — configure o remoto antes do push forçado.".into())
+    })?;
+    let (remote, branch) = upstream.split_once('/').ok_or_else(|| {
+        GitError::Git(format!("Upstream inválido: {upstream}"))
+    })?;
+    let remote = remote.to_string();
+    let branch = branch.to_string();
+    let tracking = format!("refs/remotes/{remote}/{branch}");
+    let spec = format!("+refs/heads/{branch}:{tracking}");
+    ctx.writer().run(&GitCommand {
+        args: vec!["fetch".into(), remote.clone(), spec],
+    })?;
+    let expect_sha = ctx
+        .writer()
+        .run(&GitCommand {
+            args: vec!["rev-parse".into(), tracking],
+        })?
+        .trim()
+        .to_string();
+    // Config explícita (não depende de `branch --set-upstream-to`, que falha
+    // quando o refspec do remoto não lista esta branch como tracking «válida»).
+    let _ = ctx.writer().run(&GitCommand {
+        args: vec![
+            "config".into(),
+            format!("branch.{branch}.remote"),
+            remote.clone(),
+        ],
+    });
+    let _ = ctx.writer().run(&GitCommand {
+        args: vec![
+            "config".into(),
+            format!("branch.{branch}.merge"),
+            format!("refs/heads/{branch}"),
+        ],
+    });
+    Ok((remote, branch, expect_sha))
 }
 
 fn gate_unshallow(ctx: &RepoContext) -> Result<Option<String>, GitError> {
@@ -1808,6 +2030,66 @@ mod tests {
         .expect("preview");
         assert!(preview.blocked.is_some());
         assert!(preview.blocked.unwrap().contains("HEAD"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reword_com_merge_no_caminho_e_bloqueado() {
+        let dir = std::env::temp_dir().join(format!("trilho-rwmrg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        // Commit A (alvo do reword) → branch feat → merge → HEAD
+        std::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "alvo reword"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let alvo = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let alvo = String::from_utf8_lossy(&alvo.stdout).trim().to_string();
+        for args in [
+            vec!["checkout", "-b", "feat"],
+            vec!["commit", "--allow-empty", "-m", "feat work"],
+            vec!["checkout", "-"],
+            vec!["commit", "--allow-empty", "-m", "avanca"],
+            vec!["merge", "--no-ff", "feat", "-m", "merge feat"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+        }
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Reword {
+                commit_id: alvo,
+                summary: "nova mensagem".into(),
+                body: None,
+                force_push: false,
+            },
+        )
+        .expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "reword com merge no caminho deve bloquear"
+        );
+        assert!(
+            preview
+                .blocked
+                .as_ref()
+                .unwrap()
+                .to_lowercase()
+                .contains("merge"),
+            "deve mencionar merges: {:?}",
+            preview.blocked
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2369,6 +2651,74 @@ mod tests {
             .blocked
             .unwrap()
             .contains("Abortar revert"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_hard_com_wt_suja_nao_bloqueia_e_inclui_stash() {
+        let dir = std::env::temp_dir().join(format!("trilho-rsthrd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+        std::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "second"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let parent = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD~1"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let parent = String::from_utf8_lossy(&parent.stdout)
+            .trim()
+            .to_string();
+        std::fs::write(dir.join("f.txt"), "dirty").unwrap();
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview = preview_write(
+            &ctx,
+            ctx.repo_path(),
+            &WriteRequest::Reset {
+                commit_id: parent,
+                mode: crate::domain::ResetModeDto::Hard,
+                force_push: false,
+            },
+        )
+        .expect("preview");
+        assert!(
+            preview.blocked.is_none(),
+            "hard reset com WT suja deve permitir (stash automático): {:?}",
+            preview.blocked
+        );
+        assert!(
+            preview.commands.iter().any(|c| c.contains("stash push")),
+            "preview deve incluir stash: {:?}",
+            preview.commands
+        );
+        assert!(
+            preview
+                .commands
+                .iter()
+                .any(|c| c.contains("refs/trilho/backup")),
+            "preview deve incluir backup ref: {:?}",
+            preview.commands
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn push_force_bloqueado_sem_remoto_a_frente() {
+        let dir = std::env::temp_dir().join(format!("trilho-pfblk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        init_repo_with_commit(&dir);
+
+        let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+        let preview =
+            preview_write(&ctx, ctx.repo_path(), &WriteRequest::PushForce).expect("preview");
+        assert!(
+            preview.blocked.is_some(),
+            "push force sem upstream/behind deve bloquear"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

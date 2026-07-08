@@ -843,12 +843,25 @@ impl GitOperation for PushUpstream {
 }
 
 /// RF-09 / RF-16 recorte 2 — reescreve histórico no remoto com proteção de lease.
-pub struct PushForceWithLease;
+///
+/// Usa lease explícito `local:tracking` para funcionar mesmo quando `@{u}` não
+/// está linkado (refspec restrito / config sem tracking).
+pub struct PushForceWithLease {
+    pub remote: String,
+    pub branch: String,
+    pub expect_sha: String,
+}
 
 impl GitOperation for PushForceWithLease {
     fn command(&self) -> GitCommand {
+        let lease = format!("{}:{}", self.branch, self.expect_sha);
         GitCommand {
-            args: vec!["push".into(), "--force-with-lease".into()],
+            args: vec![
+                "push".into(),
+                format!("--force-with-lease={lease}"),
+                self.remote.clone(),
+                format!("HEAD:{}", self.branch),
+            ],
         }
     }
     fn description(&self) -> &'static str {
@@ -938,8 +951,20 @@ mod tests {
 
     #[test]
     fn push_force_with_lease_preview_estavel() {
-        let op = PushForceWithLease;
-        assert_eq!(op.command().args, vec!["push", "--force-with-lease"]);
+        let op = PushForceWithLease {
+            remote: "origin".into(),
+            branch: "main".into(),
+            expect_sha: "abc123".into(),
+        };
+        assert_eq!(
+            op.command().args,
+            vec![
+                "push",
+                "--force-with-lease=main:abc123",
+                "origin",
+                "HEAD:main"
+            ]
+        );
     }
 
     #[test]

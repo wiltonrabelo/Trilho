@@ -1,4 +1,4 @@
-import { KeyRound, RefreshCw, Upload } from "lucide-react";
+import { AlertTriangle, KeyRound, RefreshCw, Upload } from "lucide-react";
 import type { SyncInfoDto, CredentialStatusDto } from "@/types";
 
 interface SyncIndicatorProps {
@@ -14,6 +14,7 @@ interface SyncIndicatorProps {
   onFetch: () => void;
   onPublish?: () => void;
   onPush?: () => void;
+  onPushForce?: () => void;
   onPull?: () => void;
   onUnshallow?: () => void;
   onConnect?: () => void;
@@ -46,6 +47,7 @@ export function SyncIndicator({
   onFetch,
   onPublish,
   onPush,
+  onPushForce,
   onPull,
   onUnshallow,
   onConnect,
@@ -65,6 +67,9 @@ export function SyncIndicator({
     Boolean(branch) && !writeDisabled && !upstreamConfigured;
   const showPull = Boolean(sync?.upstream && sync.behind > 0 && onPull);
   const showPush = Boolean(sync?.upstream && sync.ahead > 0 && onPush);
+  const showPushForce = Boolean(
+    sync?.upstream && sync.behind > 0 && onPushForce && !writeDisabled,
+  );
   const busy = loading || pushLoading;
   const usesSshRemote =
     remoteUrl?.startsWith("git@") || remoteUrl?.startsWith("ssh://");
@@ -133,6 +138,19 @@ export function SyncIndicator({
           >
             <Upload size={14} className={pushLoading ? "animate-pulse" : ""} />
             Push ↑{sync!.ahead}
+          </button>
+        )}
+        {showPushForce && (
+          <button
+            type="button"
+            onClick={onPushForce}
+            disabled={busy}
+            aria-label={`Push forçado — remoto ${sync!.behind} commit(s) à frente`}
+            className="flex items-center gap-1 rounded border border-red-500/50 bg-red-500/10 px-2 py-1 text-red-700 hover:bg-red-500/20 disabled:opacity-50 dark:text-red-300"
+            title="git push --force-with-lease — reescreve histórico remoto"
+          >
+            <AlertTriangle size={14} />
+            Force push
           </button>
         )}
         {showConnect && onConnect && (

@@ -325,7 +325,7 @@ function App() {
   );
   const resetHint =
     canReset && headCommit && !headCommit.isLocalOnly
-      ? "Reset reescreve o histórico local; se já enviado, exige push forçado. Para desfazer sem reescrever, use Reverter."
+      ? "Reset reescreve o histórico local. Se os commits já estão no remoto, use Force push no sync quando quiser publicar (não é automático)."
       : null;
   const canEditMessageOnHead = Boolean(isSelectedHead && canAmend) && !writeDisabled;
   const messageEditHint =
@@ -494,7 +494,9 @@ function App() {
                                   : "Reescrever mensagem"
                                 : ops.pending?.kind === "cherryPick"
                                   ? "Cherry-pick"
-                                  : ops.pending?.kind === "discardWorktree" ||
+                                  : ops.pending?.kind === "pushForce"
+                                    ? "Push forçado"
+                                    : ops.pending?.kind === "discardWorktree" ||
                                   ops.pending?.kind === "discardWorktreeMany" ||
                                   ops.pending?.kind === "discardWorktreeAll" ||
                                   ops.pending?.kind === "discardHunk"
@@ -601,21 +603,20 @@ function App() {
       <ResetDialog
         open={resetOpen}
         shortId={selectedCommit?.shortId ?? "—"}
-        commitId={selectedCommit?.id ?? null}
-        requiresForcePush={resetRequiresForcePush}
+        remoteWillDiverge={resetRequiresForcePush}
         loading={ops.loading}
         error={resetOpen && !ops.preview ? ops.error : null}
         onCancel={() => {
           setResetOpen(false);
           ops.cancel();
         }}
-        onContinue={(mode, forcePush) => {
+        onContinue={(mode) => {
           if (!selectedCommit) return;
           void ops.request({
             kind: "reset",
             commitId: selectedCommit.id,
             mode,
-            forcePush,
+            forcePush: false,
           });
         }}
       />
@@ -706,6 +707,11 @@ function App() {
                 writeDisabled
                   ? undefined
                   : () => void ops.request({ kind: "push" })
+              }
+              onPushForce={
+                writeDisabled
+                  ? undefined
+                  : () => void ops.request({ kind: "pushForce" })
               }
               onPull={
                 writeDisabled

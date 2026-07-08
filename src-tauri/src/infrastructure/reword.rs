@@ -89,6 +89,10 @@ pub fn execute_reword(cli: &SafeGitCli, target_sha: &str, new_message: &str) -> 
         let _ = cli.run(&GitCommand {
             args: vec!["checkout".into(), branch.clone()],
         });
+        // Garante working tree limpa mesmo se o abort parcial deixou estado estranho.
+        let _ = cli.run(&GitCommand {
+            args: vec!["reset".into(), "--hard".into(), branch.clone()],
+        });
         return Err(e);
     }
 

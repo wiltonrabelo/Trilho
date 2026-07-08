@@ -178,6 +178,9 @@ pub enum WriteRequest {
         #[serde(default, rename = "forcePush")]
         force_push: bool,
     },
+    /// RF-09 — push forçado standalone (`git push --force-with-lease`).
+    #[serde(rename = "pushForce")]
+    PushForce,
     Publish {
         // Um único nome de campo: aliases + payload com os dois nomes causavam
         // `duplicate field 'url'` na deserialização (serde trata alias como o
@@ -409,5 +412,11 @@ mod tests {
             }
             _ => panic!("variant errada"),
         }
+    }
+
+    #[test]
+    fn push_force_deserializa() {
+        let req: WriteRequest = serde_json::from_str(r#"{"kind":"pushForce"}"#).unwrap();
+        assert!(matches!(req, WriteRequest::PushForce));
     }
 }

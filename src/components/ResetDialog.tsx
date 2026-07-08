@@ -2,19 +2,18 @@ import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useDialogA11y } from "@/hooks/useDialogA11y";
-import { previewWriteOperation } from "@/lib/api";
 
 export type ResetModeDto = "soft" | "mixed" | "hard";
 
 interface ResetDialogProps {
   open: boolean;
   shortId: string;
-  requiresForcePush?: boolean;
+  /** Aviso: commits posteriores já estão no remoto — force push depois, se quiser. */
+  remoteWillDiverge?: boolean;
   loading?: boolean;
   error?: string | null;
-  commitId: string | null;
   onCancel: () => void;
-  onContinue: (mode: ResetModeDto, forcePush: boolean) => void;
+  onContinue: (mode: ResetModeDto) => void;
 }
 
 const MODES: {
@@ -42,16 +41,13 @@ const MODES: {
 export function ResetDialog({
   open: isOpen,
   shortId,
-  requiresForcePush: requiresForcePushProp = false,
+  remoteWillDiverge = false,
   loading,
   error,
-  commitId,
   onCancel,
   onContinue,
 }: ResetDialogProps) {
   const [mode, setMode] = useState<ResetModeDto>("mixed");
-  const [forcePush, setForcePush] = useState(false);
-  const [requiresForcePush, setRequiresForcePush] = useState(requiresForcePushProp);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useDialogA11y(isOpen, onCancel, panelRef);
@@ -59,38 +55,9 @@ export function ResetDialog({
   useEffect(() => {
     if (!isOpen) return;
     setMode("mixed");
-    setForcePush(requiresForcePushProp);
-    setRequiresForcePush(requiresForcePushProp);
-  }, [isOpen, requiresForcePushProp]);
-
-  useEffect(() => {
-    if (!isOpen || !commitId) return;
-    let cancelled = false;
-    void previewWriteOperation({
-      kind: "reset",
-      commitId,
-      mode: "mixed",
-      forcePush: false,
-    })
-      .then((preview) => {
-        if (cancelled) return;
-        const needs =
-          preview.description.includes("push forçado") ||
-          preview.commands.some((c) => c.includes("force-with-lease"));
-        setRequiresForcePush(needs);
-        if (needs) setForcePush(false);
-      })
-      .catch(() => {
-        /* preview falhou — mantém heurística do pai */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, commitId]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const canContinue = !requiresForcePush || forcePush;
 
   return (
     <div
@@ -146,19 +113,13 @@ export function ResetDialog({
           ))}
         </fieldset>
 
-        {requiresForcePush && (
-          <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-            <input
-              type="checkbox"
-              checked={forcePush}
-              onChange={(e) => setForcePush(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>
-              Enviar histórico reescrito ao remoto com{" "}
-              <span className="font-mono">push --force-with-lease</span> (obrigatório)
-            </span>
-          </label>
+        {remoteWillDiverge && (
+          <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            Commits posteriores já estão no remoto — o reset é só local. Quando
+            quiser publicar o histórico novo, use{" "}
+            <span className="font-medium">Force push</span> no sync (não é
+            obrigatório agora: você pode ajustar stage/working tree antes).
+          </p>
         )}
 
         {error ? (
@@ -178,8 +139,8 @@ export function ResetDialog({
           </button>
           <button
             type="button"
-            disabled={loading || !canContinue}
-            onClick={() => onContinue(mode, forcePush)}
+            disabled={loading}
+            onClick={() => onContinue(mode)}
             className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
             {loading ? "Abrindo preview…" : "Continuar"}
