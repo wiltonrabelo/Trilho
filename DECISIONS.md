@@ -159,8 +159,7 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 
   **UX:** ao stagear/desstagear, atualiza a descrição **somente** se o corpo ainda for a listagem
   automática (ou estiver vazio); se o usuário editou, não sobrescreve. Amend usa a mensagem do HEAD.
-  **Recorte 1:** pré-preencher descrição com a listagem. **Recorte 2 (opcional):** preferência para
-  desligar o pré-preenchimento.
+  Checkbox **«Listar arquivos na descrição»** (ligada por padrão, opt-out em localStorage).
 
 - **RF-24 — Criar tag** (pedido do stakeholder, 2026-07-05): PLANO §RF-24.
 
@@ -314,11 +313,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — reset para commit ancestral (soft/mixed/hard) no painel do commit + preview RF-08 + push forçado quando commits posteriores já estão no remoto
 - [ ] **Recorte 2** — backup automático (stash/ref) antes de hard reset; RF-09 push forçado standalone
 
-## Backlog F4 — Lista de arquivos no commit 🚧
+## Backlog F4 — Lista de arquivos no commit ✅
 
 - [x] **Recorte 1** — pré-preencher a descrição opcional com a listagem staged (`+` / `-` / `~`);
   editável/apagável; atualiza ao mudar o stage se o usuário não customizou o texto
-- [ ] **Recorte 2** — preferência para desligar o pré-preenchimento (opt-out)
+- [x] **Recorte 2** — preferência «Listar arquivos na descrição» (opt-out, persistida em localStorage)
 
 ## Dívidas técnicas pós-revisão M2 — ✅ fechadas (2026-07-05)
 

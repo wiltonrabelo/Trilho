@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  getPrefillCommitFileList,
+  setPrefillCommitFileList,
+} from "@/lib/commit-prefs";
 import { formatStagedFileListText } from "@/lib/staged-file-list";
 import type { FileChangeDto } from "@/types";
 
@@ -36,6 +40,9 @@ export function CommitForm({
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
   const [amend, setAmend] = useState(false);
+  const [prefillFileList, setPrefillFileList] = useState(
+    getPrefillCommitFileList,
+  );
   /** Última listagem injetada automaticamente — se o corpo ainda for igual, atualiza ao mudar o stage. */
   const lastAutoBody = useRef("");
 
@@ -45,14 +52,14 @@ export function CommitForm({
   );
 
   useEffect(() => {
-    if (amend) return;
+    if (amend || !prefillFileList) return;
     setBody((current) => {
       const prev = lastAutoBody.current;
       if (current !== "" && current !== prev) return current;
       lastAutoBody.current = fileListText;
       return fileListText;
     });
-  }, [amend, fileListText]);
+  }, [amend, fileListText, prefillFileList]);
 
   function applyAmendSeed() {
     if (!amendSeed) return;
@@ -68,20 +75,34 @@ export function CommitForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage ao intent explícito
   }, [amendIntent]);
 
+  function togglePrefillFileList(checked: boolean) {
+    setPrefillFileList(checked);
+    setPrefillCommitFileList(checked);
+    if (!checked) {
+      setBody((current) =>
+        current === "" || current === lastAutoBody.current ? "" : current,
+      );
+      lastAutoBody.current = "";
+      return;
+    }
+    lastAutoBody.current = fileListText;
+    setBody((current) =>
+      current === "" || current === lastAutoBody.current
+        ? fileListText
+        : current,
+    );
+  }
+
   function toggleAmend(checked: boolean) {
     setAmend(checked);
     if (checked && amendSeed) {
       applyAmendSeed();
       return;
     }
-    if (!checked) {
+    if (!checked && prefillFileList) {
       lastAutoBody.current = fileListText;
       setBody(fileListText);
     }
-  }
-
-  function onBodyChange(value: string) {
-    setBody(value);
   }
 
   function submit() {
@@ -90,8 +111,12 @@ export function CommitForm({
     onCommit(summary.trim(), body.trim(), amend);
     if (!amend) {
       setSummary("");
-      lastAutoBody.current = fileListText;
-      setBody(fileListText);
+      if (prefillFileList) {
+        lastAutoBody.current = fileListText;
+        setBody(fileListText);
+      } else {
+        setBody("");
+      }
     }
     setAmend(false);
   }
@@ -115,7 +140,7 @@ export function CommitForm({
       />
       <textarea
         value={body}
-        onChange={(e) => onBodyChange(e.target.value)}
+        onChange={(e) => setBody(e.target.value)}
         placeholder="Descrição (opcional)"
         rows={4}
         disabled={busy}
@@ -123,21 +148,33 @@ export function CommitForm({
         className="mb-2 min-h-[5rem] max-h-[min(320px,45vh)] w-full resize-y rounded border border-border bg-bg px-2 py-1.5 font-mono text-xs placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 disabled:opacity-50 disabled:resize-none"
       />
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2">
-          {canAmend ? (
-            <label className="flex items-center gap-1.5 text-xs text-muted">
-              <input
-                type="checkbox"
-                checked={amend}
-                onChange={(e) => toggleAmend(e.target.checked)}
-                disabled={busy}
-                className="rounded border-border"
-              />
-              Amend (último commit local)
-            </label>
-          ) : (
-            <span />
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            {canAmend ? (
+              <label className="flex items-center gap-1.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={amend}
+                  onChange={(e) => toggleAmend(e.target.checked)}
+                  disabled={busy}
+                  className="rounded border-border"
+                />
+                Amend (último commit local)
+              </label>
+            ) : null}
+            {!amend && (
+              <label className="flex items-center gap-1.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={prefillFileList}
+                  onChange={(e) => togglePrefillFileList(e.target.checked)}
+                  disabled={busy}
+                  className="rounded border-border"
+                />
+                Listar arquivos na descrição
+              </label>
+            )}
+          </div>
           <button
             type="button"
             onClick={submit}
