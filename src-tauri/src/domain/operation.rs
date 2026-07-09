@@ -146,6 +146,17 @@ pub enum WriteRequest {
         path: String,
         patch: String,
     },
+    /// RF-20 — aceita um lado inteiro (`git checkout --ours|--theirs` + `git add`).
+    ResolveConflictSide {
+        path: String,
+        /// `ours` | `theirs`
+        side: String,
+    },
+    /// RF-20 — grava conteúdo resolvido no working tree + `git add`.
+    ResolveConflictContent {
+        path: String,
+        content: String,
+    },
     /// Cancela revert em andamento (`git revert --abort`).
     AbortRevert,
     /// Finaliza revert após resolver conflitos (`git revert --continue`).

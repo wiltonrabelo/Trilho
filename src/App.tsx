@@ -39,7 +39,7 @@ import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useStashes } from "@/hooks/useStashes";
 import { useTags } from "@/hooks/useTags";
 import { useSync } from "@/hooks/useSync";
-import { getAppInfo, getRepoInfo, runningInTauri } from "@/lib/api";
+import { getAppInfo, getRepoInfo, getRepoStatus, executeWriteOperation, listCommits, runningInTauri } from "@/lib/api";
 import type { AppInfo, RepoInfo } from "@/types";
 
 function App() {
@@ -249,10 +249,81 @@ function App() {
 
   const activePreview = clone.preview ?? ops.preview;
   const activeLoading = ops.loading || clone.loading;
-  const confirmOperation = useCallback(() => {
-    if (clone.pending) void clone.confirmClone();
-    else void ops.confirm();
-  }, [clone, ops]);
+  const confirmOperation = useCallback(async () => {
+    const pendingKind = ops.pending?.kind;
+    const revertBefore = status?.operationInProgress?.kind === "revert";
+    const headBefore =
+      checkoutHeadCommit?.id ?? commits[0]?.id ?? null;
+
+    if (clone.pending) {
+      await clone.confirmClone();
+      return;
+    }
+
+    const ok = await ops.confirm();
+    if (!ok) return;
+
+    if (pendingKind === "push") {
+      ops.setInfo(
+        `Push concluído para ${sync?.upstream ?? repo?.branch ?? "remoto"}.`,
+      );
+      return;
+    }
+    if (pendingKind === "pushForce") {
+      ops.setInfo(
+        `Force push concluído para ${sync?.upstream ?? repo?.branch ?? "remoto"}.`,
+      );
+      return;
+    }
+
+    const resolvingConflict =
+      pendingKind === "resolveConflictSide" ||
+      pendingKind === "resolveConflictContent";
+    if (!resolvingConflict || !revertBefore) return;
+
+    await refreshStatus();
+    const fresh = await getRepoStatus();
+    const op = fresh.operationInProgress;
+    if (op?.kind !== "revert" || !op.canContinue) return;
+
+    try {
+      await executeWriteOperation({ kind: "continueRevert" });
+      await refreshAll();
+      try {
+        setRepo(await getRepoInfo());
+      } catch {
+        /* repo pode ter fechado */
+      }
+      const latest = await listCommits(1);
+      const newHead = latest[0];
+      const createdRevert =
+        newHead &&
+        headBefore &&
+        newHead.id !== headBefore &&
+        newHead.summary.toLowerCase().includes("revert");
+      if (createdRevert) {
+        ops.setInfo(`Revert concluído: «${newHead.summary}». Use Push para enviar ao remoto.`);
+      } else {
+        ops.setInfo(
+          "Revert encerrado sem novo commit — «Aceitar atual» manteve o arquivo igual ao HEAD. Para desfazer o commit revertido, resolva o conflito com «Aceitar entrando».",
+        );
+      }
+    } catch (e) {
+      ops.setInfo(null);
+      ops.setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [
+    clone,
+    ops,
+    status?.operationInProgress?.kind,
+    checkoutHeadCommit?.id,
+    commits,
+    refreshStatus,
+    refreshAll,
+    setRepo,
+    sync?.upstream,
+    repo?.branch,
+  ]);
   const cancelOperation = useCallback(() => {
     if (clone.pending) clone.cancelPreview();
     else ops.cancel();
@@ -333,6 +404,28 @@ function App() {
     canReset && headCommit && !headCommit.isLocalOnly
       ? "Reset reescreve o histórico local. Se os commits já estão no remoto, use Force push no sync quando quiser publicar (não é automático)."
       : null;
+  const canRevert = Boolean(
+    selectedCommit &&
+      headCommit &&
+      selectedCommit.id !== headCommit.id &&
+      selectedCommit.parentIds.length <= 1 &&
+      !workingCopySelected &&
+      !writeDisabled &&
+      !focusedBranch,
+  );
+  const revertBlockedReason =
+    selectedCommit && !workingCopySelected && !writeDisabled && !canRevert
+      ? focusedBranch
+        ? "Saia do foco de branch para reverter commits."
+        : isSelectedHead
+          ? "Não é possível reverter o HEAD (último commit). Selecione um commit anterior — não merge."
+          : selectedCommit.parentIds.length > 1
+            ? "Revert de commit de merge não está disponível nesta versão. Reverta os commits individuais da branch mesclada."
+            : null
+      : null;
+  const revertInfoHint = canRevert
+    ? "Revert cria um commit local que desfaz o selecionado. Não envia ao remoto — use Push depois."
+    : null;
   const canEditMessageOnHead = Boolean(isSelectedHead && canAmend) && !writeDisabled;
   const messageEditHint =
     selectedCommit && !workingCopySelected && !writeDisabled
@@ -448,6 +541,15 @@ function App() {
   const fileInUntracked = Boolean(
     selectedPath && status?.untracked.some((f) => f.path === selectedPath),
   );
+  const fileConflicted = Boolean(
+    selectedPath &&
+      (status?.staged.some(
+        (f) => f.path === selectedPath && f.kind === "conflicted",
+      ) ||
+        status?.unstaged.some(
+          (f) => f.path === selectedPath && f.kind === "conflicted",
+        )),
+  );
   const detailFilePath = workingCopySelected
     ? selectedFile?.path ?? null
     : selectedFile?.path ?? selectedCommitFile ?? null;
@@ -500,7 +602,11 @@ function App() {
                                   : "Reescrever mensagem"
                                 : ops.pending?.kind === "cherryPick"
                                   ? "Cherry-pick"
-                                  : ops.pending?.kind === "pushForce"
+                                  : ops.pending?.kind === "revert"
+                                    ? "Reverter commit"
+                                    : ops.pending?.kind === "push"
+                                      ? "Enviar ao remoto"
+                                      : ops.pending?.kind === "pushForce"
                                     ? "Push forçado"
                                     : ops.pending?.kind === "discardWorktree" ||
                                   ops.pending?.kind === "discardWorktreeMany" ||
@@ -516,7 +622,12 @@ function App() {
                                       ? "Finalizar merge"
                                       : ops.pending?.kind === "continueCherryPick"
                                         ? "Finalizar cherry-pick"
-                                        : undefined
+                                        : ops.pending?.kind ===
+                                              "resolveConflictSide" ||
+                                            ops.pending?.kind ===
+                                              "resolveConflictContent"
+                                          ? "Resolver conflito"
+                                          : undefined
         }
       />
       <CloneDialog
@@ -677,6 +788,19 @@ function App() {
           {ops.error}
         </div>
       )}
+      {ops.info && (
+        <div className="flex items-start justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-sm text-amber-800 dark:text-amber-200">
+          <p>{ops.info}</p>
+          <button
+            type="button"
+            onClick={() => ops.clearInfo()}
+            className="shrink-0 text-amber-700 hover:text-amber-900 dark:text-amber-300"
+            aria-label="Fechar aviso"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       <header className="flex shrink-0 items-center justify-between border-b border-border bg-header px-4 py-2 text-headerFg">
         <div className="flex items-center gap-3">
           <TrainFront className="text-accent" size={20} />
@@ -739,7 +863,7 @@ function App() {
               }
               loading={fetchLoading}
               pushLoading={ops.loading}
-              error={fetchError}
+              error={fetchError || ops.error}
               onConnect={connect.openDialog}
             />
           )}
@@ -942,14 +1066,16 @@ function App() {
                       }
                       messageEditHint={messageEditHint}
                       onRevert={
-                        selectedCommit && !writeDisabled && !focusedBranch
+                        canRevert
                           ? () =>
                               void ops.request({
                                 kind: "revert",
-                                commitId: selectedCommit.id,
+                                commitId: selectedCommit!.id,
                               })
                           : undefined
                       }
+                      revertBlockedReason={revertBlockedReason}
+                      revertInfoHint={revertInfoHint}
                       onReset={
                         canReset && !writeDisabled ? handleReset : undefined
                       }
@@ -990,12 +1116,9 @@ function App() {
             right={
               <ResizableRows
                 storageKey="trilho.rows.right.v1"
-                defaultTop={280}
+                defaultTop={fileConflicted && workingCopySelected ? 420 : 280}
                 minTop={140}
-                minBottom={200}
-                topMaxHeight={
-                  status?.operationInProgress ? 200 : undefined
-                }
+                minBottom={120}
                 top={
                   <div className="flex h-full min-h-0 flex-col">
                     <div className="min-h-0 flex-1">
@@ -1182,9 +1305,36 @@ function App() {
                       selectedFile &&
                         (fileInStaged || fileInUnstaged || fileInUntracked),
                     )}
-                    showStageFile={fileInUnstaged || fileInUntracked}
-                    showUnstageFile={fileInStaged}
-                    showDiscardFile={fileInUnstaged && !writeDisabled}
+                    conflicted={fileConflicted && workingCopySelected}
+                    conflictOperationKind={status?.operationInProgress?.kind ?? null}
+                    writeDisabled={writeDisabled}
+                    onResolveConflictSide={
+                      fileConflicted && selectedFile && !writeDisabled
+                        ? (side) =>
+                            void ops.request({
+                              kind: "resolveConflictSide",
+                              path: selectedFile.path,
+                              side,
+                            })
+                        : undefined
+                    }
+                    onResolveConflictContent={
+                      fileConflicted && selectedFile && !writeDisabled
+                        ? (content) =>
+                            void ops.request({
+                              kind: "resolveConflictContent",
+                              path: selectedFile.path,
+                              content,
+                            })
+                        : undefined
+                    }
+                    showStageFile={
+                      !fileConflicted && (fileInUnstaged || fileInUntracked)
+                    }
+                    showUnstageFile={!fileConflicted && fileInStaged}
+                    showDiscardFile={
+                      !fileConflicted && fileInUnstaged && !writeDisabled
+                    }
                     showRemoveUntracked={fileInUntracked && !writeDisabled}
                     onStageFile={
                       selectedFile &&

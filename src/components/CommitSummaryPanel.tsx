@@ -6,6 +6,8 @@ interface CommitSummaryPanelProps {
   canEditMessage?: boolean;
   messageEditHint?: string | null;
   onRevert?: () => void;
+  revertBlockedReason?: string | null;
+  revertInfoHint?: string | null;
   onReset?: () => void;
   resetHint?: string | null;
   onCherryPick?: () => void;
@@ -21,6 +23,8 @@ export function CommitSummaryPanel({
   canEditMessage,
   messageEditHint,
   onRevert,
+  revertBlockedReason,
+  revertInfoHint,
   onReset,
   resetHint,
   onCherryPick,
@@ -47,6 +51,11 @@ export function CommitSummaryPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-auto border-t border-border bg-surface/50 px-4 py-3">
+      {revertBlockedReason && (
+        <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
+          {revertBlockedReason}
+        </p>
+      )}
       {showActions && (
         <div className="mb-2 flex flex-wrap gap-2">
           {onRevert && (
@@ -101,6 +110,9 @@ export function CommitSummaryPanel({
       )}
       {cherryPickHint && (
         <p className="mt-2 text-[10px] leading-snug text-muted">{cherryPickHint}</p>
+      )}
+      {revertInfoHint && (
+        <p className="mt-2 text-[10px] leading-snug text-muted">{revertInfoHint}</p>
       )}
       {resetHint && (
         <p className="mt-2 text-[10px] leading-snug text-muted">{resetHint}</p>

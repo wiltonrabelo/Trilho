@@ -178,12 +178,23 @@ pub fn preview_write(
             )
         }
         WriteRequest::Push => {
-            let op = PushUpstream;
-            (
-                ctx.preview_op(&op),
-                op.description().to_string(),
-                gate_push(ctx)?,
-            )
+            let blocked = gate_push(ctx)?;
+            let (commands, description) = if blocked.is_some() {
+                let op = PushUpstream;
+                (ctx.preview_op(&op), op.description().to_string())
+            } else {
+                let op = push_upstream_op(ctx)?;
+                let sync = ctx.reader().get_sync_info()?;
+                (
+                    ctx.preview_op(&op),
+                    format!(
+                        "Envia {} commit(s) locais para {}.",
+                        sync.ahead,
+                        sync.upstream.as_deref().unwrap_or("remoto")
+                    ),
+                )
+            };
+            (commands, description, blocked)
         }
         WriteRequest::PullFfOnly => {
             let op = PullFfOnly;
@@ -383,6 +394,55 @@ pub fn preview_write(
                 ctx.preview_op(&op),
                 format!(
                     "Descarta um trecho de «{path}». Esta ação não pode ser desfeita."
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::ResolveConflictSide { path, side } => {
+            let path = validate_repo_relative_path(git_path_from_display(path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let side_norm = normalize_conflict_side(side)?;
+            let blocked = gate_resolve_conflict(ctx, &path)?;
+            let flag = if side_norm == "ours" {
+                "--ours"
+            } else {
+                "--theirs"
+            };
+            (
+                vec![
+                    format!("git checkout {flag} -- {path}"),
+                    format!("git add -- {path}"),
+                ],
+                format!(
+                    "Resolve o conflito em «{path}» aceitando o lado {side_norm} \
+                     e marca o arquivo como resolvido."
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::ResolveConflictContent { path, content } => {
+            let path = validate_repo_relative_path(git_path_from_display(path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_resolve_conflict(ctx, &path)?;
+            if content.contains("<<<<<<<") || content.contains(">>>>>>>") {
+                return Ok(OperationPreview {
+                    commands: vec![],
+                    description: String::new(),
+                    repo_path: repo_path.to_string(),
+                    blocked: Some(
+                        "O conteúdo ainda contém marcadores de conflito — \
+                         resolva todos os blocos antes de marcar como resolvido."
+                            .into(),
+                    ),
+                });
+            }
+            (
+                vec![
+                    format!("# grava conteúdo resolvido em {path}"),
+                    format!("git add -- {path}"),
+                ],
+                format!(
+                    "Grava a resolução manual de «{path}» e marca o arquivo como resolvido."
                 ),
                 blocked,
             )
@@ -645,7 +705,9 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             }
         }
         WriteRequest::Push => {
-            ctx.execute_op(&PushUpstream)?;
+            let op = push_upstream_op(ctx)?;
+            ctx.execute_op(&op)?;
+            sync_local_upstream_ref(ctx, &op)?;
         }
         WriteRequest::PullFfOnly => {
             ctx.execute_op(&PullFfOnly)?;
@@ -741,6 +803,32 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             let _path = validate_repo_relative_path(git_path_from_display(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&ApplyReversePatch { patch })?;
+        }
+        WriteRequest::ResolveConflictSide { path, side } => {
+            let path = validate_repo_relative_path(git_path_from_display(&path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let side = normalize_conflict_side(&side)?;
+            let choice = if side == "ours" {
+                crate::infrastructure::ConflictSideChoice::Ours
+            } else {
+                crate::infrastructure::ConflictSideChoice::Theirs
+            };
+            crate::infrastructure::resolve_conflict_side(ctx.writer(), &path, choice)?;
+        }
+        WriteRequest::ResolveConflictContent { path, content } => {
+            let path = validate_repo_relative_path(git_path_from_display(&path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            if content.contains("<<<<<<<") || content.contains(">>>>>>>") {
+                return Err(GitError::Git(
+                    "O conteúdo ainda contém marcadores de conflito.".into(),
+                ));
+            }
+            crate::infrastructure::resolve_conflict_content(
+                ctx.repo_path(),
+                ctx.writer(),
+                &path,
+                &content,
+            )?;
         }
         WriteRequest::AbortRevert => {
             ctx.execute_op(&AbortRevert)?;
@@ -952,6 +1040,7 @@ fn execute_publish(ctx: &RepoContext, remote_url: Option<&str>) -> Result<(), Gi
         ctx.execute_op(op.as_ref())?;
     }
     ctx.execute_op(&plan.push)?;
+    sync_local_upstream_ref(ctx, &plan.push)?;
     Ok(())
 }
 
@@ -1530,6 +1619,38 @@ fn gate_push(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     Ok(None)
 }
 
+/// `git push -u <remote> <branch>` — explícito quando o tracking local está incompleto.
+fn push_upstream_op(ctx: &RepoContext) -> Result<PushSetUpstream, GitError> {
+    let sync = ctx.reader().get_sync_info()?;
+    let upstream = sync.upstream.ok_or_else(|| {
+        GitError::Git("Branch sem upstream — use «Publicar» no Trilho.".into())
+    })?;
+    let (remote, branch) = upstream.split_once('/').ok_or_else(|| {
+        GitError::Git(format!("Upstream inválido: {upstream}"))
+    })?;
+    Ok(PushSetUpstream {
+        remote: remote.to_string(),
+        branch: branch.to_string(),
+    })
+}
+
+/// Atualiza `refs/remotes/<remote>/<branch>` após push — refspec restrito (só `main`)
+/// não atualiza o tracking da branch atual no `git fetch` padrão.
+fn sync_local_upstream_ref(ctx: &RepoContext, op: &PushSetUpstream) -> Result<(), GitError> {
+    let head = ctx
+        .writer()
+        .run(&GitCommand {
+            args: vec!["rev-parse".into(), "HEAD".into()],
+        })?
+        .trim()
+        .to_string();
+    let tracking = format!("refs/remotes/{}/{}", op.remote, op.branch);
+    ctx.writer().run(&GitCommand {
+        args: vec!["update-ref".into(), tracking, head],
+    })?;
+    Ok(())
+}
+
 fn gate_pull(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     let sync = ctx.reader().get_sync_info()?;
     if sync.upstream.is_none() {
@@ -1751,6 +1872,31 @@ fn cherry_pick_in_progress(repo_path: &str) -> bool {
     std::path::Path::new(repo_path)
         .join(".git/CHERRY_PICK_HEAD")
         .exists()
+}
+
+fn normalize_conflict_side(side: &str) -> Result<&'static str, GitError> {
+    match side.trim().to_ascii_lowercase().as_str() {
+        "ours" => Ok("ours"),
+        "theirs" => Ok("theirs"),
+        _ => Err(GitError::Git(
+            "Lado inválido — use «ours» (atual) ou «theirs» (entrando).".into(),
+        )),
+    }
+}
+
+fn gate_resolve_conflict(ctx: &RepoContext, path: &str) -> Result<Option<String>, GitError> {
+    let status = ctx.reader().get_status()?;
+    let conflicted = status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .any(|f| f.path == path && f.kind == FileChangeKind::Conflicted);
+    if !conflicted {
+        return Ok(Some(format!(
+            "«{path}» não está marcado como conflito no status."
+        )));
+    }
+    Ok(None)
 }
 
 fn gate_discard_blocked(ctx: &RepoContext) -> Result<Option<String>, GitError> {

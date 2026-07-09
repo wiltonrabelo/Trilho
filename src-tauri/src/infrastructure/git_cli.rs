@@ -202,19 +202,18 @@ impl SafeGitCli {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let combined = format!("{stderr}\n{stdout}");
         let lower = combined.to_lowercase();
-        if output.status.code() == Some(1)
-            && lower.contains("nothing to commit")
-            && skip_args.is_some()
-        {
-            let skip_cmd = GitCommand {
-                args: skip_args
-                    .unwrap()
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect(),
-            };
-            self.run(&skip_cmd)?;
-            return Ok(());
+        if let Some(skip) = skip_args {
+            let no_changes = lower.contains("nothing to commit")
+                || lower.contains("no changes added to commit");
+            let clean_after_failed_continue = output.status.code() == Some(1)
+                && !self.has_unmerged_paths()?;
+            if no_changes || clean_after_failed_continue {
+                let skip_cmd = GitCommand {
+                    args: skip.iter().map(|s| (*s).to_string()).collect(),
+                };
+                self.run(&skip_cmd)?;
+                return Ok(());
+            }
         }
         let detail = if stderr.trim().is_empty() {
             combined
@@ -222,6 +221,30 @@ impl SafeGitCli {
             stderr.into_owned()
         };
         Err(GitError::from_git_stderr(&detail))
+    }
+
+    /// Há entradas não mescladas no `git status --porcelain`.
+    fn has_unmerged_paths(&self) -> Result<bool, GitError> {
+        let out = self.run(&GitCommand {
+            args: vec!["status".into(), "--porcelain=1".into()],
+        })?;
+        Ok(out.lines().any(|line| {
+            let line = line.trim_start();
+            if line.is_empty() {
+                return false;
+            }
+            if line.starts_with('u') {
+                return true;
+            }
+            if line.len() >= 2 {
+                matches!(
+                    &line[..2],
+                    "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD"
+                )
+            } else {
+                false
+            }
+        }))
     }
 }
 

@@ -11,9 +11,11 @@ use crate::infrastructure::{
     get_branch_file_diff, list_branch_diff, list_local_branches as fetch_local_branches,
     list_remote_branches as fetch_remote_branches, list_stashes as fetch_stashes,
     list_tags as fetch_tags, order_refs_by_recent_checkout, repo_info,
-    get_branch_pr_status as fetch_branch_pr_status, validate_compare_ref,
+    get_branch_pr_status as fetch_branch_pr_status, get_conflict_file as fetch_conflict_file,
+    validate_compare_ref,
     validate_git_object_id, validate_repo_relative_path, BranchDiffMode, BranchDiffSummary,
-    BranchPrStatus, CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry, TagEntry,
+    BranchPrStatus, ConflictFileView, CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry,
+    TagEntry,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -546,4 +548,18 @@ pub async fn get_branch_pr_status(state: State<'_, AppState>) -> Result<BranchPr
     tauri::async_runtime::spawn_blocking(move || fetch_branch_pr_status(&remote_url, &branch))
         .await
         .map_err(|e| format!("Consulta de PR interrompida: {e}"))
+}
+
+/// RF-20 — conteúdo 3-vias + regiões de conflito do arquivo.
+#[tauri::command]
+pub async fn get_conflict_file(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<ConflictFileView, String> {
+    let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
+    let repo_path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || fetch_conflict_file(&repo_path, &path))
+        .await
+        .map_err(|e| format!("Leitura de conflito interrompida: {e}"))?
+        .map_err(|e| e.to_string())
 }

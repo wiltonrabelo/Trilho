@@ -223,6 +223,37 @@ export interface BranchPrStatusDto {
   notice: string | null;
 }
 
+/** RF-20 — visão 3-vias de um arquivo em conflito. */
+export interface ConflictSideDto {
+  available: boolean;
+  content: string;
+}
+
+export interface ConflictRegionDto {
+  kind: "context" | "conflict" | string;
+  ours: string;
+  theirs: string;
+  text: string;
+}
+
+export interface ConflictFileViewDto {
+  path: string;
+  base: ConflictSideDto;
+  ours: ConflictSideDto;
+  theirs: ConflictSideDto;
+  worktree: string;
+  regions: ConflictRegionDto[];
+  conflictCount: number;
+  hasMarkers: boolean;
+}
+
+export type ConflictChoiceDto =
+  | "ours"
+  | "theirs"
+  | "both"
+  | "bothTheirsFirst"
+  | { custom: string };
+
 /** Linha da trilha dupla a que o commit pertence. */
 export type TrailKindDto = "current" | "base" | "shared";
 
@@ -294,6 +325,8 @@ export type WriteRequestDto =
   | { kind: "removeUntracked"; path: string }
   | { kind: "removeUntrackedMany"; paths: string[] }
   | { kind: "discardHunk"; path: string; patch: string }
+  | { kind: "resolveConflictSide"; path: string; side: "ours" | "theirs" }
+  | { kind: "resolveConflictContent"; path: string; content: string }
   | { kind: "abortRevert" }
   | { kind: "continueRevert" }
   | { kind: "abortMerge" }

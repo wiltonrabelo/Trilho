@@ -327,6 +327,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 1** — badge no header quando remoto é GitHub e há credencial HTTPS: PR aberto / mergeado / fechado (link para o navegador); cache 60s; falha graciosa (rate limit, rede)
 - [ ] **Recorte 2** — GitHub Enterprise / múltiplos PRs com menu (opcional)
 
+## Backlog F5 — RF-20 Resolução de conflitos 🚧
+
+- [x] **Recorte 1** — leitura 3 vias (stages 1/2/3 via git2) + marcadores no WT; UI no DetailPanel: aceitar atual/entrando (arquivo), escolha por bloco (atual/entrando/ambos/editar), marcar resolvido (`git add`) com preview RF-08
+- [ ] **Recorte 2** — skip/rebase, contagem de blocos na lista de arquivos, testes EOL/CRLF
+
 ## Backlog F4 — Lista de arquivos no commit ✅
 
 - [x] **Recorte 1** — pré-preencher a descrição opcional com a listagem staged (`+` / `-` / `~`);

@@ -29,6 +29,7 @@ import type {
   BranchDiffModeDto,
   BranchDiffSummaryDto,
   BranchPrStatusDto,
+  ConflictFileViewDto,
   WriteRequestDto,
 } from "@/types";
 
@@ -351,6 +352,29 @@ export async function getBranchPrStatus(): Promise<BranchPrStatusDto> {
     };
   }
   return invoke<BranchPrStatusDto>("get_branch_pr_status");
+}
+
+export async function getConflictFile(path: string): Promise<ConflictFileViewDto> {
+  if (!isTauri()) {
+    return {
+      path,
+      base: { available: true, content: "base\n" },
+      ours: { available: true, content: "ours\n" },
+      theirs: { available: true, content: "theirs\n" },
+      worktree: "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n",
+      regions: [
+        {
+          kind: "conflict",
+          ours: "ours\n",
+          theirs: "theirs\n",
+          text: "",
+        },
+      ],
+      conflictCount: 1,
+      hasMarkers: true,
+    };
+  }
+  return invoke<ConflictFileViewDto>("get_conflict_file", { path });
 }
 
 export async function getFileBlame(

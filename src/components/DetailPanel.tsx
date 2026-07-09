@@ -1,7 +1,8 @@
-import { Maximize2, Plus, Trash2, Undo2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Maximize2, Plus, Trash2, Undo2 } from "lucide-react";import { useEffect, useMemo, useState } from "react";
 
 import { BlamePanel } from "@/components/BlamePanel";
+import { ConflictOverlay } from "@/components/ConflictOverlay";
+import { ConflictResolver } from "@/components/ConflictResolver";
 import { DiffOverlay } from "@/components/DiffOverlay";
 import { DiffViewer } from "@/components/DiffViewer";
 import { extractHunks } from "@/lib/diff-hunks";
@@ -22,6 +23,12 @@ interface DetailPanelProps {
   blameError?: string | null;
   onLineClick?: (lineNo: number) => void;
   workingTreeFile?: boolean;
+  /** RF-20 — arquivo em conflito: mostra resolvedor 3-vias. */
+  conflicted?: boolean;
+  conflictOperationKind?: "revert" | "merge" | "cherryPick" | null;
+  writeDisabled?: boolean;
+  onResolveConflictSide?: (side: "ours" | "theirs") => void;
+  onResolveConflictContent?: (content: string) => void;
   showStageFile?: boolean;
   showUnstageFile?: boolean;
   showDiscardFile?: boolean;
@@ -134,6 +141,11 @@ export function DetailPanel({
   blameError,
   onLineClick,
   workingTreeFile,
+  conflicted,
+  conflictOperationKind,
+  writeDisabled,
+  onResolveConflictSide,
+  onResolveConflictContent,
   showStageFile,
   showUnstageFile,
   showDiscardFile,
@@ -145,18 +157,90 @@ export function DetailPanel({
   onDiscardHunk,
 }: DetailPanelProps) {
   const [diffExpanded, setDiffExpanded] = useState(false);
-  const [detailTab, setDetailTab] = useState<DetailTab>("diff");
-  const showBlame = Boolean(filePath);
+  const [conflictExpanded, setConflictExpanded] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>("diff");  const showBlame = Boolean(filePath) && !conflicted;
   const hasDiffContent = Boolean(diff || loading || filePath);
   const hunks = useMemo(
-    () => (diff && showDiscardFile ? extractHunks(diff) : []),
-    [diff, showDiscardFile],
+    () => (diff && showDiscardFile && !conflicted ? extractHunks(diff) : []),
+    [diff, showDiscardFile, conflicted],
   );
 
   useEffect(() => {
     setDiffExpanded(false);
     setDetailTab("diff");
   }, [filePath, commit?.id]);
+
+  useEffect(() => {
+    if (conflicted && filePath) {
+      setConflictExpanded(true);
+    } else {
+      setConflictExpanded(false);
+    }
+  }, [conflicted, filePath]);
+
+  if (
+    conflicted &&
+    filePath &&
+    onResolveConflictSide &&
+    onResolveConflictContent
+  ) {
+    return (
+      <>
+        <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+          {conflictExpanded ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-surface/50 p-6 text-center">
+              <p className="text-xs text-muted">
+                Conflito em <span className="font-mono text-text">{filePath}</span>
+              </p>
+              <p className="text-[11px] text-muted">
+                Resolução aberta em tela cheia — alterações ficam com mais espaço
+                no painel de cima.
+              </p>
+              <button
+                type="button"
+                onClick={() => setConflictExpanded(false)}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text hover:bg-surface"
+              >
+                Restaurar no painel
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex shrink-0 justify-end border-b border-border px-2 py-1">
+                <button
+                  type="button"
+                  onClick={() => setConflictExpanded(true)}
+                  className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-muted hover:bg-surface hover:text-text"
+                  aria-label="Destacar conflito em tela cheia"
+                >
+                  <Maximize2 size={12} />
+                  Destacar conflito
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <ConflictResolver
+                  path={filePath}
+                  operationKind={conflictOperationKind}
+                  writeDisabled={writeDisabled}
+                  onResolveSide={onResolveConflictSide}
+                  onResolveContent={onResolveConflictContent}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <ConflictOverlay
+          open={conflictExpanded}
+          onClose={() => setConflictExpanded(false)}
+          path={filePath}
+          operationKind={conflictOperationKind}
+          writeDisabled={writeDisabled}
+          onResolveSide={onResolveConflictSide}
+          onResolveContent={onResolveConflictContent}
+        />
+      </>
+    );
+  }
 
   if (!commit && !diff && !loading && !showBlame) {
     return (

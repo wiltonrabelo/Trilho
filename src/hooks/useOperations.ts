@@ -13,6 +13,9 @@ export function useOperations(onSuccess: () => Promise<void>) {
   const [pending, setPending] = useState<WriteRequestDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const clearInfo = useCallback(() => setInfo(null), []);
 
   const request = useCallback(async (req: WriteRequestDto) => {
     setLoading(true);
@@ -59,10 +62,11 @@ export function useOperations(onSuccess: () => Promise<void>) {
     setPreview(null);
     setPending(null);
     setError(null);
+    setInfo(null);
   }, []);
 
-  const confirm = useCallback(async () => {
-    if (!pending || preview?.blocked) return;
+  const confirm = useCallback(async (): Promise<boolean> => {
+    if (!pending || preview?.blocked) return false;
     setLoading(true);
     setError(null);
     try {
@@ -74,21 +78,52 @@ export function useOperations(onSuccess: () => Promise<void>) {
       setPreview(null);
       setPending(null);
       await onSuccess();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [pending, preview?.blocked, onSuccess]);
+
+  /** Executa sem diálogo de preview — para ações já confirmadas na UI (ex.: resolver conflito). */
+  const executeDirect = useCallback(
+    async (
+      req: WriteRequestDto,
+      options?: { afterSuccess?: () => Promise<void> },
+    ) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await executeWriteOperation(req);
+        if (options?.afterSuccess) {
+          await options.afterSuccess();
+        } else {
+          await onSuccess();
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [onSuccess],
+  );
 
   return {
     preview,
     pending,
     loading,
     error,
+    info,
     request,
     requestPublish,
     confirm,
     cancel,
+    executeDirect,
+    setInfo,
+    clearInfo,
+    setError,
   };
 }
