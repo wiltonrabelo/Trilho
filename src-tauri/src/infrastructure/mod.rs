@@ -142,11 +142,13 @@ impl TrailReader for MockGitReader {
                 path: "src/App.tsx".into(),
                 kind: FileChangeKind::Modified,
                 staged: false,
+                conflict_blocks: None,
             },
             FileChange {
                 path: "src/lib/graph/layout-lanes.ts".into(),
                 kind: FileChangeKind::Added,
                 staged: false,
+                conflict_blocks: None,
             },
         ])
     }

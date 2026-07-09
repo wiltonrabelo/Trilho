@@ -86,6 +86,9 @@ pub struct FileChange {
     pub path: String,
     pub kind: FileChangeKind,
     pub staged: bool,
+    /// RF-20 — blocos `<<<<<<<` no working tree (só em `conflicted`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_blocks: Option<u32>,
 }
 
 /// Operação Git interrompida (revert/merge/cherry-pick).
@@ -104,6 +107,9 @@ pub struct OperationInProgress {
     pub message: String,
     /// Conflitos resolvidos — pode usar `git revert|merge|cherry-pick --continue`.
     pub can_continue: bool,
+    /// RF-20 — `git revert|cherry-pick --skip` (não aplica a merge).
+    #[serde(default)]
+    pub can_skip: bool,
 }
 
 /// Status agregado do repositório (RF-04).

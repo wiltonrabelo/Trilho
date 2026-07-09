@@ -541,6 +541,34 @@ impl GitOperation for ContinueCherryPick {
     }
 }
 
+/// RF-20 — pula o patch atual do revert (`git revert --skip`).
+pub struct SkipRevert;
+
+impl GitOperation for SkipRevert {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["revert".into(), "--skip".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Pula o patch do revert em andamento sem aplicar as alterações."
+    }
+}
+
+/// RF-20 — pula o patch atual do cherry-pick (`git cherry-pick --skip`).
+pub struct SkipCherryPick;
+
+impl GitOperation for SkipCherryPick {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["cherry-pick".into(), "--skip".into()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Pula o patch do cherry-pick em andamento sem aplicar as alterações."
+    }
+}
+
 pub struct PushSetUpstream {
     pub remote: String,
     pub branch: String,

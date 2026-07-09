@@ -10,6 +10,11 @@ interface RepoPickerProps {
   onRemoveRecent?: (path: string) => void;
   onClone?: () => void;
   loading?: boolean;
+  currentPath?: string | null;
+}
+
+function pathsMatch(a: string, b: string) {
+  return a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
 }
 
 export function RepoPicker({
@@ -18,6 +23,7 @@ export function RepoPicker({
   onRemoveRecent,
   onClone,
   loading,
+  currentPath,
 }: RepoPickerProps) {
   async function pickFolder() {
     if (!runningInTauri()) {
@@ -69,6 +75,7 @@ export function RepoPicker({
           <ul className="space-y-1">
             {recentRepos.map((path) => {
               const name = path.split(/[/\\]/).pop() ?? path;
+              const active = !!currentPath && pathsMatch(path, currentPath);
               return (
                 <li key={path} className="group flex items-center gap-0.5">
                   <button
@@ -76,10 +83,15 @@ export function RepoPicker({
                     disabled={loading}
                     onClick={() => onOpen(path)}
                     aria-label={`Abrir repositório ${path}`}
-                    className="min-w-0 flex-1 truncate rounded px-2 py-1.5 text-left text-xs hover:bg-surface"
+                    className={`min-w-0 flex-1 truncate rounded px-2 py-1.5 text-left text-xs ${
+                      active
+                        ? "bg-accent/15 font-medium text-accent"
+                        : "hover:bg-surface"
+                    }`}
                     title={path}
                   >
                     {name}
+                    {active ? " ✓" : ""}
                   </button>
                   {onRemoveRecent && (
                     <button

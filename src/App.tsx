@@ -618,10 +618,14 @@ function App() {
                                   ? "Remover não rastreado"
                                   : ops.pending?.kind === "continueRevert"
                                     ? "Finalizar revert"
+                                    : ops.pending?.kind === "skipRevert"
+                                      ? "Pular revert"
                                     : ops.pending?.kind === "continueMerge"
                                       ? "Finalizar merge"
                                       : ops.pending?.kind === "continueCherryPick"
                                         ? "Finalizar cherry-pick"
+                                        : ops.pending?.kind === "skipCherryPick"
+                                          ? "Pular cherry-pick"
                                         : ops.pending?.kind ===
                                               "resolveConflictSide" ||
                                             ops.pending?.kind ===
@@ -934,6 +938,7 @@ function App() {
               }
               onClone={runningInTauri() ? clone.openClone : undefined}
               loading={repoLoading}
+              currentPath={repo?.path ?? null}
             />
           </div>
         </main>
@@ -953,6 +958,7 @@ function App() {
                   }
                   onClone={runningInTauri() ? clone.openClone : undefined}
                   loading={repoLoading}
+                  currentPath={repo?.path ?? null}
                 />
                 <RefsPanel
                   branches={branchList.branches}
@@ -1248,6 +1254,18 @@ function App() {
                                     : kind === "merge"
                                       ? { kind: "continueMerge" as const }
                                       : { kind: "continueCherryPick" as const };
+                                void ops.request(req);
+                              }
+                        }
+                        onSkipOperation={
+                          writeDisabled
+                            ? undefined
+                            : (kind) => {
+                                if (kind === "merge") return;
+                                const req =
+                                  kind === "revert"
+                                    ? { kind: "skipRevert" as const }
+                                    : { kind: "skipCherryPick" as const };
                                 void ops.request(req);
                               }
                         }

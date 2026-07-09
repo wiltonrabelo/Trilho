@@ -9,6 +9,7 @@ use crate::domain::{
     InProgressKind, OperationInProgress, RepoStatus, SyncInfo, TrailEntry, TrailKind,
 };
 use crate::infrastructure::blame::blame_file;
+use crate::infrastructure::conflict::count_conflict_markers;
 use crate::infrastructure::git_cli::SafeGitCli;
 use crate::infrastructure::status_parser;
 use crate::infrastructure::validation::validate_git_object_id;
@@ -280,6 +281,7 @@ impl TrailReader for Git2Reader {
                     path,
                     kind,
                     staged: false,
+                    conflict_blocks: None,
                 })
             })
             .collect();
@@ -296,6 +298,33 @@ fn has_merge_conflicts(status: &RepoStatus) -> bool {
         .any(|f| f.kind == FileChangeKind::Conflicted)
 }
 
+/// RF-20 — preenche `conflict_blocks` lendo marcadores no working tree.
+fn enrich_conflict_block_counts(repo_path: &str, status: &mut RepoStatus) {
+    let workdir = Path::new(repo_path);
+    let mut counts: HashMap<String, u32> = HashMap::new();
+    for path in status
+        .staged
+        .iter()
+        .chain(status.unstaged.iter())
+        .filter(|f| f.kind == FileChangeKind::Conflicted)
+        .map(|f| f.path.clone())
+    {
+        if counts.contains_key(&path) {
+            continue;
+        }
+        let full = workdir.join(&path);
+        let n = std::fs::read_to_string(&full)
+            .map(|c| count_conflict_markers(&c))
+            .unwrap_or(0);
+        counts.insert(path, n);
+    }
+    for f in status.staged.iter_mut().chain(status.unstaged.iter_mut()) {
+        if f.kind == FileChangeKind::Conflicted {
+            f.conflict_blocks = counts.get(&f.path).copied();
+        }
+    }
+}
+
 fn detect_operation_in_progress(repo_path: &str, status: &RepoStatus) -> Option<OperationInProgress> {
     let git_dir = Path::new(repo_path).join(".git");
     let conflicts = has_merge_conflicts(status);
@@ -310,6 +339,7 @@ fn detect_operation_in_progress(repo_path: &str, status: &RepoStatus) -> Option<
                     .into()
             },
             can_continue: !conflicts,
+            can_skip: true,
         })
     } else if git_dir.join("MERGE_HEAD").exists() {
         Some(OperationInProgress {
@@ -322,6 +352,7 @@ fn detect_operation_in_progress(repo_path: &str, status: &RepoStatus) -> Option<
                     .into()
             },
             can_continue: !conflicts,
+            can_skip: false,
         })
     } else if git_dir.join("CHERRY_PICK_HEAD").exists() {
         Some(OperationInProgress {
@@ -334,6 +365,7 @@ fn detect_operation_in_progress(repo_path: &str, status: &RepoStatus) -> Option<
                     .into()
             },
             can_continue: !conflicts,
+            can_skip: true,
         })
     } else {
         None
@@ -345,6 +377,7 @@ impl GitReader for Git2Reader {
         let op = StatusPorcelain;
         let output = self.cli.run(&op.command())?;
         let mut status = status_parser::parse_porcelain_v2(&output)?;
+        enrich_conflict_block_counts(&self.repo_path, &mut status);
         status.operation_in_progress = detect_operation_in_progress(&self.repo_path, &status);
         Ok(status)
     }

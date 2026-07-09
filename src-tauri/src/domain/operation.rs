@@ -169,6 +169,10 @@ pub enum WriteRequest {
     AbortCherryPick,
     /// Finaliza cherry-pick após resolver conflitos (`git cherry-pick --continue`).
     ContinueCherryPick,
+    /// RF-20 — pula o patch do revert (`git revert --skip`).
+    SkipRevert,
+    /// RF-20 — pula o patch do cherry-pick (`git cherry-pick --skip`).
+    SkipCherryPick,
     /// RF-16 — reescreve mensagem de commit local via rebase (`git rebase -i`).
     Reword {
         #[serde(rename = "commitId")]

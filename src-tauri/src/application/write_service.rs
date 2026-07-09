@@ -7,7 +7,7 @@ use crate::application::operations::{
     DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushForceWithLease,
     PushSetUpstream, PushTag,
     PushUpstream, RemoveUntracked, RemoveUntrackedMany, ResetCommit, ResetMode, RevertCommit,
-    SetRemoteUrl, Stage,
+    SetRemoteUrl, SkipCherryPick, SkipRevert, Stage,
     StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
     UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
@@ -505,6 +505,22 @@ pub fn preview_write(
                 blocked,
             )
         }
+        WriteRequest::SkipRevert => {
+            let op = SkipRevert;
+            (
+                ctx.preview_op(&op),
+                op.description().to_string(),
+                gate_skip_revert(repo_path)?,
+            )
+        }
+        WriteRequest::SkipCherryPick => {
+            let op = SkipCherryPick;
+            (
+                ctx.preview_op(&op),
+                op.description().to_string(),
+                gate_skip_cherry_pick(repo_path)?,
+            )
+        }
         WriteRequest::Reword {
             commit_id,
             summary,
@@ -847,6 +863,12 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         }
         WriteRequest::ContinueCherryPick => {
             ctx.writer().finish_cherry_pick()?;
+        }
+        WriteRequest::SkipRevert => {
+            ctx.execute_op(&SkipRevert)?;
+        }
+        WriteRequest::SkipCherryPick => {
+            ctx.execute_op(&SkipCherryPick)?;
         }
         WriteRequest::Reword {
             commit_id,
@@ -1246,6 +1268,28 @@ fn gate_abort_revert(repo_path: &str) -> Result<Option<String>, GitError> {
         Ok(None)
     } else {
         Ok(Some("Não há revert em andamento.".into()))
+    }
+}
+
+fn gate_skip_revert(repo_path: &str) -> Result<Option<String>, GitError> {
+    if std::path::Path::new(repo_path)
+        .join(".git/REVERT_HEAD")
+        .exists()
+    {
+        Ok(None)
+    } else {
+        Ok(Some("Não há revert em andamento para pular.".into()))
+    }
+}
+
+fn gate_skip_cherry_pick(repo_path: &str) -> Result<Option<String>, GitError> {
+    if std::path::Path::new(repo_path)
+        .join(".git/CHERRY_PICK_HEAD")
+        .exists()
+    {
+        Ok(None)
+    } else {
+        Ok(Some("Não há cherry-pick em andamento para pular.".into()))
     }
 }
 

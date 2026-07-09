@@ -85,14 +85,17 @@ export interface FileChangeDto {
 
   staged: boolean;
 
+  /** RF-20 — blocos de conflito no arquivo (quando kind === conflicted). */
+  conflictBlocks?: number | null;
+
 }
-
-
 
 export interface OperationInProgressDto {
   kind: "revert" | "merge" | "cherryPick";
   message: string;
   canContinue?: boolean;
+  /** RF-20 — `git revert|cherry-pick --skip` (não aplica a merge). */
+  canSkip?: boolean;
 }
 
 export interface RepoStatusDto {
@@ -329,10 +332,12 @@ export type WriteRequestDto =
   | { kind: "resolveConflictContent"; path: string; content: string }
   | { kind: "abortRevert" }
   | { kind: "continueRevert" }
+  | { kind: "skipRevert" }
   | { kind: "abortMerge" }
   | { kind: "continueMerge" }
   | { kind: "abortCherryPick" }
   | { kind: "continueCherryPick" }
+  | { kind: "skipCherryPick" }
   | {
       kind: "reword";
       commitId: string;

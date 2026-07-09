@@ -28,6 +28,7 @@ pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
                 path: path.to_string(),
                 kind: FileChangeKind::Untracked,
                 staged: false,
+                conflict_blocks: None,
             });
             i += 1;
             continue;
@@ -79,6 +80,7 @@ fn parse_u_entry(entry: &str, staged: &mut Vec<FileChange>, unstaged: &mut Vec<F
         path: path.clone(),
         kind: FileChangeKind::Conflicted,
         staged: true,
+        conflict_blocks: None,
     });
 
     if xy.len() == 2 {
@@ -88,6 +90,7 @@ fn parse_u_entry(entry: &str, staged: &mut Vec<FileChange>, unstaged: &mut Vec<F
                 path,
                 kind: FileChangeKind::Conflicted,
                 staged: false,
+                conflict_blocks: None,
             });
         }
     }
@@ -143,6 +146,7 @@ fn push_xy_changes(
             path: path.to_string(),
             kind: xy_to_kind(index),
             staged: true,
+            conflict_blocks: None,
         });
     }
     if worktree != '.' && worktree != '?' {
@@ -150,6 +154,7 @@ fn push_xy_changes(
             path: path.to_string(),
             kind: xy_to_kind(worktree),
             staged: false,
+            conflict_blocks: None,
         });
     }
 }

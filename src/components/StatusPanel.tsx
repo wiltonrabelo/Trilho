@@ -14,6 +14,7 @@ interface StatusPanelProps {
   operationInProgress?: OperationInProgressDto | null;
   onAbortOperation?: (kind: OperationInProgressDto["kind"]) => void;
   onContinueOperation?: (kind: OperationInProgressDto["kind"]) => void;
+  onSkipOperation?: (kind: OperationInProgressDto["kind"]) => void;
   selectedPath: string | null;
   selectedStaged: boolean | null;
   checkedPaths: ReadonlySet<string>;
@@ -169,6 +170,16 @@ function FileList({
                   <span className="min-w-0 flex-1 break-all font-mono text-xs text-text">
                     {f.path}
                   </span>
+                  {f.kind === "conflicted" &&
+                    typeof f.conflictBlocks === "number" &&
+                    f.conflictBlocks > 0 && (
+                      <span
+                        className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-orange-800 dark:text-orange-200"
+                        title={`${f.conflictBlocks} bloco(s) em conflito`}
+                      >
+                        {f.conflictBlocks} bloco{f.conflictBlocks === 1 ? "" : "s"}
+                      </span>
+                    )}
                 </button>
                 {showStage && (
                   <button
@@ -270,6 +281,7 @@ export function StatusPanel({
   operationInProgress,
   onAbortOperation,
   onContinueOperation,
+  onSkipOperation,
   selectedPath,
   selectedStaged,
   checkedPaths,
@@ -519,6 +531,18 @@ export function StatusPanel({
                     : operationInProgress.kind === "merge"
                       ? "Continuar merge"
                       : "Continuar cherry-pick"}
+                </button>
+              )}
+              {operationInProgress.canSkip && onSkipOperation && (
+                <button
+                  type="button"
+                  onClick={() => onSkipOperation(operationInProgress.kind)}
+                  className="text-[10px] font-medium text-orange-900 underline hover:no-underline dark:text-orange-100"
+                  title="Pula este patch sem aplicar (git --skip)"
+                >
+                  {operationInProgress.kind === "revert"
+                    ? "Pular revert"
+                    : "Pular cherry-pick"}
                 </button>
               )}
               {onAbortOperation && (

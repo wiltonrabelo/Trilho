@@ -124,7 +124,16 @@ fn read_worktree(repo: &Repository, path: &str) -> Result<String, GitError> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// Conta blocos de conflito (`<<<<<<<`) sem alocar regiões.
+pub fn count_conflict_markers(content: &str) -> u32 {
+    content
+        .lines()
+        .filter(|line| line.starts_with("<<<<<<<"))
+        .count() as u32
+}
+
 /// Parseia marcadores padrão do Git (`<<<<<<<`, `=======`, `>>>>>>>`).
+/// Aceita LF e CRLF (`split_inclusive` preserva o terminador de cada linha).
 pub fn parse_conflict_markers(content: &str) -> Vec<ConflictRegion> {
     let lines: Vec<&str> = content.split_inclusive('\n').collect();
     let mut regions = Vec::new();
@@ -326,5 +335,34 @@ mod tests {
         let regions = parse_conflict_markers("<<<<<<<\no\n=======\nt\n>>>>>>>");
         let out = build_resolved_content(&regions, &[ConflictChoice::Both]).unwrap();
         assert_eq!(out, "o\nt\n");
+    }
+
+    #[test]
+    fn parseia_marcadores_com_crlf() {
+        let content = "antes\r\n<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> branch\r\ndepois\r\n";
+        let regions = parse_conflict_markers(content);
+        assert_eq!(regions.len(), 3);
+        assert_eq!(regions[0].kind, "context");
+        assert!(regions[0].text.contains("antes"));
+        assert!(regions[0].text.contains('\r'));
+        assert_eq!(regions[1].kind, "conflict");
+        assert_eq!(regions[1].ours, "ours\r\n");
+        assert_eq!(regions[1].theirs, "theirs\r\n");
+        assert_eq!(count_conflict_markers(content), 1);
+    }
+
+    #[test]
+    fn count_conflict_markers_varios_blocos() {
+        let content = "<<<<<<< a\nx\n=======\ny\n>>>>>>>\n<<<<<<< b\np\n=======\nq\n>>>>>>>";
+        assert_eq!(count_conflict_markers(content), 2);
+    }
+
+    #[test]
+    fn build_resolved_preserva_crlf() {
+        let regions = parse_conflict_markers(
+            "a\r\n<<<<<<<\r\no\r\n=======\r\nt\r\n>>>>>>>\r\nb\r\n",
+        );
+        let out = build_resolved_content(&regions, &[ConflictChoice::Ours]).unwrap();
+        assert_eq!(out, "a\r\no\r\nb\r\n");
     }
 }
