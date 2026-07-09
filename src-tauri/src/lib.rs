@@ -47,6 +47,7 @@ pub fn run() {
             commands::get_file_blame,
             commands::preview_write_operation,
             commands::execute_write_operation,
+            commands::list_audit_log,
             commands::preview_clone_remote,
             commands::list_local_branches,
             commands::list_remote_branches,

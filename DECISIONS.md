@@ -102,7 +102,7 @@
 |------------|-----|---------|------|
 | Média | RF-07 reset, RF-09 force push, RF-13 cherry-pick | Reescrita de histórico | F5 |
 | Média | RF-14, RF-12, RF-20 | Diff branches, PR, conflitos 3-vias | F5 |
-| Baixa | RF-11 | Log de auditoria (7 dias) | F5 |
+| Baixa | RF-11 | Log de auditoria (7 dias) | F5 ✅ |
 
 ### 6. Inteligência e enhancements
 | Prioridade | ID | Entrega | Fase |
@@ -331,6 +331,12 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 
 - [x] **Recorte 1** — leitura 3 vias (stages 1/2/3 via git2) + marcadores no WT; UI no DetailPanel: aceitar atual/entrando (arquivo), escolha por bloco (atual/entrando/ambos/editar), marcar resolvido (`git add`) com preview RF-08
 - [x] **Recorte 2** — contagem de blocos na lista de arquivos; «Pular» (`--skip`) em revert/cherry-pick; testes EOL/CRLF no parsing
+
+## Backlog F5 — RF-11 Log de auditoria ✅
+
+- [x] JSONL diário em `%APPDATA%/…/logs/actions-YYYY-MM-DD.jsonl` (add/commit/push/force/reset/revert/cherry-pick/reword)
+- [x] Retenção 7 dias + purge no startup; sanitização de tokens/URLs com senha
+- [x] UI: botão **Ações** no header → diálogo Histórico de ações (`list_audit_log`)
 
 ## Backlog F4 — Lista de arquivos no commit ✅
 

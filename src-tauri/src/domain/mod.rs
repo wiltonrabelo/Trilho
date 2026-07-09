@@ -1,9 +1,11 @@
 //! Camada de Domínio — entidades puras, sem dependência de infraestrutura.
 
+mod audit;
 mod blame;
 mod branch_origin;
 mod operation;
 
+pub use audit::{AuditAction, AuditEntry, AuditResult};
 pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
 pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetModeDto, WriteRequest};

@@ -31,6 +31,7 @@ import type {
   BranchPrStatusDto,
   ConflictFileViewDto,
   WriteRequestDto,
+  AuditEntryDto,
 } from "@/types";
 
 import { MOCK_APP_INFO, MOCK_COMMITS, MOCK_REPO, MOCK_STATUS } from "@/lib/mock-data";
@@ -457,6 +458,12 @@ export async function executeWriteOperation(
 ): Promise<void> {
   if (!isTauri()) return;
   return invoke("execute_write_operation", { request });
+}
+
+/** RF-11 — entradas do log local (retenção 7 dias). */
+export async function listAuditLog(days = 7): Promise<AuditEntryDto[]> {
+  if (!isTauri()) return [];
+  return invoke<AuditEntryDto[]>("list_audit_log", { days });
 }
 
 export function repoNameFromUrl(url: string): string {

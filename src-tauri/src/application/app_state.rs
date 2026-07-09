@@ -15,6 +15,8 @@ pub struct AppState {
     watch_pending: Arc<AtomicBool>,
     recent_repos: Mutex<Vec<String>>,
     recents_file: PathBuf,
+    /// RF-11 — diretório de dados do app (`%APPDATA%/…`).
+    data_dir: PathBuf,
     watcher: Mutex<Option<RepoWatcher>>,
 }
 
@@ -28,6 +30,8 @@ impl AppState {
         if recent_repos.len() != loaded.len() {
             let _ = save_recents_file(&recents_file, &recent_repos);
         }
+        // RF-11 — expurgo na inicialização.
+        let _ = crate::infrastructure::purge_old_logs(&data_dir);
 
         Ok(Self {
             repo_path: Mutex::new(None),
@@ -36,8 +40,13 @@ impl AppState {
             watch_pending: Arc::new(AtomicBool::new(false)),
             recent_repos: Mutex::new(recent_repos),
             recents_file,
+            data_dir,
             watcher: Mutex::new(None),
         })
+    }
+
+    pub fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
     }
 
     pub fn repo_path(&self) -> Result<String, String> {

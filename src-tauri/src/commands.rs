@@ -400,11 +400,45 @@ pub async fn execute_write_operation(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let ctx = repo_context(&state)?;
-    state
-        .with_watch_suppressed(&app, || execute_write(&ctx, request))
-        .map_err(|e: GitError| e.to_string())?;
+    let data_dir = state.data_dir().clone();
+    let result = state.with_watch_suppressed(&app, || {
+        let preview = match preview_write(&ctx, ctx.repo_path(), &request) {
+            Ok(p) => p,
+            Err(e) => return Err(e),
+        };
+        if let Some(msg) = preview.blocked.clone() {
+            return Err(GitError::Git(msg));
+        }
+        let outcome = execute_write(&ctx, request.clone());
+        crate::application::record_write_outcome(
+            &data_dir,
+            &ctx,
+            &request,
+            &preview,
+            match &outcome {
+                Ok(()) => Ok(()),
+                Err(e) => Err(e),
+            },
+        );
+        outcome
+    });
+    result.map_err(|e: GitError| e.to_string())?;
     let _ = app.emit("repo-changed", ());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_audit_log(
+    days: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::domain::AuditEntry>, String> {
+    let data_dir = state.data_dir().clone();
+    let days = days.unwrap_or(7);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::list_audit_entries(&data_dir, days).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Leitura do log interrompida: {e}"))?
 }
 
 #[tauri::command]

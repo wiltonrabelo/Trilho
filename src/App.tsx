@@ -1,6 +1,7 @@
-import { GitBranch, KeyRound, TrainFront, X } from "lucide-react";
+import { GitBranch, KeyRound, ScrollText, TrainFront, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { AuditLogDialog } from "@/components/AuditLogDialog";
 import { BranchCompareDialog } from "@/components/BranchCompareDialog";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { PrStatusBadge } from "@/components/PrStatusBadge";
@@ -54,6 +55,7 @@ function App() {
   const [cherryPickOpen, setCherryPickOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [branchCompareOpen, setBranchCompareOpen] = useState(false);
+  const [auditLogOpen, setAuditLogOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
 
   const {
@@ -787,6 +789,7 @@ function App() {
         onLogoutAccount={(username) => void connect.logoutAccount(username)}
         onEnableUseHttpPath={() => void connect.enableUseHttpPath()}
       />
+      <AuditLogDialog open={auditLogOpen} onClose={() => setAuditLogOpen(false)} />
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
           {ops.error}
@@ -882,6 +885,17 @@ function App() {
               GitHub
             </button>
           )}
+          {!webOnly && (
+            <button
+              type="button"
+              onClick={() => setAuditLogOpen(true)}
+              className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              title="Histórico de ações (auditoria)"
+            >
+              <ScrollText size={14} />
+              Ações
+            </button>
+          )}
           <ThemeToggle />
         </div>
       </header>
@@ -938,7 +952,7 @@ function App() {
               }
               onClone={runningInTauri() ? clone.openClone : undefined}
               loading={repoLoading}
-              currentPath={repo?.path ?? null}
+              currentPath={null}
             />
           </div>
         </main>

@@ -52,4 +52,5 @@ commands.allow = [
   "execute_clone_remote",
   "get_branch_pr_status",
   "get_conflict_file",
+  "list_audit_log",
 ]

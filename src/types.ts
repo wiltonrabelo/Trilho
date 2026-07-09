@@ -285,6 +285,29 @@ export interface OperationPreviewDto {
   blocked: string | null;
 }
 
+/** RF-11 — entrada do log de auditoria (7 dias). */
+export type AuditActionDto =
+  | "add"
+  | "commit"
+  | "push"
+  | "pushForce"
+  | "reset"
+  | "revert"
+  | "cherryPick"
+  | "reword";
+
+export interface AuditEntryDto {
+  timestamp: string;
+  action: AuditActionDto;
+  command: string;
+  repo: string;
+  branch?: string | null;
+  commits?: string[];
+  result: "success" | "error";
+  error?: string | null;
+  fromAssistant?: boolean;
+}
+
 export type WriteRequestDto =
   | { kind: "stage"; path: string }
   | { kind: "stageMany"; paths: string[] }

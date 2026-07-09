@@ -5,6 +5,7 @@ mod blame_parser;
 mod branch_diff;
 mod branch_order;
 mod branches;
+mod audit_log;
 mod conflict;
 mod credential;
 mod github_pr;
@@ -38,6 +39,10 @@ pub use credential::{
 pub use conflict::{
     get_conflict_file, resolve_conflict_content, resolve_conflict_side, ConflictFileView,
     ConflictSideChoice,
+};
+pub use audit_log::{
+    append_entry as append_audit_entry, list_entries as list_audit_entries, now_timestamp,
+    purge_old_logs, sanitize_for_audit,
 };
 pub use github_pr::{get_branch_pr_status, BranchPrStatus};
 pub use git2_reader::{repo_info, Git2Reader};
