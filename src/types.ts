@@ -397,3 +397,39 @@ export interface CloneResultDto {
   repo: RepoInfo;
   warning?: string | null;
 }
+
+/** RF-21 — assistente LLM. */
+export type LlmProviderKindDto = "ollama" | "openAi" | "anthropic";
+
+export interface AssistantSettingsDto {
+  enabled: boolean;
+  provider: LlmProviderKindDto;
+  model: string;
+  ollamaBaseUrl: string;
+  sendMetadata: boolean;
+  sendDiffs: boolean;
+}
+
+export interface AssistantSettingsViewDto extends AssistantSettingsDto {
+  hasOpenaiKey: boolean;
+  hasAnthropicKey: boolean;
+}
+
+export interface ChatMessageDto {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export interface AssistantUiContextDto {
+  selectedCommitId?: string | null;
+  selectedCommitSummary?: string | null;
+  selectedFilePath?: string | null;
+  blameFocusLine?: number | null;
+  workingCopySelected?: boolean;
+}
+
+export interface ChatAssistantResponseDto {
+  reply: string;
+  pendingWrites: WriteRequestDto[];
+  notice?: string | null;
+}

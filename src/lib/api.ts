@@ -32,6 +32,11 @@ import type {
   ConflictFileViewDto,
   WriteRequestDto,
   AuditEntryDto,
+  AssistantSettingsDto,
+  AssistantSettingsViewDto,
+  ChatAssistantResponseDto,
+  ChatMessageDto,
+  AssistantUiContextDto,
 } from "@/types";
 
 import { MOCK_APP_INFO, MOCK_COMMITS, MOCK_REPO, MOCK_STATUS } from "@/lib/mock-data";
@@ -455,15 +460,80 @@ export async function previewWriteOperation(
 
 export async function executeWriteOperation(
   request: WriteRequestDto,
+  options?: { fromAssistant?: boolean },
 ): Promise<void> {
   if (!isTauri()) return;
-  return invoke("execute_write_operation", { request });
+  return invoke("execute_write_operation", {
+    request,
+    fromAssistant: options?.fromAssistant ?? false,
+  });
 }
 
 /** RF-11 — entradas do log local (retenção 7 dias). */
 export async function listAuditLog(days = 7): Promise<AuditEntryDto[]> {
   if (!isTauri()) return [];
   return invoke<AuditEntryDto[]>("list_audit_log", { days });
+}
+
+/** RF-21 — settings do assistente. */
+export async function getAssistantSettings(): Promise<AssistantSettingsViewDto> {
+  if (!isTauri()) {
+    return {
+      enabled: false,
+      provider: "ollama",
+      model: "llama3.2",
+      ollamaBaseUrl: "http://127.0.0.1:11434",
+      sendMetadata: true,
+      sendDiffs: false,
+      hasOpenaiKey: false,
+      hasAnthropicKey: false,
+    };
+  }
+  return invoke<AssistantSettingsViewDto>("get_assistant_settings");
+}
+
+export async function setAssistantSettings(
+  settings: AssistantSettingsDto,
+): Promise<AssistantSettingsViewDto> {
+  if (!isTauri()) {
+    return { ...settings, hasOpenaiKey: false, hasAnthropicKey: false };
+  }
+  return invoke<AssistantSettingsViewDto>("set_assistant_settings", { settings });
+}
+
+export async function setLlmApiKey(
+  provider: "openai" | "anthropic",
+  key: string,
+): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("set_llm_api_key", { provider, key });
+}
+
+export async function clearLlmApiKey(
+  provider: "openai" | "anthropic",
+): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("clear_llm_api_key", { provider });
+}
+
+export async function testLlmConnection(): Promise<string> {
+  if (!isTauri()) return "mock OK";
+  return invoke<string>("test_llm_connection");
+}
+
+export async function chatAssistant(
+  messages: ChatMessageDto[],
+  uiContext?: AssistantUiContextDto | null,
+): Promise<ChatAssistantResponseDto> {
+  if (!isTauri()) {
+    return {
+      reply: "Assistente disponível apenas no app desktop.",
+      pendingWrites: [],
+    };
+  }
+  return invoke<ChatAssistantResponseDto>("chat_assistant", {
+    request: { messages, uiContext: uiContext ?? null },
+  });
 }
 
 export function repoNameFromUrl(url: string): string {

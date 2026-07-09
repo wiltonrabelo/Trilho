@@ -66,6 +66,7 @@ pub fn record_write_outcome(
     req: &WriteRequest,
     preview: &OperationPreview,
     outcome: Result<(), &GitError>,
+    from_assistant: bool,
 ) {
     let Some(action) = audit_action_for(req) else {
         return;
@@ -83,7 +84,7 @@ pub fn record_write_outcome(
         commits: commits_for(req),
         result,
         error,
-        from_assistant: false,
+        from_assistant,
     };
     let _ = append_audit_entry(app_data_dir, entry);
 }

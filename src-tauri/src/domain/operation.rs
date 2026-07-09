@@ -38,7 +38,7 @@ pub struct CloneResult {
 }
 
 /// Pedido de operação de escrita — espelha o frontend.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum WriteRequest {
     Stage {
@@ -210,7 +210,7 @@ fn default_true() -> bool {
 }
 
 /// Modo de `git reset` exposto ao frontend (RF-07).
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ResetModeDto {
     Soft,

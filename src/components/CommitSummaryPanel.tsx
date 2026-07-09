@@ -50,7 +50,7 @@ export function CommitSummaryPanel({
     (canEditMessage && onEditMessage);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-auto border-t border-border bg-surface/50 px-4 py-3">
+    <div className="flex h-full min-h-0 flex-col overflow-auto px-4 py-3">
       {revertBlockedReason && (
         <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
           {revertBlockedReason}

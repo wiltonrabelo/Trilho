@@ -53,4 +53,10 @@ commands.allow = [
   "get_branch_pr_status",
   "get_conflict_file",
   "list_audit_log",
+  "get_assistant_settings",
+  "set_assistant_settings",
+  "set_llm_api_key",
+  "clear_llm_api_key",
+  "test_llm_connection",
+  "chat_assistant",
 ]

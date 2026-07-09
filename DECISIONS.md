@@ -107,7 +107,7 @@
 ### 6. Inteligência e enhancements
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
-| Baixa | **RF-21** | Assistente LLM → ações allowlisted | F7 |
+| Baixa | **RF-21** | Assistente LLM → ações allowlisted | F7 ✅ |
 | — | — | Trilha comparada de duas branches | — |
 
 Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §RF-24).
@@ -337,6 +337,13 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] JSONL diário em `%APPDATA%/…/logs/actions-YYYY-MM-DD.jsonl` (add/commit/push/force/reset/revert/cherry-pick/reword)
 - [x] Retenção 7 dias + purge no startup; sanitização de tokens/URLs com senha
 - [x] UI: botão **Ações** no header → diálogo Histórico de ações (`list_audit_log`)
+
+## Backlog F7 — RF-21 Assistente LLM ✅
+
+- [x] **Recorte 1** — porta `LlmProvider` (Ollama / OpenAI / Anthropic); opt-in off; chaves no Credential Manager; allowlist leitura + stage/unstage/commit/fetch; writes via RF-08; `from_assistant` no audit; abas **Detalhes | Assistente** no painel sob o grafo (mesmo padrão Diff/Blame)
+- [x] **Recorte 2** — push / pull `--ff-only` / revert / cherry-pick via assistente (ainda RF-08); reset e force push continuam default-deny
+- [x] **Recorte 3** — contexto de UI (commit/arquivo/linha) + tools `get_commit_summary` / `get_file_blame`
+- [x] **Ajuda do produto** — catálogo embutido + tool `get_trilho_help` (dúvidas sobre funcionalidades)
 
 ## Backlog F4 — Lista de arquivos no commit ✅
 

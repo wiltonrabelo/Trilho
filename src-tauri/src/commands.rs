@@ -396,11 +396,13 @@ pub async fn preview_write_operation(
 #[tauri::command]
 pub async fn execute_write_operation(
     request: WriteRequest,
+    from_assistant: Option<bool>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let ctx = repo_context(&state)?;
     let data_dir = state.data_dir().clone();
+    let from_assistant = from_assistant.unwrap_or(false);
     let result = state.with_watch_suppressed(&app, || {
         let preview = match preview_write(&ctx, ctx.repo_path(), &request) {
             Ok(p) => p,
@@ -419,6 +421,7 @@ pub async fn execute_write_operation(
                 Ok(()) => Ok(()),
                 Err(e) => Err(e),
             },
+            from_assistant,
         );
         outcome
     });
@@ -596,4 +599,99 @@ pub async fn get_conflict_file(
         .await
         .map_err(|e| format!("Leitura de conflito interrompida: {e}"))?
         .map_err(|e| e.to_string())
+}
+
+/// RF-21 — preferências do assistente (sem API keys).
+#[tauri::command]
+pub async fn get_assistant_settings(
+    state: State<'_, AppState>,
+) -> Result<crate::domain::AssistantSettingsView, String> {
+    let data_dir = state.data_dir().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = crate::infrastructure::load_assistant_settings(&data_dir);
+        Ok::<_, String>(crate::domain::AssistantSettingsView {
+            settings,
+            has_openai_key: crate::infrastructure::has_llm_api_key("openai"),
+            has_anthropic_key: crate::infrastructure::has_llm_api_key("anthropic"),
+        })
+    })
+    .await
+    .map_err(|e| format!("Leitura de settings interrompida: {e}"))?
+}
+
+#[tauri::command]
+pub async fn set_assistant_settings(
+    settings: crate::domain::AssistantSettings,
+    state: State<'_, AppState>,
+) -> Result<crate::domain::AssistantSettingsView, String> {
+    let data_dir = state.data_dir().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::save_assistant_settings(&data_dir, &settings)
+            .map_err(|e| e.to_string())?;
+        Ok::<_, String>(crate::domain::AssistantSettingsView {
+            settings,
+            has_openai_key: crate::infrastructure::has_llm_api_key("openai"),
+            has_anthropic_key: crate::infrastructure::has_llm_api_key("anthropic"),
+        })
+    })
+    .await
+    .map_err(|e| format!("Gravação de settings interrompida: {e}"))?
+}
+
+#[tauri::command]
+pub async fn set_llm_api_key(provider: String, key: String) -> Result<(), String> {
+    let provider = provider.to_lowercase();
+    if provider != "openai" && provider != "anthropic" {
+        return Err("Provedor inválido (use openai ou anthropic).".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::store_llm_api_key(&provider, &key)
+    })
+    .await
+    .map_err(|e| format!("Salvar chave interrompido: {e}"))?
+}
+
+#[tauri::command]
+pub async fn clear_llm_api_key(provider: String) -> Result<(), String> {
+    let provider = provider.to_lowercase();
+    if provider != "openai" && provider != "anthropic" {
+        return Err("Provedor inválido (use openai ou anthropic).".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::clear_llm_api_key(&provider)
+    })
+    .await
+    .map_err(|e| format!("Remover chave interrompido: {e}"))?
+}
+
+#[tauri::command]
+pub async fn test_llm_connection(state: State<'_, AppState>) -> Result<String, String> {
+    let data_dir = state.data_dir().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = crate::infrastructure::load_assistant_settings(&data_dir);
+        crate::application::test_llm_connection(&settings).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Teste LLM interrompido: {e}"))?
+}
+
+#[tauri::command]
+pub async fn chat_assistant(
+    request: crate::domain::ChatAssistantRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::domain::ChatAssistantResponse, String> {
+    let ctx = repo_context(&state)?;
+    let data_dir = state.data_dir().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = crate::infrastructure::load_assistant_settings(&data_dir);
+        crate::application::run_assistant_chat(
+            &ctx,
+            &settings,
+            &request.messages,
+            request.ui_context.as_ref(),
+        )
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Chat interrompido: {e}"))?
 }

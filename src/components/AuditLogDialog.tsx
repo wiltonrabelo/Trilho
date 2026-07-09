@@ -128,6 +128,11 @@ export function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
                         falhou
                       </span>
                     )}
+                    {e.fromAssistant && (
+                      <span className="text-[10px] font-medium text-muted">
+                        assistente
+                      </span>
+                    )}
                   </div>
                   <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[10px] text-text">
                     {e.command}

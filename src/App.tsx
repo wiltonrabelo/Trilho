@@ -5,12 +5,12 @@ import { AuditLogDialog } from "@/components/AuditLogDialog";
 import { BranchCompareDialog } from "@/components/BranchCompareDialog";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { PrStatusBadge } from "@/components/PrStatusBadge";
+import { CommitCenterPanel } from "@/components/CommitCenterPanel";
 import { ConnectDialog } from "@/components/ConnectDialog";
 import { CloneDialog } from "@/components/CloneDialog";
 import { CherryPickDialog } from "@/components/CherryPickDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
-import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
@@ -1073,7 +1073,7 @@ function App() {
                     />
                   }
                   bottom={
-                    <CommitSummaryPanel
+                    <CommitCenterPanel
                       commit={
                         workingCopySelected ? null : selectedCommit
                       }
@@ -1127,6 +1127,21 @@ function App() {
                         canUncommit && !writeDisabled
                           ? () => void ops.request({ kind: "uncommit" })
                           : undefined
+                      }
+                      writeDisabled={writeDisabled}
+                      uiContext={{
+                        selectedCommitId: workingCopySelected
+                          ? null
+                          : selectedCommit?.id ?? null,
+                        selectedCommitSummary: workingCopySelected
+                          ? null
+                          : selectedCommit?.summary ?? null,
+                        selectedFilePath: detailFilePath,
+                        blameFocusLine: blameFocusLine,
+                        workingCopySelected,
+                      }}
+                      onProposeWrite={(req) =>
+                        void ops.request(req, { fromAssistant: true })
                       }
                     />
                   }

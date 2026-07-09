@@ -1,5 +1,6 @@
 //! Camada de Infraestrutura — adaptadores concretos.
 
+mod assistant_settings;
 mod blame;
 mod blame_parser;
 mod branch_diff;
@@ -11,6 +12,8 @@ mod credential;
 mod github_pr;
 mod git2_reader;
 mod git_cli;
+pub mod llm;
+mod llm_credentials;
 mod reword;
 mod repo_watcher;
 mod ssh_keys;
@@ -40,9 +43,13 @@ pub use conflict::{
     get_conflict_file, resolve_conflict_content, resolve_conflict_side, ConflictFileView,
     ConflictSideChoice,
 };
+pub use assistant_settings::{load_settings as load_assistant_settings, save_settings as save_assistant_settings};
 pub use audit_log::{
     append_entry as append_audit_entry, list_entries as list_audit_entries, now_timestamp,
     purge_old_logs, sanitize_for_audit,
+};
+pub use llm_credentials::{
+    clear_llm_api_key, get_llm_api_key, has_llm_api_key, store_llm_api_key,
 };
 pub use github_pr::{get_branch_pr_status, BranchPrStatus};
 pub use git2_reader::{repo_info, Git2Reader};

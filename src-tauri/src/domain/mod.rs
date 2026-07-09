@@ -1,14 +1,21 @@
 //! Camada de Domínio — entidades puras, sem dependência de infraestrutura.
 
+mod assistant;
 mod audit;
 mod blame;
 mod branch_origin;
 mod operation;
+mod trilho_help;
 
+pub use assistant::{
+    AssistantSettings, AssistantSettingsView, AssistantUiContext, ChatAssistantRequest,
+    ChatAssistantResponse, ChatMessageDto, LlmProviderKind,
+};
 pub use audit::{AuditAction, AuditEntry, AuditResult};
 pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
 pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetModeDto, WriteRequest};
+pub use trilho_help::help_for_topic;
 
 use serde::{Deserialize, Serialize};
 /// Um commit da trilha (RF-01). Serializa em camelCase para o frontend.

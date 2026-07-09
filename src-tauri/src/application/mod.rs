@@ -1,21 +1,25 @@
 //! Camada de Aplicação — portas (traits) e estado compartilhado.
 
+mod assistant_service;
 mod backup_ref;
 mod clone_post_check;
 mod clone_service;
 mod app_state;
 mod audit_service;
 mod branch_origin;
+mod llm_provider;
 mod operations;
 mod repo_context;
 mod write_gates;
 mod write_service;
 
+pub use assistant_service::{run_chat as run_assistant_chat, test_connection as test_llm_connection};
 pub use clone_post_check::validate_post_clone;
 pub use clone_service::{execute_clone, list_clone_remote_branches, preview_clone};
 pub use app_state::AppState;
 pub use audit_service::record_write_outcome;
 pub use branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};
+pub use llm_provider::{LlmChatRequest, LlmChatResponse, LlmMessage, LlmProvider, LlmToolCall, LlmToolDef};
 pub use operations::{
     CommitFileDiff, FetchRemote, FileDiff, GitOperation, RevListAheadBehind, ShowCommit,
     StatusPorcelain,
