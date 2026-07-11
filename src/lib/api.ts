@@ -186,6 +186,12 @@ export async function getFileDiff(
 
 }
 
+/** Conteúdo do arquivo no working tree (editor interno). */
+export async function readWorktreeFile(path: string): Promise<string> {
+  if (!isTauri()) return `// mock — ${path}\n`;
+  return invoke<string>("read_worktree_file", { path });
+}
+
 
 
 export async function getCommitDiff(commitId: string): Promise<string> {
@@ -306,9 +312,12 @@ export async function triggerGithubLogin(
   return invoke("trigger_github_login", { remoteUrl: remoteUrl ?? null });
 }
 
-export async function storeGithubPat(pat: string): Promise<void> {
+export async function storeGithubPat(
+  pat: string,
+  remoteUrl?: string | null,
+): Promise<void> {
   if (!isTauri()) return;
-  return invoke("store_github_pat", { pat });
+  return invoke("store_github_pat", { pat, remoteUrl: remoteUrl ?? null });
 }
 
 export async function logoutGithubAccount(username: string): Promise<void> {
@@ -351,7 +360,12 @@ export async function getBranchPrStatus(): Promise<BranchPrStatusDto> {
   if (!isTauri()) {
     return {
       visible: true,
-      open: [{ number: 42, title: "Mock PR aberto", url: "https://github.com/mock/repo/pull/42" }],
+      open: [{
+        number: 42,
+        title: "Mock PR aberto",
+        url: "https://github.com/mock/repo/pull/42",
+        baseBranch: "develop",
+      }],
       merged: [],
       closed: [],
       notice: null,

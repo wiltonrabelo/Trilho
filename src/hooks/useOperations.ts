@@ -126,6 +126,7 @@ export function useOperations(onSuccess: () => Promise<void>) {
   return {
     preview,
     pending,
+    fromAssistant,
     loading,
     error,
     info,

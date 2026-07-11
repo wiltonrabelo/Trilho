@@ -1,8 +1,12 @@
 //! Detecção e assistente de credenciais GitHub (RF-10).
 
 use crate::infrastructure::ssh_keys::list_ssh_keys;
+use crate::infrastructure::github_pat_store::{
+    load_pat_file, save_pat_file, session_pat_token,
+};
 use serde::Serialize;
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -296,8 +300,12 @@ pub fn trigger_github_login(remote_url: Option<&str>) -> Result<(), String> {
     ))
 }
 
-/// Armazena PAT do GitHub via `git credential approve` (Windows Credential Manager).
-pub fn store_github_pat(pat: &str) -> Result<(), String> {
+/// Armazena PAT do GitHub (arquivo local do Trilho + GCM opcional).
+pub fn store_github_pat(
+    pat: &str,
+    remote_url: Option<&str>,
+    data_dir: &Path,
+) -> Result<(), String> {
     let pat = pat.trim();
     if pat.is_empty() {
         return Err("Informe o token de acesso pessoal.".into());
@@ -305,12 +313,42 @@ pub fn store_github_pat(pat: &str) -> Result<(), String> {
     if pat.contains('\n') || pat.contains('\r') {
         return Err("Token inválido.".into());
     }
+    if !is_github_pat_token(pat) {
+        return Err(
+            "Use um Personal Access Token (ghp_… ou github_pat_…), não token OAuth do login GitHub."
+                .into(),
+        );
+    }
 
-    ensure_gcm_configured()?;
+    validate_github_pat_live(pat)?;
 
-    let input = format!(
-        "protocol=https\nhost=github.com\nusername=git\npassword={pat}\n\n"
-    );
+    if let Some(url) = remote_url.filter(|u| !u.trim().is_empty()) {
+        if let Some(slug) = crate::infrastructure::validation::parse_github_slug_from_remote(url) {
+            validate_github_pat_repo_access(pat, &slug)?;
+        }
+    }
+
+    save_pat_file(data_dir, pat).map_err(|e| e.to_string())?;
+
+    let _ = ensure_gcm_configured();
+    let _ = approve_github_pat("github.com", None, pat);
+    if let Some(url) = remote_url.filter(|u| !u.trim().is_empty()) {
+        if let Some(slug) = crate::infrastructure::validation::parse_github_slug_from_remote(url) {
+            let path = crate::infrastructure::validation::github_credential_path(&slug);
+            let _ = approve_github_pat(&slug.host, Some(&path), pat);
+        }
+    }
+
+    Ok(())
+}
+
+fn approve_github_pat(host: &str, path: Option<&str>, pat: &str) -> Result<(), String> {
+    let mut input = format!("protocol=https\nhost={host}\nusername=git\n");
+    if let Some(path) = path.filter(|p| !p.is_empty()) {
+        input.push_str(&format!("path={}\n", path.trim_start_matches('/')));
+    }
+    input.push_str(&format!("password={pat}\n\n"));
+
     let mut child = Command::new("git")
         .args(["credential", "approve"])
         .stdin(Stdio::piped())
@@ -333,13 +371,78 @@ pub fn store_github_pat(pat: &str) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Não foi possível salvar o token: {stderr}"));
     }
+    Ok(())
+}
 
-    if !probe_github_credential().connected {
-        return Err(
-            "Token salvo, mas o helper não confirmou a credencial — verifique o token.".into(),
-        );
-    }
+/// Valida PAT contra o repositório alvo (detecta SSO / escopo repo).
+fn validate_github_pat_repo_access(
+    pat: &str,
+    slug: &crate::infrastructure::validation::GithubSlug,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/repos/{}/{}",
+        slug.api_base_url(),
+        slug.owner,
+        slug.repo
+    );
+    ureq::get(&url)
+        .set("User-Agent", "Trilho/0.1")
+        .set("Accept", "application/vnd.github+json")
+        .set("X-GitHub-Api-Version", "2022-11-28")
+        .set("Authorization", &format!("Bearer {pat}"))
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(404, _) => format!(
+                "Token sem acesso ao repositório {}/{} — marque escopo «repo» e autorize SSO da organização",
+                slug.owner, slug.repo
+            ),
+            ureq::Error::Status(403, resp) => {
+                let body = resp.into_string().unwrap_or_default();
+                if body.to_lowercase().contains("sso") {
+                    format!(
+                        "Token OK, mas falta autorizar SSO da organização «{}» em github.com/settings/tokens",
+                        slug.owner
+                    )
+                } else {
+                    format!(
+                        "Token sem permissão para {}/{} — verifique escopo repo no PAT",
+                        slug.owner, slug.repo
+                    )
+                }
+            }
+            ureq::Error::Status(401, _) => {
+                "Token inválido ou expirado — gere outro em github.com/settings/tokens".into()
+            }
+            ureq::Error::Transport(t) => format!("Sem rede para validar o token: {t}"),
+            ureq::Error::Status(code, _) => format!("GitHub respondeu HTTP {code}"),
+        })?;
+    Ok(())
+}
 
+/// Valida PAT contra a API do GitHub antes de persistir.
+fn validate_github_pat_live(pat: &str) -> Result<(), String> {
+    ureq::get("https://api.github.com/user")
+        .set("User-Agent", "Trilho/0.1")
+        .set("Accept", "application/vnd.github+json")
+        .set("X-GitHub-Api-Version", "2022-11-28")
+        .set("Authorization", &format!("Bearer {pat}"))
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) => {
+                "Token inválido ou expirado — gere outro em github.com/settings/tokens".into()
+            }
+            ureq::Error::Status(403, resp) => {
+                let body = resp.into_string().unwrap_or_default();
+                if body.to_lowercase().contains("sso") {
+                    "Token OK, mas falta autorizar SSO da organização em github.com/settings/tokens"
+                        .into()
+                } else {
+                    "Token sem permissão — marque o escopo «repo» ao criar o PAT".into()
+                }
+            }
+            ureq::Error::Transport(t) => format!("Sem rede para validar o token: {t}"),
+            ureq::Error::Status(code, _) => format!("GitHub respondeu HTTP {code}"),
+        })?;
     Ok(())
 }
 
@@ -358,21 +461,94 @@ fn try_gcm_github_login() -> bool {
 }
 
 fn probe_github_credential() -> GithubCredentialProbe {
-    let fill = run_credential_fill(b"protocol=https\nhost=github.com\n\n");
+    for input in [
+        b"protocol=https\nhost=github.com\nusername=git\n\n".as_slice(),
+        b"protocol=https\nhost=github.com\n\n".as_slice(),
+    ] {
+        let fill = run_credential_fill(input);
+        if fill.password.as_ref().is_some_and(|p| !p.is_empty()) {
+            return GithubCredentialProbe {
+                connected: true,
+                username: fill.username,
+            };
+        }
+    }
     GithubCredentialProbe {
-        connected: fill.password.as_ref().is_some_and(|p| !p.is_empty()),
-        username: fill.username,
+        connected: false,
+        username: None,
     }
 }
 
-/// Token HTTPS para a API GitHub (password do credential helper).
+/// Token HTTPS para a API GitHub / GHE (password do credential helper).
 pub fn get_github_api_token(credential_path: Option<&str>) -> Option<String> {
-    let mut input = String::from("protocol=https\nhost=github.com\n");
-    if read_github_use_http_path() {
-        if let Some(path) = credential_path.filter(|p| !p.is_empty()) {
-            let path = path.trim_start_matches('/');
-            input.push_str(&format!("path={path}\n"));
+    get_github_api_token_for_host("github.com", credential_path)
+}
+
+/// Token para um host específico (github.com ou GHE).
+pub fn get_github_api_token_for_host(
+    host: &str,
+    credential_path: Option<&str>,
+) -> Option<String> {
+    let host = host.trim();
+    if host.is_empty() {
+        return None;
+    }
+    if let Some(path) = credential_path.filter(|p| !p.is_empty()) {
+        if let Some(token) = fetch_github_token(host, Some(path), Some("git")) {
+            return Some(token);
         }
+        if let Some(token) = fetch_github_token(host, Some(path), None) {
+            return Some(token);
+        }
+    }
+    fetch_github_token(host, None, Some("git"))
+        .or_else(|| fetch_github_token(host, None, None))
+}
+
+/// Token para API REST — PAT salvo no Trilho primeiro; depois GCM (só ghp_/github_pat_).
+pub fn resolve_github_api_token(
+    slug: &crate::infrastructure::validation::GithubSlug,
+    data_dir: Option<&Path>,
+) -> Option<String> {
+    if let Some(dir) = data_dir {
+        if let Some(pat) = load_pat_file(dir) {
+            if is_github_pat_token(&pat) {
+                return Some(pat);
+            }
+        }
+    } else if let Some(pat) = session_pat_token() {
+        if is_github_pat_token(&pat) {
+            return Some(pat);
+        }
+    }
+
+    use crate::infrastructure::validation::github_credential_path;
+    let path_git = github_credential_path(slug);
+    let path_plain = format!("{}/{}", slug.owner, slug.repo);
+    let host = slug.host.as_str();
+
+    for path in [Some(path_git.as_str()), Some(path_plain.as_str()), None] {
+        if let Some(token) = fetch_github_token(host, path, Some("git")) {
+            if is_github_pat_token(&token) {
+                return Some(token);
+            }
+        }
+    }
+    None
+}
+
+fn is_github_pat_token(token: &str) -> bool {
+    token.starts_with("ghp_") || token.starts_with("github_pat_")
+}
+
+fn fetch_github_token(host: &str, path: Option<&str>, username: Option<&str>) -> Option<String> {
+    let mut input = format!("protocol=https\nhost={host}\n");
+    if let Some(user) = username.filter(|u| !u.is_empty()) {
+        input.push_str(&format!("username={user}\n"));
+    }
+    if let Some(path) = path.filter(|p| !p.is_empty()) {
+        let path = path.trim_start_matches('/');
+        input.push_str(&format!("path={path}\n"));
     }
     input.push('\n');
     let fill = run_credential_fill(input.as_bytes());
@@ -574,6 +750,16 @@ mod tests {
 
     #[test]
     fn store_pat_rejeita_vazio() {
-        assert!(store_github_pat("  ").is_err());
+        let dir = std::env::temp_dir().join(format!("trilho_pat_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        assert!(store_github_pat("  ", None, &dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_pat_detecta_prefixos() {
+        assert!(is_github_pat_token("ghp_abc"));
+        assert!(is_github_pat_token("github_pat_abc"));
+        assert!(!is_github_pat_token("gho_oauth"));
     }
 }

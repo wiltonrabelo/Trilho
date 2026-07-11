@@ -55,7 +55,7 @@ pub fn infer_branch_origin(repo: &Repository) -> BranchOrigin {
         }
     };
 
-    let candidates = limit_candidates(repo, collect_candidates(repo, &current));
+    let candidates = limit_candidates(repo, &current, collect_candidates(repo, &current));
     if candidates.is_empty() {
         return BranchOrigin {
             current_branch: Some(current),
@@ -578,6 +578,55 @@ mod tests {
             "entre irmãs e master no mesmo fork, a origem é a trilha de integração"
         );
         assert_ne!(origin.confidence, OriginConfidence::Indeterminate);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ticket_posterior_nao_e_origem() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-tkt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+
+        Command::new("git")
+            .args(["checkout", "-b", "feature-SPF-1112"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "o1.txt", "1112 work");
+
+        Command::new("git")
+            .args(["checkout", "-b", "feature-SPF-1122", "feature-SPF-1112"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "f1.txt", "1122 work");
+
+        Command::new("git")
+            .args(["checkout", "feature-SPF-1112"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "-b", "feature-SPF-1123"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "x1.txt", "1123 work");
+
+        Command::new("git")
+            .args(["checkout", "feature-SPF-1122"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_eq!(
+            origin.candidate.as_deref(),
+            Some("feature-SPF-1112"),
+            "feature-SPF-1122 deve derivar de 1112, não de 1123 (ticket posterior)"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

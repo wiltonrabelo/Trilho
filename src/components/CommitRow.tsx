@@ -14,6 +14,8 @@ interface CommitRowProps {
   rowHeight?: number;
   /** Nome da branch base quando esta linha é o ponto de divergência (RF-02). */
   divergenceBase?: string;
+  /** Merge que traz commits da base para a branch atual (convergência). */
+  isConvergence?: boolean;
   /** Linha pertence ao trilho da base (abaixo da divergência) — esmaecida. */
   onBaseTrail?: boolean;
   /** Linha densa (grafo completo): uma linha só, estilo Git Graph do VS Code. */
@@ -99,6 +101,7 @@ export function CommitRow({
   isMerge,
   rowHeight = 56,
   divergenceBase,
+  isConvergence = false,
   onBaseTrail = false,
   compact = false,
 }: CommitRowProps) {
@@ -129,11 +132,18 @@ export function CommitRow({
             </span>
             <span className="ml-2 text-muted">{commit.authorName}</span>
           </span>
-          {isMerge && (
+          {isConvergence ? (
+            <span
+              className="shrink-0 rounded bg-sky-500/15 px-1 text-[10px] uppercase text-sky-600 dark:text-sky-400"
+              title="Merge de convergência: traz commits da base para a branch atual"
+            >
+              ⋈
+            </span>
+          ) : isMerge ? (
             <span className="shrink-0 rounded bg-muted/25 px-1 text-[10px] uppercase text-muted">
               M
             </span>
-          )}
+          ) : null}
           <RefChips refs={commit.refs} isHead={isHead} />
         </button>
       </li>
@@ -190,13 +200,21 @@ export function CommitRow({
                 ⑂ divergiu de {divergenceBase}
               </span>
             )}
+            {isConvergence && (
+              <span
+                className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sky-600 dark:text-sky-400"
+                title="Merge de convergência: traz commits da base para a branch atual"
+              >
+                ⋈ convergência
+              </span>
+            )}
             <RefChips refs={commit.refs} />
             {isHead && (
               <span className="shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
                 HEAD
               </span>
             )}
-            {isMerge && (
+            {isMerge && !isConvergence && (
               <span className="shrink-0 rounded bg-muted/25 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
                 merge
               </span>

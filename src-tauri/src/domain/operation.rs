@@ -141,10 +141,13 @@ pub enum WriteRequest {
     RemoveUntrackedMany {
         paths: Vec<String>,
     },
-    /// RF-18 — descarta hunk (`git apply --reverse`).
+    /// RF-18 — descarta hunk (`git apply --reverse` ou `--reverse --cached`).
     DiscardHunk {
         path: String,
         patch: String,
+        /// `true` = trecho no index (staged); `false` = working tree.
+        #[serde(default)]
+        staged: bool,
     },
     /// RF-20 — aceita um lado inteiro (`git checkout --ours|--theirs` + `git add`).
     ResolveConflictSide {
@@ -154,6 +157,11 @@ pub enum WriteRequest {
     },
     /// RF-20 — grava conteúdo resolvido no working tree + `git add`.
     ResolveConflictContent {
+        path: String,
+        content: String,
+    },
+    /// Grava conteúdo editado no working tree (sem stage automático).
+    SaveWorktreeFile {
         path: String,
         content: String,
     },

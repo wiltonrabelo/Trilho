@@ -61,9 +61,12 @@ export function useConnect(
     setLoading(true);
     setError(null);
     try {
-      await storeGithubPat(pat);
+      await storeGithubPat(pat, activeRemoteUrl);
+      setCopyHint("Token salvo — acesso ao repositório confirmado.");
       onSuccess?.();
+      await new Promise((r) => window.setTimeout(r, 900));
       setOpen(false);
+      setCopyHint(null);
     } catch (e) {
       setError(String(e));
     } finally {

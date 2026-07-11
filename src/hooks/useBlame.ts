@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getFileBlame } from "@/lib/api";
-import type { BlameLineDto, BlameSourceDto, CommitDto } from "@/types";
+import type { BlameLineDto, BlameSourceDto } from "@/types";
+
+/** Carrega até 20k linhas (limite do backend) — arquivos .sdm costumam ter milhares. */
+const FULL_BLAME_END = 20_000;
 
 interface UseBlameOptions {
   path: string | null;
   staged: boolean | null;
-  commit: CommitDto | null;
 }
 
-export function useBlame({ path, staged, commit }: UseBlameOptions) {
+export function useBlame({ path, staged }: UseBlameOptions) {
   const [source, setSource] = useState<BlameSourceDto>("workingTree");
   const [lines, setLines] = useState<BlameLineDto[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
@@ -21,15 +23,11 @@ export function useBlame({ path, staged, commit }: UseBlameOptions) {
   useEffect(() => {
     if (staged !== null) {
       setSource(staged ? "staging" : "workingTree");
-    } else if (commit && activePath) {
-      setSource("commit");
     }
-  }, [activePath, staged, commit]);
+  }, [activePath, staged]);
 
   const loadBlame = useCallback(
     async (startLine: number, endLine: number) => {
-      // Blame exige um caminho de arquivo. Commit sem arquivo escolhido não
-      // tem blame (a UI mostra apenas o diff agregado do commit).
       if (!activePath) {
         setLines([]);
         return;
@@ -37,13 +35,12 @@ export function useBlame({ path, staged, commit }: UseBlameOptions) {
       setLoading(true);
       setError(null);
       try {
-        const useCommitSource = Boolean(commit);
+        // Sempre blame no checkout (WT/staging/HEAD) — não no commit selecionado no histórico.
         const result = await getFileBlame(
           activePath,
-          useCommitSource ? "commit" : source,
+          source,
           startLine,
           endLine,
-          useCommitSource ? commit!.id : undefined,
         );
         setLines(result);
       } catch (e) {
@@ -53,7 +50,7 @@ export function useBlame({ path, staged, commit }: UseBlameOptions) {
         setLoading(false);
       }
     },
-    [activePath, commit, source],
+    [activePath, source],
   );
 
   useEffect(() => {
@@ -62,12 +59,11 @@ export function useBlame({ path, staged, commit }: UseBlameOptions) {
       setFocusLine(null);
       return;
     }
-    void loadBlame(1, 80);
+    void loadBlame(1, FULL_BLAME_END);
   }, [activePath, source, loadBlame]);
 
   function selectLine(lineNo: number) {
     setFocusLine(lineNo);
-    void loadBlame(Math.max(1, lineNo - 2), lineNo + 2);
   }
 
   return {
@@ -78,6 +74,6 @@ export function useBlame({ path, staged, commit }: UseBlameOptions) {
     loading,
     error,
     selectLine,
-    reload: () => loadBlame(1, 80),
+    reload: () => loadBlame(1, FULL_BLAME_END),
   };
 }

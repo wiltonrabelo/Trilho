@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   getCommitDiff,
@@ -38,6 +38,12 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
 
   const repoRef = useRef(repo);
   repoRef.current = repo;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const baseBranchRef = useRef(baseBranch);
+  baseBranchRef.current = baseBranch;
+  const focusedBranchRef = useRef(focusedBranch);
+  focusedBranchRef.current = focusedBranch;
 
   const focusBranch = useCallback(
     (branch: string) => {
@@ -55,48 +61,80 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!repo) return;
-    const reqRepo = repo;
+    const current = repoRef.current;
+    if (!current) return;
+    const reqPath = current.path;
+    const stillCurrent = () => repoRef.current?.path === reqPath;
 
-    const headListPromise = listCommits(1, null, false);
+    const viewMode = viewRef.current;
+    const base = baseBranchRef.current;
+    const focused = focusedBranchRef.current;
 
-    if (focusedBranch) {
+    setLoading(true);
+    try {
+      const headListPromise = listCommits(1, null, false);
+
+      if (focused) {
+        const [list, headList] = await Promise.all([
+          listBranchExclusiveCommits(focused, EXCLUSIVE_LIMIT),
+          headListPromise,
+        ]);
+        if (!stillCurrent()) return;
+        setCommits(list);
+        setTrails(null);
+        setHasMore(list.length >= EXCLUSIVE_LIMIT);
+        setCheckoutHeadCommit(headList[0] ?? null);
+        return;
+      }
+
+      if (viewMode === "trail") {
+        // Garantia: trilha first-parent sempre aparece; dual trail enriquece depois.
+        const [list, headList] = await Promise.all([
+          listCommits(PAGE_SIZE, null, true),
+          headListPromise,
+        ]);
+        if (!stillCurrent()) return;
+        setCommits(list);
+        setTrails(null);
+        setHasMore(list.length >= PAGE_SIZE);
+        setCheckoutHeadCommit(headList[0] ?? null);
+
+        if (base) {
+          try {
+            const entries = await getDualTrail(base, DUAL_TRAIL_LIMIT);
+            if (!stillCurrent()) return;
+            if (entries.length > 0) {
+              setCommits(entries.map((e) => e.commit));
+              setTrails(entries.map((e) => e.trail));
+              setHasMore(false);
+            }
+          } catch {
+            /* mantém first-parent já carregado */
+          }
+        }
+        return;
+      }
+
       const [list, headList] = await Promise.all([
-        listBranchExclusiveCommits(focusedBranch, EXCLUSIVE_LIMIT),
+        listCommits(PAGE_SIZE, null, false),
         headListPromise,
       ]);
-      if (repoRef.current !== reqRepo) return;
+      if (!stillCurrent()) return;
       setCommits(list);
       setTrails(null);
-      setHasMore(list.length >= EXCLUSIVE_LIMIT);
+      setHasMore(list.length >= PAGE_SIZE);
       setCheckoutHeadCommit(headList[0] ?? null);
-      return;
-    }
-
-    if (view === "trail" && baseBranch) {
-      const [entries, headList] = await Promise.all([
-        getDualTrail(baseBranch, DUAL_TRAIL_LIMIT),
-        headListPromise,
-      ]);
-      if (repoRef.current !== reqRepo) return;
-      setCommits(entries.map((e) => e.commit));
-      setTrails(entries.map((e) => e.trail));
+    } catch {
+      if (!stillCurrent()) return;
+      setCommits([]);
+      setTrails(null);
       setHasMore(false);
-      setCheckoutHeadCommit(headList[0] ?? null);
-      return;
+    } finally {
+      if (stillCurrent()) setLoading(false);
     }
-    const [list, headList] = await Promise.all([
-      listCommits(PAGE_SIZE, null, view === "trail"),
-      headListPromise,
-    ]);
-    if (repoRef.current !== reqRepo) return;
-    setCommits(list);
-    setTrails(null);
-    setHasMore(list.length >= PAGE_SIZE);
-    setCheckoutHeadCommit(headList[0] ?? null);
-  }, [repo, view, baseBranch, focusedBranch]);
+  }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setCommits([]);
     setTrails(null);
     setHasMore(false);
@@ -110,13 +148,19 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   }, [repo?.path]);
 
   useEffect(() => {
-    if (!repo) return;
+    if (view === "trail" && !baseBranch && !focusedBranch) {
+      setTrails(null);
+    }
+  }, [view, baseBranch, focusedBranch]);
+
+  useEffect(() => {
+    if (!repo?.path) return;
     void refresh();
-  }, [repo, refresh]);
+  }, [repo?.path, repo?.branch, view, baseBranch, focusedBranch, refresh]);
 
   async function loadMore() {
     if (!repo || commits.length === 0) return;
-    const reqRepo = repo;
+    const reqPath = repo.path;
     const after = commits[commits.length - 1]!.id;
     setLoading(true);
     try {
@@ -127,7 +171,7 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
             after,
           )
         : await listCommits(PAGE_SIZE, after, view === "trail");
-      if (repoRef.current !== reqRepo) return;
+      if (repoRef.current?.path !== reqPath) return;
       setCommits((prev) => [...prev, ...more]);
       setHasMore(
         more.length >= (focusedBranch ? EXCLUSIVE_LIMIT : PAGE_SIZE),
@@ -138,7 +182,7 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   }
 
   const selectCommit = useCallback(async (commit: CommitDto) => {
-    const reqRepo = repo;
+    const reqPath = repo?.path ?? null;
     setSelectedCommit(commit);
     setSelectedCommitFile(null);
     setCommitFileDiff(null);
@@ -150,16 +194,16 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
         getCommitDiff(commit.id),
         listCommitFiles(commit.id),
       ]);
-      if (repoRef.current !== reqRepo) return;
+      if (reqPath && repoRef.current?.path !== reqPath) return;
       setCommitDiff(d || "(sem alterações)");
       setCommitFiles(files);
     } catch (e) {
-      if (repoRef.current !== reqRepo) return;
+      if (reqPath && repoRef.current?.path !== reqPath) return;
       setCommitDiff(`Erro: ${e}`);
     } finally {
       setDiffLoading(false);
     }
-  }, [repo]);
+  }, [repo?.path]);
 
   const selectedCommitRef = useRef<CommitDto | null>(null);
   selectedCommitRef.current = selectedCommit;
@@ -191,7 +235,7 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
   const selectCommitBySha = useCallback(
     async (sha: string) => {
       if (!repo) return;
-      const reqRepo = repo;
+      const reqPath = repo.path;
       const matches = (c: CommitDto) =>
         c.id === sha ||
         c.id.startsWith(sha) ||
@@ -215,7 +259,7 @@ export function useCommits(repo: RepoInfo | null, baseBranch: string | null) {
         parentIds: [],
         refs: [],
       };
-      if (repoRef.current !== reqRepo) return;
+      if (repoRef.current?.path !== reqPath) return;
       await selectCommit(stub);
     },
     [repo, commits, selectCommit],

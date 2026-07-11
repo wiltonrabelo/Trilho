@@ -4,6 +4,7 @@ import { AssistantChat } from "@/components/AssistantChat";
 import { CommitSummaryPanel } from "@/components/CommitSummaryPanel";
 import type {
   AssistantUiContextDto,
+  AssistantWriteCompletedDto,
   CommitDto,
   WriteRequestDto,
 } from "@/types";
@@ -28,6 +29,8 @@ interface CommitCenterPanelProps {
   onProposeWrite: (req: WriteRequestDto) => void;
   writeDisabled?: boolean;
   uiContext?: AssistantUiContextDto | null;
+  writeCompleted?: AssistantWriteCompletedDto | null;
+  onWriteCompletedAck?: () => void;
 }
 
 export function CommitCenterPanel(props: CommitCenterPanelProps) {
@@ -36,6 +39,8 @@ export function CommitCenterPanel(props: CommitCenterPanelProps) {
     onProposeWrite,
     writeDisabled,
     uiContext,
+    writeCompleted,
+    onWriteCompletedAck,
     ...summaryProps
   } = props;
 
@@ -67,6 +72,8 @@ export function CommitCenterPanel(props: CommitCenterPanelProps) {
             onProposeWrite={onProposeWrite}
             writeDisabled={writeDisabled}
             uiContext={uiContext}
+            writeCompleted={writeCompleted}
+            onWriteCompletedAck={onWriteCompletedAck}
           />
         )}
       </div>

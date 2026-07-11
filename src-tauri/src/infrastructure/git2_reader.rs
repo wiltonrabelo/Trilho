@@ -155,7 +155,13 @@ impl TrailReader for Git2Reader {
         // linha (ancestralidade first-parent) é preservada pelo sort estável.
         entries.sort_by_key(|b| std::cmp::Reverse(b.1));
 
-        let mut result: Vec<TrailEntry> = entries.into_iter().map(|(e, _)| e).collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut result: Vec<TrailEntry> = Vec::new();
+        for (e, _) in entries {
+            if seen.insert(e.commit.id.clone()) {
+                result.push(e);
+            }
+        }
 
         // Trilho comum a partir do merge-base (inclusive).
         let remaining = limit.saturating_sub(result.len()).max(1);
@@ -165,11 +171,14 @@ impl TrailReader for Git2Reader {
             if taken >= remaining {
                 break;
             }
-            result.push(TrailEntry {
-                commit: build_commit(&repo, oid, upstream_oid, &refs_by_oid)?,
-                trail: TrailKind::Shared,
-            });
-            taken += 1;
+            let id = oid.to_string();
+            if seen.insert(id) {
+                result.push(TrailEntry {
+                    commit: build_commit(&repo, oid, upstream_oid, &refs_by_oid)?,
+                    trail: TrailKind::Shared,
+                });
+                taken += 1;
+            }
             shared_oid = repo.find_commit(oid).ok().and_then(|c| c.parent_id(0).ok());
         }
 

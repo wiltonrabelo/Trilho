@@ -145,6 +145,21 @@ pub async fn get_file_diff(
     }
 }
 
+/// Conteúdo atual do arquivo no working tree (para o editor interno).
+#[tauri::command]
+pub async fn read_worktree_file(path: String, state: State<'_, AppState>) -> Result<String, String> {
+    use std::path::Path;
+
+    let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
+    let ctx = repo_context(&state)?;
+    let full = Path::new(ctx.repo_path()).join(&path);
+    std::fs::read_to_string(&full).map_err(|e| {
+        format!(
+            "Não foi possível ler «{path}»: {e} (arquivos binários não são suportados no editor)."
+        )
+    })
+}
+
 /// Path exibido no status (rename `a → b`) → path real no Git.
 fn diff_file_path(display_path: &str) -> String {
     display_path
@@ -261,8 +276,18 @@ pub fn trigger_github_login(remote_url: Option<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn store_github_pat(pat: String) -> Result<(), String> {
-    crate::infrastructure::store_github_pat(&pat)
+pub fn store_github_pat(
+    pat: String,
+    remote_url: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    crate::infrastructure::store_github_pat(
+        &pat,
+        remote_url.as_deref(),
+        state.data_dir(),
+    )?;
+    crate::infrastructure::clear_branch_pr_cache();
+    Ok(())
 }
 
 #[tauri::command]
@@ -573,16 +598,19 @@ pub async fn execute_clone_remote(
 pub async fn get_branch_pr_status(state: State<'_, AppState>) -> Result<BranchPrStatus, String> {
     let path = match state.repo_path() {
         Ok(p) => p,
-        Err(_) => return Ok(fetch_branch_pr_status("", "")),
+        Err(_) => return Ok(fetch_branch_pr_status("", "", None)),
     };
     let info = repo_info(&path).map_err(|e| e.to_string())?;
     let Some(branch) = info.branch.filter(|b| !b.is_empty()) else {
-        return Ok(fetch_branch_pr_status("", ""));
+        return Ok(fetch_branch_pr_status("", "", None));
     };
     let Some(remote_url) = info.remote_url.filter(|u| !u.is_empty()) else {
-        return Ok(fetch_branch_pr_status("", ""));
+        return Ok(fetch_branch_pr_status("", "", None));
     };
-    tauri::async_runtime::spawn_blocking(move || fetch_branch_pr_status(&remote_url, &branch))
+    let data_dir = state.data_dir().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_branch_pr_status(&remote_url, &branch, Some(&data_dir))
+    })
         .await
         .map_err(|e| format!("Consulta de PR interrompida: {e}"))
 }

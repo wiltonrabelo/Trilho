@@ -13,7 +13,7 @@ use crate::application::operations::{
 };
 use crate::application::write_gates::{head_is_local_only, is_commit_on_remote};
 use crate::application::{GitCommand, GitError, GitWriter, RepoContext};
-use crate::domain::{FileChangeKind, InProgressKind, OperationPreview, ResetModeDto, WriteRequest};
+use crate::domain::{FileChange, FileChangeKind, InProgressKind, OperationPreview, ResetModeDto, WriteRequest};
 use crate::infrastructure::{
     list_local_branches, list_remote_branches, list_stashes, repo_info, stash_reference,
     validate_clone_branch, validate_git_object_id, validate_remote_name, validate_remote_url,
@@ -382,18 +382,19 @@ pub fn preview_write(
                 blocked,
             )
         }
-        WriteRequest::DiscardHunk { path, patch } => {
+        WriteRequest::DiscardHunk { path, patch, staged } => {
             let path = validate_repo_relative_path(git_path_from_display(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
-            let blocked = gate_discard_worktree(ctx, std::slice::from_ref(&path))?
-                .or(gate_reverse_patch(ctx, patch)?);
+            let blocked = gate_discard_hunk(ctx, &path, *staged, patch)?;
             let op = ApplyReversePatch {
                 patch: patch.clone(),
+                cached: *staged,
             };
+            let alvo = if *staged { "no stage" } else { "no arquivo" };
             (
                 ctx.preview_op(&op),
                 format!(
-                    "Descarta um trecho de «{path}». Esta ação não pode ser desfeita."
+                    "Descarta um trecho de «{path}» {alvo}. Esta ação não pode ser desfeita."
                 ),
                 blocked,
             )
@@ -443,6 +444,19 @@ pub fn preview_write(
                 ],
                 format!(
                     "Grava a resolução manual de «{path}» e marca o arquivo como resolvido."
+                ),
+                blocked,
+            )
+        }
+        WriteRequest::SaveWorktreeFile { path, content } => {
+            let path = validate_repo_relative_path(git_path_from_display(path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            let blocked = gate_save_worktree_file(ctx, &path)?;
+            let bytes = content.len();
+            (
+                vec![format!("# grava {bytes} bytes em {path}")],
+                format!(
+                    "Salva as edições de «{path}» no working tree (sem stage automático)."
                 ),
                 blocked,
             )
@@ -815,10 +829,13 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             let paths = validate_paths(&paths)?;
             ctx.execute_op(&RemoveUntrackedMany { paths })?;
         }
-        WriteRequest::DiscardHunk { path, patch } => {
+        WriteRequest::DiscardHunk { path, patch, staged } => {
             let _path = validate_repo_relative_path(git_path_from_display(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
-            ctx.execute_op(&ApplyReversePatch { patch })?;
+            ctx.execute_op(&ApplyReversePatch {
+                patch,
+                cached: staged,
+            })?;
         }
         WriteRequest::ResolveConflictSide { path, side } => {
             let path = validate_repo_relative_path(git_path_from_display(&path))
@@ -845,6 +862,11 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
                 &path,
                 &content,
             )?;
+        }
+        WriteRequest::SaveWorktreeFile { path, content } => {
+            let path = validate_repo_relative_path(git_path_from_display(&path))
+                .map_err(|e| GitError::Git(e.to_string()))?;
+            crate::infrastructure::save_worktree_file(ctx.repo_path(), &path, &content)?;
         }
         WriteRequest::AbortRevert => {
             ctx.execute_op(&AbortRevert)?;
@@ -1943,6 +1965,35 @@ fn gate_resolve_conflict(ctx: &RepoContext, path: &str) -> Result<Option<String>
     Ok(None)
 }
 
+fn gate_save_worktree_file(
+    ctx: &RepoContext,
+    path: &str,
+) -> Result<Option<String>, GitError> {
+    if let Some(msg) = gate_discard_blocked(ctx)? {
+        return Ok(Some(
+            msg.replace(
+                "Descartar arquivos não cancela a operação",
+                "Salvar não cancela a operação",
+            ),
+        ));
+    }
+    let status = ctx.reader().get_status()?;
+    let conflicted = |f: &FileChange| {
+        status_path_matches(&f.path, path) && f.kind == FileChangeKind::Conflicted
+    };
+    if status.staged.iter().any(conflicted) || status.unstaged.iter().any(conflicted) {
+        return Ok(Some(format!(
+            "«{path}» está em conflito — use o resolvedor de conflitos."
+        )));
+    }
+    if !crate::infrastructure::worktree_file_exists(ctx.repo_path(), path)? {
+        return Ok(Some(format!(
+            "«{path}» não existe no working tree — não é possível salvar."
+        )));
+    }
+    Ok(None)
+}
+
 fn gate_discard_blocked(ctx: &RepoContext) -> Result<Option<String>, GitError> {
     let status = ctx.reader().get_status()?;
     if let Some(op) = &status.operation_in_progress {
@@ -2022,6 +2073,38 @@ fn gate_remove_untracked(
         }
     }
     Ok(None)
+}
+
+fn gate_discard_hunk(
+    ctx: &RepoContext,
+    path: &str,
+    staged: bool,
+    patch: &str,
+) -> Result<Option<String>, GitError> {
+    if let Some(msg) = gate_discard_blocked(ctx)? {
+        return Ok(Some(msg));
+    }
+    let status = ctx.reader().get_status()?;
+    let ok = if staged {
+        status
+            .staged
+            .iter()
+            .any(|f| status_path_matches(&f.path, path))
+    } else {
+        status
+            .unstaged
+            .iter()
+            .any(|f| status_path_matches(&f.path, path))
+    };
+    if !ok {
+        let hint = if staged {
+            "não está em staging"
+        } else {
+            "não tem alterações fora do stage"
+        };
+        return Ok(Some(format!("«{path}» {hint} — não é possível descartar este trecho.")));
+    }
+    gate_reverse_patch(ctx, patch)
 }
 
 fn gate_reverse_patch(ctx: &RepoContext, patch: &str) -> Result<Option<String>, GitError> {

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { parseUnifiedDiff, type DiffRow } from "@/lib/diff-parse";
+import type { DiffHunk } from "@/lib/diff-hunks";
 
 export type DiffLayout = "sideBySide" | "unified";
 
@@ -9,6 +10,9 @@ interface DiffViewerProps {
   layout?: DiffLayout;
   onLineClick?: (lineNo: number) => void;
   selectedLine?: number | null;
+  /** Trechos para reverter (RF-18) — força layout unified com ações por hunk. */
+  hunks?: DiffHunk[];
+  onDiscardHunk?: (patch: string) => void;
 }
 
 function lineClass(kind: string): string {
@@ -63,14 +67,81 @@ function flattenUnifiedRows(rows: DiffRow[]): {
   return out;
 }
 
+function HunkBlock({
+  hunk,
+  onDiscardHunk,
+}: {
+  hunk: DiffHunk;
+  onDiscardHunk?: (patch: string) => void;
+}) {
+  const bodyLines = useMemo(() => {
+    const lines = hunk.patch.split("\n");
+    const start = lines.findIndex((l) => l.startsWith("@@"));
+    return start >= 0 ? lines.slice(start) : lines;
+  }, [hunk.patch]);
+
+  return (
+    <div className="border-b border-border">
+      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 border-b border-border bg-surface/95 px-3 py-1.5 backdrop-blur-sm">
+        <span className="min-w-0 truncate font-mono text-[10px] text-muted">
+          {hunk.header}
+        </span>
+        {onDiscardHunk && (
+          <button
+            type="button"
+            onClick={() => onDiscardHunk(hunk.patch)}
+            className="shrink-0 rounded border border-red-500/40 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-500/10 dark:text-red-400"
+            title="Desfaz só este trecho (git apply --reverse)"
+          >
+            Reverter trecho
+          </button>
+        )}
+      </div>
+      <table className="w-full border-collapse font-mono text-xs">
+        <tbody>
+          {bodyLines.map((line, i) => {
+            if (line.startsWith("@@")) {
+              return (
+                <tr key={`h${i}`} className="bg-muted/10">
+                  <td colSpan={2} className="px-2 py-0.5 text-[10px] text-muted">
+                    {line}
+                  </td>
+                </tr>
+              );
+            }
+            const prefix = line[0] ?? " ";
+            const kind =
+              prefix === "+" ? "add" : prefix === "-" ? "remove" : "context";
+            return (
+              <tr key={`l${i}`} className="hover:bg-surface/50">
+                <td className="w-8 select-none border-r border-border px-1 py-0.5 text-right text-muted">
+                  {prefix}
+                </td>
+                <td
+                  className={`px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(kind)}`}
+                >
+                  {line.slice(1) || "\u00a0"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function DiffViewer({
   diff,
   loading,
   layout = "sideBySide",
   onLineClick,
   selectedLine,
+  hunks,
+  onDiscardHunk,
 }: DiffViewerProps) {
   const parsed = useMemo(() => (diff ? parseUnifiedDiff(diff) : null), [diff]);
+  const useHunkView = Boolean(hunks?.length && onDiscardHunk);
 
   if (loading) {
     return (
@@ -93,6 +164,20 @@ export function DiffViewer({
       <pre className="h-full overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">
         {parsed.rawFallback}
       </pre>
+    );
+  }
+
+  if (useHunkView && hunks) {
+    return (
+      <div className="h-full overflow-auto">
+        {hunks.map((hunk) => (
+          <HunkBlock
+            key={hunk.index}
+            hunk={hunk}
+            onDiscardHunk={onDiscardHunk}
+          />
+        ))}
+      </div>
     );
   }
 

@@ -1,6 +1,7 @@
 //! Camada de Infraestrutura — adaptadores concretos.
 
 mod assistant_settings;
+mod github_pat_store;
 mod blame;
 mod blame_parser;
 mod branch_diff;
@@ -22,6 +23,7 @@ mod status_parser;
 mod tags;
 mod upstream;
 mod validation;
+mod worktree_file;
 
 pub use ssh_keys::{read_ssh_public_key, test_github_ssh, SshKeyInfo, SshTestResult};
 
@@ -36,14 +38,21 @@ pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
 
 pub use credential::{
     detect_credential_status, enable_github_use_http_path, ensure_gcm_configured,
-    logout_github_account, store_github_pat, trigger_github_login, CredentialStatus,
-    GithubAccount,
+    get_github_api_token, get_github_api_token_for_host, logout_github_account,
+    resolve_github_api_token, store_github_pat,
+    trigger_github_login, CredentialStatus, GithubAccount,
 };
 pub use conflict::{
     get_conflict_file, resolve_conflict_content, resolve_conflict_side, ConflictFileView,
     ConflictSideChoice,
 };
-pub use assistant_settings::{load_settings as load_assistant_settings, save_settings as save_assistant_settings};
+pub use assistant_settings::{
+    load_settings as load_assistant_settings, save_settings as save_assistant_settings,
+};
+pub use github_pat_store::{
+    clear_pat_file as clear_github_pat_file, load_pat_file as load_github_pat_file,
+    save_pat_file as save_github_pat_file, session_pat_token,
+};
 pub use audit_log::{
     append_entry as append_audit_entry, list_entries as list_audit_entries, now_timestamp,
     purge_old_logs, sanitize_for_audit,
@@ -51,7 +60,7 @@ pub use audit_log::{
 pub use llm_credentials::{
     clear_llm_api_key, get_llm_api_key, has_llm_api_key, store_llm_api_key,
 };
-pub use github_pr::{get_branch_pr_status, BranchPrStatus};
+pub use github_pr::{clear_branch_pr_cache, get_branch_pr_status, BranchPrStatus};
 pub use git2_reader::{repo_info, Git2Reader};
 pub use git_cli::{defensive_config_args, SafeGitCli};
 pub use reword::execute_reword;
@@ -61,6 +70,7 @@ pub use validation::{
     validate_compare_ref, validate_folder_name, validate_git_object_id, validate_remote_name,
     validate_remote_url, validate_repo_relative_path, validate_tag_name,
 };
+pub use worktree_file::{save_worktree_file, worktree_file_exists};
 
 use crate::application::{BlameProvider, GitError, GitReader, TrailReader};
 use crate::domain::{Commit, TrailEntry, TrailKind};

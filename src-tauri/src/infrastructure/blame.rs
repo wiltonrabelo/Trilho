@@ -5,7 +5,7 @@ use crate::domain::{BlameLine, BlameSource};
 use crate::infrastructure::blame_parser::parse_line_porcelain;
 use crate::infrastructure::git_cli::SafeGitCli;
 
-const MAX_BLAME_LINES: u32 = 200;
+const MAX_BLAME_LINES: u32 = 20_000;
 
 pub fn blame_file(
     cli: &SafeGitCli,
@@ -93,10 +93,11 @@ fn blob_line_count(
                 args: vec!["show".into(), format!("{rev}:{path}")],
             })?
         }
-        BlameSource::WorkingTree => std::fs::read_to_string(
-            std::path::Path::new(cli.repo_path()).join(path),
-        )
-        .map_err(|e| GitError::Io(e.to_string()))?,
+        BlameSource::WorkingTree => {
+            let bytes = std::fs::read(std::path::Path::new(cli.repo_path()).join(path))
+                .map_err(|e| GitError::Io(e.to_string()))?;
+            return Ok(count_lines_bytes(&bytes));
+        }
         BlameSource::Staging => match cli.run(&GitCommand {
             args: vec!["show".into(), format!(":{path}")],
         }) {
@@ -108,6 +109,13 @@ fn blob_line_count(
         },
     };
     Ok(count_lines(&content))
+}
+
+fn count_lines_bytes(bytes: &[u8]) -> u32 {
+    if bytes.is_empty() {
+        return 0;
+    }
+    bytes.iter().filter(|&&b| b == b'\n').count() as u32 + 1
 }
 
 fn is_unmerged_blame_error(err: &GitError) -> bool {
@@ -127,6 +135,12 @@ mod tests {
     use super::*;
     use std::fs;
     use std::process::Command;
+
+    #[test]
+    fn count_lines_bytes_latin1() {
+        // 0xE7 = ç em Windows-1252 — inválido como UTF-8 isolado.
+        assert_eq!(count_lines_bytes(b"linha1\nlinha2\xE7\n"), 3);
+    }
 
     #[test]
     fn blame_working_tree() {

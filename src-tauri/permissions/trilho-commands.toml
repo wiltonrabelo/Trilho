@@ -21,6 +21,7 @@ commands.allow = [
   "list_commits",
   "get_repo_status",
   "get_file_diff",
+  "read_worktree_file",
   "get_commit_diff",
   "list_commit_files",
   "get_commit_file_diff",

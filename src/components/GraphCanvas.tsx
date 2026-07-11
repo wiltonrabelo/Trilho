@@ -168,6 +168,19 @@ export function GraphCanvas({
 
   );
 
+  /** Merges na lane atual com aresta para a lane da base = convergência. */
+  const convergenceIds = useMemo(() => {
+    if (!dual) return new Set<string>();
+    const ids = new Set<string>();
+    for (const edge of layout.edges) {
+      if (edge.firstParent) continue;
+      if (edge.fromLane === 0 && edge.toLane !== 0) {
+        ids.add(edge.fromCommitId);
+      }
+    }
+    return ids;
+  }, [dual, layout.edges]);
+
   const nodeById = useMemo(
 
     () => new Map(layout.nodes.map((n) => [n.commitId, n])),
@@ -256,7 +269,7 @@ export function GraphCanvas({
 
             <CommitRow
 
-              key={commit.id}
+              key={`${commit.id}-${row}`}
 
               commit={commit}
 
@@ -281,6 +294,8 @@ export function GraphCanvas({
                 row === divergenceRow ? divergence?.baseName : undefined
 
               }
+
+              isConvergence={convergenceIds.has(commit.id)}
 
               onBaseTrail={
 
@@ -389,12 +404,6 @@ function LaneOverlay({
     Math.max(totalRows * metrics.rowHeight, metrics.rowHeight) + LIST_PAD * 2;
 
   const nodeById = new Map(layout.nodes.map((n) => [n.commitId, n]));
-
-  const rowOf = (id: string) =>
-
-    layout.nodes.findIndex((n) => n.commitId === id);
-
-
 
   const railSegments: { d: string; color: string; key: string }[] = [];
 
@@ -626,9 +635,7 @@ function LaneOverlay({
 
 
 
-      {layout.nodes.map((node) => {
-
-        const row = rowOf(node.commitId);
+      {layout.nodes.map((node, row) => {
 
         const selected = !workingCopySelected && selectedId === node.commitId;
 
@@ -640,7 +647,7 @@ function LaneOverlay({
 
         return (
 
-          <g key={node.commitId}>
+          <g key={`${node.commitId}-${row}`}>
 
             {selected && (
 

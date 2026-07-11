@@ -216,6 +216,8 @@ export interface PrSummaryDto {
   number: number;
   title: string;
   url: string;
+  /** Branch de destino do PR (base). */
+  baseBranch: string;
 }
 
 export interface BranchPrStatusDto {
@@ -350,9 +352,10 @@ export type WriteRequestDto =
   | { kind: "discardWorktreeAll" }
   | { kind: "removeUntracked"; path: string }
   | { kind: "removeUntrackedMany"; paths: string[] }
-  | { kind: "discardHunk"; path: string; patch: string }
+  | { kind: "discardHunk"; path: string; patch: string; staged?: boolean }
   | { kind: "resolveConflictSide"; path: string; side: "ours" | "theirs" }
   | { kind: "resolveConflictContent"; path: string; content: string }
+  | { kind: "saveWorktreeFile"; path: string; content: string }
   | { kind: "abortRevert" }
   | { kind: "continueRevert" }
   | { kind: "skipRevert" }
@@ -432,4 +435,10 @@ export interface ChatAssistantResponseDto {
   reply: string;
   pendingWrites: WriteRequestDto[];
   notice?: string | null;
+}
+
+/** Feedback de escrita concluída (assistente → preview confirmado). */
+export interface AssistantWriteCompletedDto {
+  key: number;
+  req: WriteRequestDto;
 }

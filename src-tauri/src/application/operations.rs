@@ -300,16 +300,21 @@ impl GitOperation for RemoveUntrackedMany {
     }
 }
 
-/// RF-18 — descarta hunk via `git apply --reverse`.
+/// RF-18 — descarta hunk via `git apply --reverse` (WT ou index).
 pub struct ApplyReversePatch {
     pub patch: String,
+    /// Aplica no index (`--cached`) em vez do working tree.
+    pub cached: bool,
 }
 
 impl GitOperation for ApplyReversePatch {
     fn command(&self) -> GitCommand {
-        GitCommand {
-            args: vec!["apply".into(), "--reverse".into(), "-".into()],
+        let mut args = vec!["apply".into(), "--reverse".into()];
+        if self.cached {
+            args.push("--cached".into());
         }
+        args.push("-".into());
+        GitCommand { args }
     }
     fn stdin_payload(&self) -> Option<Vec<u8>> {
         Some(self.patch.as_bytes().to_vec())

@@ -90,6 +90,36 @@ export function useRepo() {
     };
   }, [status]);
 
+  const refreshSelectedFile = useCallback(async () => {
+    const current = selectedFileRef.current;
+    if (!current || !repo) return;
+
+    const freshStatus = await getRepoStatus();
+    setStatus(freshStatus);
+
+    const nextStaged = reconcileStagedFlag(
+      current.path,
+      current.staged,
+      freshStatus,
+    );
+    if (nextStaged === null) {
+      setSelectedFile(null);
+      setFileDiff(null);
+      return;
+    }
+
+    setFileLoading(true);
+    try {
+      const d = await getFileDiff(current.path, nextStaged);
+      setSelectedFile({ path: current.path, staged: nextStaged });
+      setFileDiff(d || "(sem diff)");
+    } catch (e) {
+      setFileDiff(`Erro: ${e}`);
+    } finally {
+      setFileLoading(false);
+    }
+  }, [repo]);
+
   const refreshStatus = useCallback(async () => {
     if (!repo) return;
     setStatus(await getRepoStatus());
@@ -186,5 +216,6 @@ export function useRepo() {
     fileLoading,
     selectFile,
     clearFileSelection,
+    refreshSelectedFile,
   };
 }

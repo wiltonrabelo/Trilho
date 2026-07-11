@@ -1,5 +1,5 @@
 import { GitBranch, KeyRound, ScrollText, TrainFront, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AuditLogDialog } from "@/components/AuditLogDialog";
 import { BranchCompareDialog } from "@/components/BranchCompareDialog";
@@ -11,6 +11,7 @@ import { CloneDialog } from "@/components/CloneDialog";
 import { CherryPickDialog } from "@/components/CherryPickDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
+import { loadStoredTrailBase } from "@/components/TrailBaseSelector";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
@@ -40,8 +41,8 @@ import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useStashes } from "@/hooks/useStashes";
 import { useTags } from "@/hooks/useTags";
 import { useSync } from "@/hooks/useSync";
-import { getAppInfo, getRepoInfo, getRepoStatus, executeWriteOperation, listCommits, runningInTauri } from "@/lib/api";
-import type { AppInfo, RepoInfo } from "@/types";
+import { getAppInfo, getRepoInfo, getRepoStatus, executeWriteOperation, listCommits, previewWriteOperation, runningInTauri } from "@/lib/api";
+import type { AppInfo, AssistantWriteCompletedDto, RepoInfo } from "@/types";
 
 function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -57,6 +58,11 @@ function App() {
   const [branchCompareOpen, setBranchCompareOpen] = useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
+  const [githubPatNotice, setGithubPatNotice] = useState<string | null>(null);
+  const [assistantWriteDone, setAssistantWriteDone] =
+    useState<AssistantWriteCompletedDto | null>(null);
+  /** Base manual da trilha comparada (`null` = auto / origem inferida). */
+  const [trailBase, setTrailBase] = useState<string | null>(null);
 
   const {
     repo,
@@ -75,6 +81,7 @@ function App() {
     fileLoading,
     selectFile,
     clearFileSelection,
+    refreshSelectedFile,
   } = useRepo();
 
   useEffect(() => {
@@ -83,6 +90,23 @@ function App() {
 
   const { origin, loading: originLoading, refresh: refreshOrigin } =
     useBranchOrigin(repo);
+
+  useEffect(() => {
+    setTrailBase(loadStoredTrailBase(repo?.path ?? null));
+  }, [repo?.path]);
+
+  const effectiveTrailBase = useMemo(() => {
+    if (trailBase) return trailBase;
+    if (
+      origin?.candidate &&
+      origin.currentBranch &&
+      repo?.branch &&
+      origin.currentBranch === repo.branch
+    ) {
+      return origin.candidate;
+    }
+    return null;
+  }, [trailBase, origin?.candidate, origin?.currentBranch, repo?.branch]);
 
   const {
     view,
@@ -107,7 +131,7 @@ function App() {
     selectCommitBySha,
     selectCommitFile,
     clearSelection,
-  } = useCommits(repo, origin?.candidate ?? null);
+  } = useCommits(repo, effectiveTrailBase);
 
   const {
     source: blameSource,
@@ -122,7 +146,6 @@ function App() {
       ? selectedFile?.path ?? null
       : selectedFile?.path ?? selectedCommitFile ?? null,
     staged: selectedFile?.staged ?? null,
-    commit: workingCopySelected ? null : selectedCommit,
   });
 
   const branchList = useBranches(repo?.path, repo?.branch);
@@ -150,9 +173,18 @@ function App() {
     refreshCredential,
   } = useSync(repo, setRepo, onAfterFetch);
 
-  const { prStatus, prLoading } = usePrStatus(repo, credential);
+  const { prStatus, prLoading, refreshPrStatus } = usePrStatus(repo, credential);
+  const prOpen = prStatus?.open[0] ?? null;
+  const prBaseBranch = prOpen?.baseBranch ?? null;
 
-  const connect = useConnect(repo?.remoteUrl, refreshCredential);
+  const onCredentialSaved = useCallback(() => {
+    refreshCredential();
+    void refreshPrStatus();
+    setGithubPatNotice("Token GitHub salvo — atualizando status de PR…");
+    window.setTimeout(() => setGithubPatNotice(null), 10_000);
+  }, [refreshCredential, refreshPrStatus]);
+
+  const connect = useConnect(repo?.remoteUrl, onCredentialSaved);
 
   const { checkedPaths, clearChecks, toggleCheck, handleSelectFile } =
     useFileSelection({
@@ -187,6 +219,7 @@ function App() {
     } catch {
       /* repo pode ter fechado */
     }
+    await refreshSelectedFile();
     clearSelection();
     setWorkingCopySelected(true);
     clearChecks();
@@ -195,6 +228,7 @@ function App() {
     clearFocusedBranch,
     setView,
     refreshAll,
+    refreshSelectedFile,
     clearSelection,
     setRepo,
     clearChecks,
@@ -253,6 +287,8 @@ function App() {
   const activeLoading = ops.loading || clone.loading;
   const confirmOperation = useCallback(async () => {
     const pendingKind = ops.pending?.kind;
+    const pendingReq = ops.pending;
+    const wasFromAssistant = ops.fromAssistant;
     const revertBefore = status?.operationInProgress?.kind === "revert";
     const headBefore =
       checkoutHeadCommit?.id ?? commits[0]?.id ?? null;
@@ -264,6 +300,14 @@ function App() {
 
     const ok = await ops.confirm();
     if (!ok) return;
+
+    if (
+      wasFromAssistant &&
+      pendingReq &&
+      pendingReq.kind !== "publish"
+    ) {
+      setAssistantWriteDone({ key: Date.now(), req: pendingReq });
+    }
 
     if (pendingKind === "push") {
       ops.setInfo(
@@ -372,6 +416,26 @@ function App() {
         headCommit.isLocalOnly,
     ) && !repo?.isDetached;
   const writeDisabled = Boolean(repo?.isDetached);
+
+  const handleSaveWorktreeFile = useCallback(
+    async (content: string) => {
+      if (!selectedFile || writeDisabled) return;
+      const { path, staged } = selectedFile;
+      const preview = await previewWriteOperation({
+        kind: "saveWorktreeFile",
+        path,
+        content,
+      });
+      if (preview.blocked) {
+        throw new Error(preview.blocked);
+      }
+      await executeWriteOperation({ kind: "saveWorktreeFile", path, content });
+      await refreshStatus();
+      await selectFile(path, staged);
+    },
+    [selectedFile, writeDisabled, refreshStatus, selectFile],
+  );
+
   const upstreamConfigured = Boolean(repo?.upstream || sync?.upstream);
   const amendUnavailableReason =
     headCommit && !canAmend && !writeDisabled
@@ -507,11 +571,10 @@ function App() {
     setCloneSetupWarning(null);
     try {
       await open(path);
-      await refreshCommits();
       await syncRefresh();
       refreshCredential();
     } catch {
-      /* erro já em useRepo.error */
+      /* erro já em useRepo.error; useCommits recarrega via repo.path */
     }
   }
 
@@ -790,6 +853,19 @@ function App() {
         onEnableUseHttpPath={() => void connect.enableUseHttpPath()}
       />
       <AuditLogDialog open={auditLogOpen} onClose={() => setAuditLogOpen(false)} />
+      {githubPatNotice && (
+        <div className="flex items-start justify-between gap-3 border-b border-emerald-500/40 bg-emerald-500/10 px-5 py-2 text-sm text-emerald-800 dark:text-emerald-200">
+          <p>{githubPatNotice}</p>
+          <button
+            type="button"
+            onClick={() => setGithubPatNotice(null)}
+            className="shrink-0 text-emerald-700 hover:text-emerald-900 dark:text-emerald-300"
+            aria-label="Fechar aviso"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {ops.error && (
         <div className="border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-500">
           {ops.error}
@@ -825,7 +901,12 @@ function App() {
               ) : (
                 <span className="font-medium text-text">{repo.branch ?? "—"}</span>
               )}
-              <BranchOriginBadge origin={origin} loading={originLoading} />
+              <BranchOriginBadge
+                origin={origin}
+                loading={originLoading}
+                prBaseBranch={prBaseBranch}
+                prNumber={prOpen?.number ?? null}
+              />
               <PrStatusBadge status={prStatus} loading={prLoading} />
             </div>
           )}
@@ -1050,14 +1131,28 @@ function App() {
                       view={view}
                       onViewChange={setView}
                       trails={trails}
-                      divergence={
-                        origin?.mergeBaseId && origin.candidate && !focusedBranch
+                      divergence={(() => {
+                        if (focusedBranch || !effectiveTrailBase) return null;
+                        // Na trilha dupla, o 1º commit «shared» é o merge-base
+                        // (inclui base manual ≠ origem inferida).
+                        let mergeBaseId: string | null = null;
+                        if (trails && trails.length === commits.length) {
+                          const i = trails.findIndex((t) => t === "shared");
+                          if (i >= 0) mergeBaseId = commits[i]?.id ?? null;
+                        }
+                        if (
+                          !mergeBaseId &&
+                          effectiveTrailBase === origin?.candidate
+                        ) {
+                          mergeBaseId = origin?.mergeBaseId ?? null;
+                        }
+                        return mergeBaseId
                           ? {
-                              mergeBaseId: origin.mergeBaseId,
-                              baseName: origin.candidate,
+                              mergeBaseId,
+                              baseName: effectiveTrailBase,
                             }
-                          : null
-                      }
+                          : null;
+                      })()}
                       focusedBranch={focusedBranch}
                       currentBranch={repo.branch}
                       checkoutHeadId={checkoutHeadCommit?.id ?? null}
@@ -1070,6 +1165,10 @@ function App() {
                       onLoadMore={() => void loadMore()}
                       hasMore={hasMore}
                       loading={commitsLoading}
+                      repoPath={repo.path}
+                      suggestedBase={origin?.candidate ?? null}
+                      trailBase={trailBase}
+                      onTrailBaseChange={setTrailBase}
                     />
                   }
                   bottom={
@@ -1143,6 +1242,8 @@ function App() {
                       onProposeWrite={(req) =>
                         void ops.request(req, { fromAssistant: true })
                       }
+                      writeCompleted={assistantWriteDone}
+                      onWriteCompletedAck={() => setAssistantWriteDone(null)}
                     />
                   }
                 />
@@ -1375,62 +1476,36 @@ function App() {
                             })
                         : undefined
                     }
-                    showStageFile={
-                      !fileConflicted && (fileInUnstaged || fileInUntracked)
-                    }
-                    showUnstageFile={!fileConflicted && fileInStaged}
-                    showDiscardFile={
-                      !fileConflicted && fileInUnstaged && !writeDisabled
-                    }
-                    showRemoveUntracked={fileInUntracked && !writeDisabled}
-                    onStageFile={
-                      selectedFile &&
-                      (fileInUnstaged || fileInUntracked) &&
-                      !writeDisabled
-                        ? () =>
-                            void ops.request({
-                              kind: "stage",
-                              path: selectedFile.path,
-                            })
-                        : undefined
-                    }
-                    onUnstageFile={
-                      selectedFile && fileInStaged && !writeDisabled
-                        ? () =>
-                            void ops.request({
-                              kind: "unstage",
-                              path: selectedFile.path,
-                            })
-                        : undefined
-                    }
-                    onDiscardFile={
-                      selectedFile && fileInUnstaged && !writeDisabled
-                        ? () =>
-                            void ops.request({
-                              kind: "discardWorktree",
-                              path: selectedFile.path,
-                            })
-                        : undefined
-                    }
-                    onRemoveUntracked={
-                      selectedFile && fileInUntracked && !writeDisabled
-                        ? () =>
-                            void ops.request({
-                              kind: "removeUntracked",
-                              path: selectedFile.path,
-                            })
-                        : undefined
-                    }
                     onDiscardHunk={
-                      selectedFile && fileInUnstaged && !writeDisabled
+                      selectedFile &&
+                      (fileInUnstaged || fileInStaged) &&
+                      !writeDisabled
                         ? (patch) =>
                             void ops.request({
                               kind: "discardHunk",
                               path: selectedFile.path,
                               patch,
+                              staged: Boolean(selectedFile.staged),
                             })
                         : undefined
                     }
+                    canRevertHunks={
+                      Boolean(
+                        selectedFile &&
+                          (fileInUnstaged || fileInStaged) &&
+                          !writeDisabled,
+                      )
+                    }
+                    onSaveWorktreeFile={
+                      selectedFile &&
+                      (fileInUnstaged || fileInStaged || fileInUntracked) &&
+                      !fileConflicted &&
+                      !writeDisabled
+                        ? handleSaveWorktreeFile
+                        : undefined
+                    }
+                    fileReloadKey={fileDiff}
+                    branchName={repo?.branch ?? null}
                   />
                 }
               />

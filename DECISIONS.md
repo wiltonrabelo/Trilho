@@ -108,7 +108,7 @@
 | Prioridade | ID | Entrega | Fase |
 |------------|-----|---------|------|
 | Baixa | **RF-21** | Assistente LLM → ações allowlisted | F7 ✅ |
-| — | — | Trilha comparada de duas branches | — |
+| — | — | Trilha comparada de duas branches | ✅ |
 
 Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §RF-24).
 
@@ -188,11 +188,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
   **Recorte 1:** chat + allowlist leitura + stage/unstage/commit/fetch. **Recorte 2:** push/pull,
   revert, cherry-pick quando existirem. **Recorte 3:** contexto de grafo/blame na conversa.
 
-- **Trilha comparada de duas branches** (pedido do stakeholder, 2026-07-03): selecionar duas
-  branches e ver os commits de ambas na trilha, com divergência e convergência. Não coberto
-  pelo PLANO (RF-14 compara **arquivos**, não trilha visual). Primeiro recorte entregue acima
-  (branch atual vs base inferida). Evolução: seletor manual de base + linha da base como
-  segunda lane + marcação dos merges de convergência.
+- **Trilha comparada de duas branches** (pedido do stakeholder, 2026-07-03): ✅
+  Seletor «Comparar com» (Auto = origem inferida ou base manual, persistida por repo);
+  `get_dual_trail` + layout dual (lane atual / base / shared); badge de divergência no
+  merge-base; badge «convergência» em merges da lane atual com aresta para a base.
+  (RF-14 continua sendo diff de **arquivos**, não trilha visual.)
 
 - **Checkout branch** (pedido do stakeholder, 2026-07-06): trocar a branch ativa sem sair do
   Trilho. Referência **SourceTree → Ramos** (duplo-clique / menu → Checkout).
@@ -325,7 +325,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 ## Backlog F5 — RF-12 Status de PR ✅
 
 - [x] **Recorte 1** — badge no header quando remoto é GitHub e há credencial HTTPS: PR aberto / mergeado / fechado (link para o navegador); cache 60s; falha graciosa (rate limit, rede)
-- [ ] **Recorte 2** — GitHub Enterprise / múltiplos PRs com menu (opcional)
+- [x] **Recorte 2** — GitHub Enterprise (`github.*` + API `{host}/api/v3`) + token por host; ≤2 PRs = chips, >2 = menu
+
+## Backlog — Trilha comparada ✅
+
+- [x] Seletor manual de base (localStorage por repo) + dual trail / convergência na UI
 
 ## Backlog F5 — RF-20 Resolução de conflitos ✅
 

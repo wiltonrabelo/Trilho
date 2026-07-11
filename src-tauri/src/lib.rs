@@ -28,6 +28,7 @@ pub fn run() {
             commands::list_commits,
             commands::get_repo_status,
             commands::get_file_diff,
+            commands::read_worktree_file,
             commands::get_commit_diff,
             commands::list_commit_files,
             commands::get_commit_file_diff,

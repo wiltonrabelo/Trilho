@@ -10,8 +10,10 @@ import {
   testLlmConnection,
 } from "@/lib/api";
 import type {
+  AssistantSettingsDto,
   AssistantSettingsViewDto,
   AssistantUiContextDto,
+  AssistantWriteCompletedDto,
   ChatMessageDto,
   LlmProviderKindDto,
   WriteRequestDto,
@@ -21,6 +23,44 @@ interface AssistantChatProps {
   onProposeWrite: (req: WriteRequestDto) => void;
   writeDisabled?: boolean;
   uiContext?: AssistantUiContextDto | null;
+  writeCompleted?: AssistantWriteCompletedDto | null;
+  onWriteCompletedAck?: () => void;
+}
+
+type ChatMessageRole = "user" | "assistant" | "system";
+
+interface ChatMessageView {
+  role: ChatMessageRole;
+  content: string;
+  at: number;
+  responseSecs?: number;
+}
+
+function formatMessageTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatDuration(secs: number): string {
+  if (secs < 1) return "<1s";
+  if (secs < 60) return `${secs.toFixed(1)}s`;
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs % 60);
+  return `${m}m ${s}s`;
+}
+
+function roleLabel(role: ChatMessageRole): string {
+  switch (role) {
+    case "user":
+      return "Você";
+    case "assistant":
+      return "Assistente";
+    case "system":
+      return "Sistema";
+  }
 }
 
 function writeLabel(req: WriteRequestDto): string {
@@ -59,24 +99,120 @@ function writeLabel(req: WriteRequestDto): string {
   }
 }
 
+function writeSuccessMessage(req: WriteRequestDto): string {
+  switch (req.kind) {
+    case "stage":
+      return `Executado: «${req.path}» está em stage.`;
+    case "stageMany":
+      return `Executado: ${req.paths.length} arquivo(s) em stage.`;
+    case "stageAll":
+      return "Executado: todos os arquivos alterados estão em stage.";
+    case "unstage":
+      return `Executado: «${req.path}» voltou para working tree (unstaged).`;
+    case "unstageMany":
+      return `Executado: ${req.paths.length} arquivo(s) voltaram para working tree.`;
+    case "unstageAll":
+      return "Executado: todos os arquivos voltaram para working tree (unstaged).";
+    case "commit":
+      return `Executado: commit «${req.summary}».`;
+    case "push":
+      return "Executado: push concluído.";
+    case "pullFfOnly":
+      return "Executado: pull (--ff-only) concluído.";
+    case "revert":
+      return `Executado: revert do commit ${req.commitId.slice(0, 7)}.`;
+    case "cherryPick": {
+      const ids =
+        req.commitIds && req.commitIds.length > 0
+          ? req.commitIds
+          : req.commitId
+            ? [req.commitId]
+            : [];
+      return `Executado: cherry-pick ${ids.map((id) => id.slice(0, 7)).join(", ") || "…"}.`;
+    }
+    default:
+      return `Executado: ${writeLabel(req)}.`;
+  }
+}
+
+function writesMatch(a: WriteRequestDto, b: WriteRequestDto): boolean {
+  if (a.kind !== b.kind) return false;
+  switch (a.kind) {
+    case "stage":
+    case "unstage":
+    case "discardWorktree":
+    case "removeUntracked":
+    case "saveWorktreeFile":
+      return b.kind === a.kind && a.path === b.path;
+    case "stageMany":
+    case "unstageMany":
+    case "discardWorktreeMany":
+    case "removeUntrackedMany":
+      return (
+        b.kind === a.kind &&
+        a.paths.length === b.paths.length &&
+        a.paths.every((p, i) => p === b.paths[i])
+      );
+    case "commit":
+      return b.kind === a.kind && a.summary === b.summary;
+    case "revert":
+    case "reword":
+      return b.kind === a.kind && a.commitId === b.commitId;
+    case "cherryPick":
+      return b.kind === a.kind && JSON.stringify(a) === JSON.stringify(b);
+    default:
+      return JSON.stringify(a) === JSON.stringify(b);
+  }
+}
+
 export function AssistantChat({
   onProposeWrite,
   writeDisabled,
   uiContext,
+  writeCompleted,
+  onWriteCompletedAck,
 }: AssistantChatProps) {
   const [settings, setSettings] = useState<AssistantSettingsViewDto | null>(
     null,
   );
   const [showSettings, setShowSettings] = useState(false);
-  const [messages, setMessages] = useState<ChatMessageDto[]>([]);
+  const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [input, setInput] = useState("");
   const [pendingWrites, setPendingWrites] = useState<WriteRequestDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [thinkingSince, setThinkingSince] = useState<number | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [testHint, setTestHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<AssistantSettingsViewDto | null>(null);
+  const saveSeqRef = useRef(0);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const defaultModelFor = (provider: LlmProviderKindDto): string => {
+    switch (provider) {
+      case "ollama":
+        return "llama3.2";
+      case "openAi":
+        return "gpt-4o-mini";
+      case "anthropic":
+        return "claude-3-5-haiku-latest";
+    }
+  };
+
+  const toSettingsDto = (view: AssistantSettingsViewDto): AssistantSettingsDto => ({
+    enabled: view.enabled,
+    provider: view.provider,
+    model: view.model,
+    ollamaBaseUrl: view.ollamaBaseUrl,
+    sendMetadata: view.sendMetadata,
+    sendDiffs: view.sendDiffs,
+  });
 
   const reloadSettings = useCallback(async () => {
     try {
@@ -93,27 +229,54 @@ export function AssistantChat({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pendingWrites]);
+  }, [messages, pendingWrites, loading, thinkingSince]);
+
+  useEffect(() => {
+    if (!writeCompleted) return;
+    const at = Date.now();
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "system",
+        content: writeSuccessMessage(writeCompleted.req),
+        at,
+      },
+    ]);
+    setPendingWrites((prev) =>
+      prev.filter((w) => !writesMatch(w, writeCompleted.req)),
+    );
+    onWriteCompletedAck?.();
+  }, [writeCompleted, onWriteCompletedAck]);
 
   async function saveSettings(patch: Partial<AssistantSettingsViewDto>) {
-    if (!settings) return;
-    const next = {
-      enabled: patch.enabled ?? settings.enabled,
-      provider: patch.provider ?? settings.provider,
-      model: patch.model ?? settings.model,
-      ollamaBaseUrl: patch.ollamaBaseUrl ?? settings.ollamaBaseUrl,
-      sendMetadata: patch.sendMetadata ?? settings.sendMetadata,
-      sendDiffs: patch.sendDiffs ?? settings.sendDiffs,
+    const base = settingsRef.current;
+    if (!base) return;
+
+    const nextView: AssistantSettingsViewDto = {
+      ...base,
+      ...patch,
     };
-    setLoading(true);
+    const seq = ++saveSeqRef.current;
+
+    setSettings(nextView);
+    settingsRef.current = nextView;
+    setSettingsSaving(true);
     setError(null);
+
     try {
-      const saved = await setAssistantSettings(next);
+      const saved = await setAssistantSettings(toSettingsDto(nextView));
+      if (seq !== saveSeqRef.current) return;
       setSettings(saved);
+      settingsRef.current = saved;
     } catch (e) {
+      if (seq !== saveSeqRef.current) return;
+      setSettings(base);
+      settingsRef.current = base;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === saveSeqRef.current) {
+        setSettingsSaving(false);
+      }
     }
   }
 
@@ -188,21 +351,33 @@ export function AssistantChat({
       setShowSettings(true);
       return;
     }
+    const userAt = Date.now();
+    const userMsg: ChatMessageView = { role: "user", content: text, at: userAt };
     const nextMessages: ChatMessageDto[] = [
-      ...messages,
+      ...messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map(({ role, content }) => ({ role, content })),
       { role: "user", content: text },
     ];
-    setMessages(nextMessages);
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setPendingWrites([]);
     setNotice(null);
     setLoading(true);
+    setThinkingSince(userAt);
     setError(null);
     try {
       const resp = await chatAssistant(nextMessages, uiContext);
-      setMessages([
-        ...nextMessages,
-        { role: "assistant", content: resp.reply },
+      const assistantAt = Date.now();
+      const responseSecs = (assistantAt - userAt) / 1000;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: resp.reply,
+          at: assistantAt,
+          responseSecs,
+        },
       ]);
       setPendingWrites(resp.pendingWrites ?? []);
       setNotice(resp.notice ?? null);
@@ -210,6 +385,7 @@ export function AssistantChat({
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      setThinkingSince(null);
     }
   }
 
@@ -266,6 +442,7 @@ export function AssistantChat({
             <input
               type="checkbox"
               checked={settings.enabled}
+              disabled={settingsSaving}
               onChange={(e) => void saveSettings({ enabled: e.target.checked })}
             />
             Ativar assistente (opt-in)
@@ -281,11 +458,14 @@ export function AssistantChat({
               <select
                 className="rounded border border-border bg-surface px-1.5 py-0.5"
                 value={settings.provider}
-                onChange={(e) =>
+                disabled={settingsSaving}
+                onChange={(e) => {
+                  const provider = e.target.value as LlmProviderKindDto;
                   void saveSettings({
-                    provider: e.target.value as LlmProviderKindDto,
-                  })
-                }
+                    provider,
+                    model: defaultModelFor(provider),
+                  });
+                }}
               >
                 <option value="ollama">Ollama (local)</option>
                 <option value="openAi">OpenAI</option>
@@ -297,27 +477,40 @@ export function AssistantChat({
               <input
                 className="w-36 rounded border border-border bg-surface px-1.5 py-0.5"
                 value={settings.model}
-                onChange={(e) =>
-                  setSettings({ ...settings, model: e.target.value })
+                disabled={settingsSaving}
+                onChange={(e) => {
+                  const next = { ...settings, model: e.target.value };
+                  setSettings(next);
+                  settingsRef.current = next;
+                }}
+                onBlur={(e) =>
+                  void saveSettings({ model: e.target.value.trim() })
                 }
-                onBlur={() => void saveSettings({ model: settings.model })}
               />
             </label>
           </div>
           {settings.provider === "ollama" && (
-            <label className="flex items-center gap-1">
-              URL Ollama
-              <input
-                className="min-w-[14rem] flex-1 rounded border border-border bg-surface px-1.5 py-0.5"
-                value={settings.ollamaBaseUrl}
-                onChange={(e) =>
-                  setSettings({ ...settings, ollamaBaseUrl: e.target.value })
-                }
-                onBlur={() =>
-                  void saveSettings({ ollamaBaseUrl: settings.ollamaBaseUrl })
-                }
-              />
-            </label>
+            <div className="space-y-1">
+              <label className="flex items-center gap-1">
+                URL Ollama
+                <input
+                  className="min-w-[14rem] flex-1 rounded border border-border bg-surface px-1.5 py-0.5"
+                  value={settings.ollamaBaseUrl}
+                  disabled={settingsSaving}
+                  onChange={(e) => {
+                    const next = { ...settings, ollamaBaseUrl: e.target.value };
+                    setSettings(next);
+                    settingsRef.current = next;
+                  }}
+                  onBlur={(e) =>
+                    void saveSettings({ ollamaBaseUrl: e.target.value.trim() })
+                  }
+                />
+              </label>
+              <p className="text-[10px] text-muted">
+                Ollama é local — não usa API key. Informe URL e modelo (ex. llama3.2).
+              </p>
+            </div>
           )}
           {(settings.provider === "openAi" ||
             settings.provider === "anthropic") && (
@@ -353,7 +546,7 @@ export function AssistantChat({
                 <button
                   type="button"
                   className="btn-toolbar"
-                  disabled={!apiKeyDraft.trim() || loading}
+                  disabled={!apiKeyDraft.trim() || loading || settingsSaving}
                   onClick={() => void handleSaveKey()}
                 >
                   Salvar chave
@@ -361,7 +554,7 @@ export function AssistantChat({
                 <button
                   type="button"
                   className="btn-toolbar"
-                  disabled={loading}
+                  disabled={loading || settingsSaving}
                   onClick={() => void handleClearKey()}
                 >
                   Remover
@@ -373,6 +566,7 @@ export function AssistantChat({
             <input
               type="checkbox"
               checked={settings.sendMetadata}
+              disabled={settingsSaving}
               onChange={(e) =>
                 void saveSettings({ sendMetadata: e.target.checked })
               }
@@ -383,6 +577,7 @@ export function AssistantChat({
             <input
               type="checkbox"
               checked={settings.sendDiffs}
+              disabled={settingsSaving}
               onChange={(e) =>
                 void saveSettings({ sendDiffs: e.target.checked })
               }
@@ -418,19 +613,45 @@ export function AssistantChat({
         )}
         {messages.map((m, i) => (
           <div
-            key={`${m.role}-${i}`}
+            key={`${m.role}-${m.at}-${i}`}
             className={`rounded-lg px-2.5 py-1.5 text-[11px] leading-snug ${
               m.role === "user"
                 ? "ml-6 bg-accent/15 text-text"
-                : "mr-6 bg-bg/80 text-text"
+                : m.role === "system"
+                  ? "mx-2 border border-emerald-500/30 bg-emerald-500/10 text-text"
+                  : "mr-6 bg-bg/80 text-text"
             }`}
           >
-            <span className="mb-0.5 block text-[9px] font-semibold uppercase tracking-wide text-muted">
-              {m.role === "user" ? "Você" : "Assistente"}
-            </span>
+            <div className="mb-0.5 flex items-center justify-between gap-2">
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">
+                {roleLabel(m.role)}
+              </span>
+              <span className="shrink-0 font-mono text-[9px] text-muted">
+                {formatMessageTime(m.at)}
+                {m.responseSecs != null && (
+                  <span title="Tempo de resposta">
+                    {" "}
+                    · {formatDuration(m.responseSecs)}
+                  </span>
+                )}
+              </span>
+            </div>
             <p className="whitespace-pre-wrap">{m.content}</p>
           </div>
         ))}
+        {loading && thinkingSince != null && (
+          <div className="mr-6 rounded-lg bg-bg/80 px-2.5 py-1.5 text-[11px] leading-snug text-text">
+            <div className="mb-0.5 flex items-center justify-between gap-2">
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">
+                Assistente
+              </span>
+              <span className="font-mono text-[9px] text-muted">
+                desde {formatMessageTime(thinkingSince)}
+              </span>
+            </div>
+            <p className="animate-pulse text-muted">Pensando…</p>
+          </div>
+        )}
         {pendingWrites.length > 0 && (
           <div className="rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-2">
             <p className="mb-1 text-[10px] font-semibold text-accent">

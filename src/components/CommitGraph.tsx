@@ -1,6 +1,7 @@
 import type { GraphView } from "@/hooks/useCommits";
 import type { CommitDto, TrailKindDto } from "@/types";
 import { GraphCanvas, type TrailDivergence } from "./GraphCanvas";
+import { TrailBaseSelector } from "./TrailBaseSelector";
 
 interface CommitGraphProps {
   commits: CommitDto[];
@@ -21,6 +22,11 @@ interface CommitGraphProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loading?: boolean;
+  /** Trilha comparada — seletor de base. */
+  repoPath?: string | null;
+  suggestedBase?: string | null;
+  trailBase?: string | null;
+  onTrailBaseChange?: (base: string | null) => void;
 }
 
 const VIEWS: { value: GraphView; label: string; hint: string }[] = [
@@ -55,6 +61,10 @@ export function CommitGraph({
   onLoadMore,
   hasMore,
   loading,
+  repoPath,
+  suggestedBase,
+  trailBase,
+  onTrailBaseChange,
 }: CommitGraphProps) {
   return (
     <div className="flex h-full flex-col">
@@ -82,30 +92,41 @@ export function CommitGraph({
           ) : null}
         </div>
       ) : null}
-      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
         <span className="text-xs font-medium text-muted">Trilha de commits</span>
-        <div
-          className={`inline-flex items-center gap-0.5 rounded-md border border-border p-0.5 ${focusedBranch ? "opacity-50 pointer-events-none" : ""}`}
-          role="group"
-          aria-label="Visão do grafo"
-        >
-          {VIEWS.map(({ value, label, hint }) => (
-            <button
-              key={value}
-              type="button"
-              title={hint}
-              aria-label={label}
-              aria-pressed={view === value}
-              onClick={() => onViewChange(value)}
-              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                view === value
-                  ? "bg-accent text-white"
-                  : "text-muted hover:bg-surface hover:text-text"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {view === "trail" && onTrailBaseChange && !focusedBranch ? (
+            <TrailBaseSelector
+              repoPath={repoPath ?? null}
+              currentBranch={currentBranch ?? null}
+              suggestedBase={suggestedBase ?? null}
+              value={trailBase ?? null}
+              onChange={onTrailBaseChange}
+            />
+          ) : null}
+          <div
+            className={`inline-flex items-center gap-0.5 rounded-md border border-border p-0.5 ${focusedBranch ? "opacity-50 pointer-events-none" : ""}`}
+            role="group"
+            aria-label="Visão do grafo"
+          >
+            {VIEWS.map(({ value, label, hint }) => (
+              <button
+                key={value}
+                type="button"
+                title={hint}
+                aria-label={label}
+                aria-pressed={view === value}
+                onClick={() => onViewChange(value)}
+                className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                  view === value
+                    ? "bg-accent text-white"
+                    : "text-muted hover:bg-surface hover:text-text"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <GraphCanvas

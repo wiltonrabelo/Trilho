@@ -194,11 +194,28 @@ pub fn validate_clone_destination(path: &std::path::Path) -> Result<(), GitError
     Ok(())
 }
 
-/// Owner e repositório em github.com (RF-12).
+/// Owner/repo (+ host) para GitHub.com ou GitHub Enterprise (RF-12).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GithubSlug {
+    /// `github.com` ou host GHE (ex.: `github.empresa.com`).
+    pub host: String,
     pub owner: String,
     pub repo: String,
+}
+
+impl GithubSlug {
+    pub fn is_github_dot_com(&self) -> bool {
+        self.host.eq_ignore_ascii_case("github.com")
+    }
+
+    /// Base da API REST: github.com → api.github.com; GHE → `{host}/api/v3`.
+    pub fn api_base_url(&self) -> String {
+        if self.is_github_dot_com() {
+            "https://api.github.com".into()
+        } else {
+            format!("https://{}/api/v3", self.host)
+        }
+    }
 }
 
 /// Caminho `owner/repo.git` para credential fill com `useHttpPath`.
@@ -206,18 +223,56 @@ pub fn github_credential_path(slug: &GithubSlug) -> String {
     format!("{}/{}.git", slug.owner, slug.repo)
 }
 
-/// Extrai owner/repo de URLs HTTPS ou SSH do GitHub.
+/// Extrai host/owner/repo de URLs HTTPS ou SSH (github.com ou GHE).
 pub fn parse_github_slug_from_remote(url: &str) -> Option<GithubSlug> {
     let trimmed = url.trim().trim_end_matches('/');
-    let segment = trimmed
+    // github.com (atalhos explícitos)
+    if let Some(segment) = trimmed
         .strip_prefix("https://github.com/")
         .or_else(|| trimmed.strip_prefix("http://github.com/"))
         .or_else(|| trimmed.strip_prefix("git@github.com:"))
-        .or_else(|| trimmed.strip_prefix("ssh://git@github.com/"))?;
-    parse_github_owner_repo_segment(segment)
+        .or_else(|| trimmed.strip_prefix("ssh://git@github.com/"))
+    {
+        return parse_github_owner_repo_segment("github.com", segment);
+    }
+    // HTTPS genérico: https://host/owner/repo(.git)
+    if let Some(rest) = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+    {
+        let mut parts = rest.splitn(2, '/');
+        let host = parts.next()?.trim();
+        let path = parts.next()?.trim();
+        if looks_like_github_host(host) {
+            return parse_github_owner_repo_segment(host, path);
+        }
+    }
+    // SSH: git@host:owner/repo.git
+    if let Some(rest) = trimmed.strip_prefix("git@") {
+        let (host, path) = rest.split_once(':')?;
+        if looks_like_github_host(host) {
+            return parse_github_owner_repo_segment(host, path);
+        }
+    }
+    // ssh://git@host/owner/repo.git
+    if let Some(rest) = trimmed.strip_prefix("ssh://git@") {
+        let mut parts = rest.splitn(2, '/');
+        let host = parts.next()?.trim();
+        let path = parts.next()?.trim();
+        if looks_like_github_host(host) {
+            return parse_github_owner_repo_segment(host, path);
+        }
+    }
+    None
 }
 
-fn parse_github_owner_repo_segment(segment: &str) -> Option<GithubSlug> {
+/// Host GitHub.com ou Enterprise (nome começa com `github.`).
+pub fn looks_like_github_host(host: &str) -> bool {
+    let h = host.trim().to_ascii_lowercase();
+    h == "github.com" || h.starts_with("github.")
+}
+
+fn parse_github_owner_repo_segment(host: &str, segment: &str) -> Option<GithubSlug> {
     let segment = segment.strip_suffix(".git").unwrap_or(segment);
     let mut parts = segment.split('/');
     let owner = parts.next()?.trim();
@@ -226,6 +281,7 @@ fn parse_github_owner_repo_segment(segment: &str) -> Option<GithubSlug> {
         return None;
     }
     Some(GithubSlug {
+        host: host.to_string(),
         owner: owner.to_string(),
         repo: repo.to_string(),
     })
@@ -288,6 +344,7 @@ mod tests {
     fn parse_github_slug_https_e_ssh() {
         let slug = parse_github_slug_from_remote("https://github.com/octo/Hello-World.git")
             .expect("https");
+        assert_eq!(slug.host, "github.com");
         assert_eq!(slug.owner, "octo");
         assert_eq!(slug.repo, "Hello-World");
         let ssh = parse_github_slug_from_remote("git@github.com:octo/Hello-World.git").expect("ssh");
@@ -297,6 +354,25 @@ mod tests {
     #[test]
     fn parse_github_slug_rejeita_outros_hosts() {
         assert!(parse_github_slug_from_remote("https://gitlab.com/u/r.git").is_none());
+    }
+
+    #[test]
+    fn parse_github_enterprise_https() {
+        let slug =
+            parse_github_slug_from_remote("https://github.empresa.com/org/repo.git").expect("ghe");
+        assert_eq!(slug.host, "github.empresa.com");
+        assert_eq!(slug.owner, "org");
+        assert_eq!(slug.repo, "repo");
+        assert_eq!(slug.api_base_url(), "https://github.empresa.com/api/v3");
+    }
+
+    #[test]
+    fn parse_github_enterprise_ssh() {
+        let slug =
+            parse_github_slug_from_remote("git@github.myco.internal:team/app.git").expect("ghe ssh");
+        assert_eq!(slug.host, "github.myco.internal");
+        assert_eq!(slug.owner, "team");
+        assert_eq!(slug.repo, "app");
     }
 
     #[test]

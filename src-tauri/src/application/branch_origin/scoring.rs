@@ -95,6 +95,15 @@ pub(super) fn score_candidate(
         signals.push(lineage_signal);
     }
 
+    let (ticket_boost, ticket_signal) = name_numeric_ticket_boost(current_branch, candidate);
+    if ticket_boost != 0.0 {
+        score += ticket_boost;
+        if ticket_boost > 0.0 {
+            structural += ticket_boost;
+        }
+        signals.push(ticket_signal);
+    }
+
     score += name_priority(candidate) as f64;
 
     Some(ScoredCandidate {
@@ -228,6 +237,71 @@ fn name_lineage_boost(current: &str, candidate: &str) -> (f64, String) {
         }
     }
     (0.0, String::new())
+}
+
+/// «feature-SPF-1122» costuma derivar de «feature-SPF-1112» — tickets sequenciais.
+fn name_numeric_ticket_boost(current: &str, candidate: &str) -> (f64, String) {
+    let (cur_prefix, cur_num) = match split_numeric_suffix(current) {
+        Some(v) => v,
+        None => return (0.0, String::new()),
+    };
+    let (cand_prefix, cand_num) = match split_numeric_suffix(candidate) {
+        Some(v) => v,
+        None => return (0.0, String::new()),
+    };
+    if cur_prefix != cand_prefix {
+        return (0.0, String::new());
+    }
+    if cand_num >= cur_num {
+        return (
+            -30.0,
+            format!("ticket «{candidate}» é posterior a «{current}»"),
+        );
+    }
+    let gap = cur_num - cand_num;
+    let boost = if gap <= 20 {
+        55.0
+    } else if gap <= 100 {
+        35.0
+    } else {
+        18.0
+    };
+    (
+        boost,
+        format!("ticket «{current}» sugere origem em «{candidate}» (sequência numérica)"),
+    )
+}
+
+pub(super) fn split_numeric_suffix(name: &str) -> Option<(String, u64)> {
+    let base = name.rsplit('/').next().unwrap_or(name);
+    let (prefix, num_str) = base.rsplit_once('-')?;
+    let num = num_str.parse::<u64>().ok()?;
+    if prefix.is_empty() {
+        return None;
+    }
+    Some((prefix.to_string(), num))
+}
+
+/// Prioridade extra ao limitar candidatas: ancestrais numéricos sobrevivem ao corte.
+pub(super) fn numeric_ancestor_priority(current: &str, candidate: &str) -> i32 {
+    let (cur_prefix, cur_num) = match split_numeric_suffix(current) {
+        Some(v) => v,
+        None => return 0,
+    };
+    let (cand_prefix, cand_num) = match split_numeric_suffix(candidate) {
+        Some(v) => v,
+        None => return 0,
+    };
+    if cur_prefix != cand_prefix {
+        return 0;
+    }
+    if cand_num < cur_num {
+        4
+    } else if cand_num > cur_num {
+        -2
+    } else {
+        0
+    }
 }
 
 /// Prioridade do nome para fins de ORIGEM. Working branches (feature/bugfix/

@@ -69,14 +69,21 @@ pub fn parse_line_porcelain(raw: &str) -> Result<Vec<BlameLine>, GitError> {
             line: final_line,
             commit_id: sha.clone(),
             short_id: format!("{:.7}", sha),
-            author,
+            author: localize_blame_label(&author),
             authored_at: timestamp_to_iso(author_time, author_tz),
-            summary,
+            summary: localize_blame_label(&summary),
             content,
         });
     }
 
     Ok(result)
+}
+
+fn localize_blame_label(value: &str) -> String {
+    match value.trim() {
+        "Not Committed Yet" => "Ainda não comitado".into(),
+        other => other.to_string(),
+    }
 }
 
 fn is_sha(s: &str) -> bool {
@@ -143,5 +150,22 @@ filename src/a.ts
         assert_eq!(parsed[0].line, 1);
         assert_eq!(parsed[0].content, "line one");
         assert_eq!(parsed[1].content, "line two");
+    }
+
+    #[test]
+    fn traduz_autor_nao_commitado() {
+        const UNCOMMITTED: &str = "\
+0000000000000000000000000000000000000000 1 2 1
+author Not Committed Yet
+author-time 1700000000
+author-tz -0300
+summary Not Committed Yet
+filename Anotacoes.txt
+\tlinha 2
+";
+        let parsed = parse_line_porcelain(UNCOMMITTED).expect("parse");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].author, "Ainda não comitado");
+        assert_eq!(parsed[0].summary, "Ainda não comitado");
     }
 }

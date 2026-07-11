@@ -1,7 +1,7 @@
 use git2::{BranchType, Oid, Repository};
 use std::collections::HashSet;
 
-use super::scoring::name_priority;
+use super::scoring::{name_priority, numeric_ancestor_priority, split_numeric_suffix};
 
 /// Teto de candidatas pontuadas — em repositórios com centenas de branches
 /// (SysPDV: 300+), pontuar todas custa minutos. Mantém as prioritárias
@@ -41,10 +41,26 @@ pub(super) fn collect_candidates(repo: &Repository, current: &str) -> Vec<String
     list
 }
 
-pub(super) fn limit_candidates(repo: &Repository, candidates: Vec<String>) -> Vec<String> {
+pub(super) fn limit_candidates(
+    repo: &Repository,
+    current: &str,
+    candidates: Vec<String>,
+) -> Vec<String> {
     if candidates.len() <= MAX_SCORED_CANDIDATES {
         return candidates;
     }
+
+    let mut mandatory: HashSet<String> = HashSet::new();
+    if let Some((prefix, cur_num)) = split_numeric_suffix(current) {
+        for name in &candidates {
+            if let Some((p, n)) = split_numeric_suffix(name) {
+                if p == prefix && n < cur_num {
+                    mandatory.insert(name.clone());
+                }
+            }
+        }
+    }
+
     let mut with_time: Vec<(String, i64)> = candidates
         .into_iter()
         .map(|name| {
@@ -55,14 +71,21 @@ pub(super) fn limit_candidates(repo: &Repository, candidates: Vec<String>) -> Ve
             (name, time)
         })
         .collect();
-    // Prioritárias primeiro, depois as mais recentes.
+    // Prioritárias primeiro, depois ancestrais numéricos, depois as mais recentes.
     with_time.sort_by(|a, b| {
         name_priority(&b.0)
             .cmp(&name_priority(&a.0))
+            .then_with(|| numeric_ancestor_priority(current, &b.0).cmp(&numeric_ancestor_priority(current, &a.0)))
             .then_with(|| b.1.cmp(&a.1))
     });
     with_time.truncate(MAX_SCORED_CANDIDATES);
-    with_time.into_iter().map(|(name, _)| name).collect()
+    let mut kept: Vec<String> = with_time.into_iter().map(|(name, _)| name).collect();
+    for name in mandatory {
+        if !kept.contains(&name) {
+            kept.push(name);
+        }
+    }
+    kept
 }
 
 fn branch_names(repo: &Repository, kind: BranchType) -> HashSet<String> {

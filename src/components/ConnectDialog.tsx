@@ -98,6 +98,11 @@ export function ConnectDialog({
         <div className="space-y-3 px-4 py-3 text-sm">
           {usesSshRemote ? (
             <>
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                Este repositório usa SSH (<code className="font-mono">git@</code>). O Git usa sua
+                chave SSH; para <strong>status de PR</strong> na barra superior, salve também um
+                PAT na aba «Token (PAT)» (escopo <code className="font-mono">repo</code>).
+              </p>
               {sshTest?.success ? (
                 <p className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1.5 text-xs text-emerald-700 dark:text-emerald-300">
                   SSH conectado
@@ -263,10 +268,13 @@ export function ConnectDialog({
                   rel="noreferrer"
                   className="inline-flex items-center gap-0.5 text-accent hover:underline"
                 >
-                  token de acesso pessoal
+                  Personal Access Token
                   <ExternalLink size={12} />
                 </a>{" "}
-                com escopo <code className="font-mono">repo</code>.
+                (<code className="font-mono">ghp_…</code> ou{" "}
+                <code className="font-mono">github_pat_…</code>) com escopo{" "}
+                <code className="font-mono">repo</code>. O Trilho valida o acesso a este
+                repositório antes de salvar. Se a org usa SSO, autorize em «Configure SSO».
               </p>
               <label className="block text-muted">
                 Token
@@ -283,7 +291,7 @@ export function ConnectDialog({
               <button
                 type="button"
                 onClick={submitPat}
-                disabled={loading || !pat.trim() || !credential?.gcmAvailable}
+                disabled={loading || !pat.trim()}
                 className="w-full rounded-lg border border-accent/50 bg-accent/10 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
               >
                 {loading ? "Salvando…" : "Salvar token"}
