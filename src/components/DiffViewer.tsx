@@ -27,13 +27,15 @@ function lineClass(kind: string): string {
 }
 
 function flattenUnifiedRows(rows: DiffRow[]): {
-  lineNo: number | undefined;
+  oldLine: number | undefined;
+  newLine: number | undefined;
   text: string;
   kind: string;
   prefix: string;
 }[] {
   const out: {
-    lineNo: number | undefined;
+    oldLine: number | undefined;
+    newLine: number | undefined;
     text: string;
     kind: string;
     prefix: string;
@@ -41,7 +43,8 @@ function flattenUnifiedRows(rows: DiffRow[]): {
   for (const row of rows) {
     if (row.left.kind === "remove") {
       out.push({
-        lineNo: row.left.lineNo,
+        oldLine: row.left.lineNo,
+        newLine: undefined,
         text: row.left.text,
         kind: "remove",
         prefix: "-",
@@ -49,7 +52,8 @@ function flattenUnifiedRows(rows: DiffRow[]): {
     }
     if (row.right.kind === "add") {
       out.push({
-        lineNo: row.right.lineNo,
+        oldLine: undefined,
+        newLine: row.right.lineNo,
         text: row.right.text,
         kind: "add",
         prefix: "+",
@@ -57,7 +61,8 @@ function flattenUnifiedRows(rows: DiffRow[]): {
     }
     if (row.left.kind === "context" && row.right.kind === "context") {
       out.push({
-        lineNo: row.right.lineNo ?? row.left.lineNo,
+        oldLine: row.left.lineNo,
+        newLine: row.right.lineNo,
         text: row.left.text,
         kind: "context",
         prefix: " ",
@@ -67,6 +72,83 @@ function flattenUnifiedRows(rows: DiffRow[]): {
   return out;
 }
 
+const HUNK_HEADER_RE = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
+type HunkViewRow =
+  | { type: "header"; text: string }
+  | {
+      type: "line";
+      prefix: string;
+      kind: string;
+      text: string;
+      oldLine: number | null;
+      newLine: number | null;
+    };
+
+function buildHunkViewRows(patch: string): HunkViewRow[] {
+  const lines = patch.split("\n");
+  const start = lines.findIndex((l) => l.startsWith("@@"));
+  const body = start >= 0 ? lines.slice(start) : lines;
+
+  const rows: HunkViewRow[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+
+  for (const line of body) {
+    if (line.startsWith("@@")) {
+      const m = line.match(HUNK_HEADER_RE);
+      if (m) {
+        oldLine = Number.parseInt(m[1], 10);
+        newLine = Number.parseInt(m[2], 10);
+      }
+      rows.push({ type: "header", text: line });
+      continue;
+    }
+    if (line.startsWith("\\ No newline") || line.startsWith("diff --git") ||
+        line.startsWith("--- ") || line.startsWith("+++ ") ||
+        line.startsWith("index ")) {
+      continue;
+    }
+    if (!line && rows.length === 0) continue;
+
+    const prefix = line[0] ?? " ";
+    const text = line.slice(1);
+    if (prefix === "-") {
+      rows.push({
+        type: "line",
+        prefix,
+        kind: "remove",
+        text,
+        oldLine,
+        newLine: null,
+      });
+      oldLine += 1;
+    } else if (prefix === "+") {
+      rows.push({
+        type: "line",
+        prefix,
+        kind: "add",
+        text,
+        oldLine: null,
+        newLine,
+      });
+      newLine += 1;
+    } else {
+      rows.push({
+        type: "line",
+        prefix: " ",
+        kind: "context",
+        text: prefix === " " ? text : line,
+        oldLine,
+        newLine,
+      });
+      oldLine += 1;
+      newLine += 1;
+    }
+  }
+  return rows;
+}
+
 function HunkBlock({
   hunk,
   onDiscardHunk,
@@ -74,11 +156,7 @@ function HunkBlock({
   hunk: DiffHunk;
   onDiscardHunk?: (patch: string) => void;
 }) {
-  const bodyLines = useMemo(() => {
-    const lines = hunk.patch.split("\n");
-    const start = lines.findIndex((l) => l.startsWith("@@"));
-    return start >= 0 ? lines.slice(start) : lines;
-  }, [hunk.patch]);
+  const rows = useMemo(() => buildHunkViewRows(hunk.patch), [hunk.patch]);
 
   return (
     <div className="border-b border-border">
@@ -99,28 +177,31 @@ function HunkBlock({
       </div>
       <table className="w-full border-collapse font-mono text-xs">
         <tbody>
-          {bodyLines.map((line, i) => {
-            if (line.startsWith("@@")) {
+          {rows.map((row, i) => {
+            if (row.type === "header") {
               return (
                 <tr key={`h${i}`} className="bg-muted/10">
-                  <td colSpan={2} className="px-2 py-0.5 text-[10px] text-muted">
-                    {line}
+                  <td colSpan={4} className="px-2 py-0.5 text-[10px] text-muted">
+                    {row.text}
                   </td>
                 </tr>
               );
             }
-            const prefix = line[0] ?? " ";
-            const kind =
-              prefix === "+" ? "add" : prefix === "-" ? "remove" : "context";
             return (
               <tr key={`l${i}`} className="hover:bg-surface/50">
-                <td className="w-8 select-none border-r border-border px-1 py-0.5 text-right text-muted">
-                  {prefix}
+                <td className="w-10 select-none border-r border-border px-1 py-0.5 text-right tabular-nums text-muted">
+                  {row.oldLine ?? ""}
+                </td>
+                <td className="w-10 select-none border-r border-border px-1 py-0.5 text-right tabular-nums text-muted">
+                  {row.newLine ?? ""}
+                </td>
+                <td className="w-6 select-none border-r border-border px-1 py-0.5 text-center text-muted">
+                  {row.prefix}
                 </td>
                 <td
-                  className={`px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(kind)}`}
+                  className={`px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.kind)}`}
                 >
-                  {line.slice(1) || "\u00a0"}
+                  {row.text || "\u00a0"}
                 </td>
               </tr>
             );
@@ -197,23 +278,29 @@ export function DiffViewer({
             <table className="w-full border-collapse font-mono text-xs">
               <tbody>
                 {flattenUnifiedRows(file.rows).map((row, i) => {
+                  const clickLine = row.newLine ?? row.oldLine;
                   const isSelected =
-                    selectedLine != null && row.lineNo === selectedLine;
+                    selectedLine != null && clickLine === selectedLine;
                   return (
                     <tr
                       key={i}
-                      className={`hover:bg-surface/50 ${isSelected ? "ring-1 ring-inset ring-accent/40" : ""} ${onLineClick && row.lineNo ? "cursor-pointer" : ""}`}
+                      className={`hover:bg-surface/50 ${isSelected ? "ring-1 ring-inset ring-accent/40" : ""} ${onLineClick && clickLine ? "cursor-pointer" : ""}`}
                       onClick={() => {
-                        if (onLineClick && row.lineNo) onLineClick(row.lineNo);
+                        if (onLineClick && clickLine) onLineClick(clickLine);
                       }}
                     >
-                      <td className="w-10 select-none border-r border-border px-2 py-0.5 text-right text-muted">
-                        {row.lineNo ?? ""}
+                      <td className="w-10 select-none border-r border-border px-1 py-0.5 text-right tabular-nums text-muted">
+                        {row.oldLine ?? ""}
+                      </td>
+                      <td className="w-10 select-none border-r border-border px-1 py-0.5 text-right tabular-nums text-muted">
+                        {row.newLine ?? ""}
+                      </td>
+                      <td className="w-6 select-none border-r border-border px-1 py-0.5 text-center text-muted">
+                        {row.prefix}
                       </td>
                       <td
                         className={`px-2 py-0.5 whitespace-pre-wrap break-all ${lineClass(row.kind)}`}
                       >
-                        <span className="select-none text-muted">{row.prefix}</span>
                         {row.text || "\u00a0"}
                       </td>
                     </tr>

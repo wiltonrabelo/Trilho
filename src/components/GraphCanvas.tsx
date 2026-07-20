@@ -84,6 +84,12 @@ interface GraphCanvasProps {
 
   onSelect: (commit: CommitDto) => void;
 
+  onCommitContextMenu?: (
+    commit: CommitDto,
+    clientX: number,
+    clientY: number,
+  ) => void;
+
 }
 
 
@@ -133,6 +139,8 @@ export function GraphCanvas({
   onSelectWorkingCopy,
 
   onSelect,
+
+  onCommitContextMenu,
 
 }: GraphCanvasProps) {
 
@@ -201,7 +209,10 @@ export function GraphCanvas({
 
   return (
 
-    <div className="relative min-h-0 flex-1 overflow-auto">
+    <div
+      className="relative min-h-0 flex-1 overflow-auto"
+      onContextMenu={(e) => e.preventDefault()}
+    >
 
       {useRail && (
 
@@ -278,6 +289,8 @@ export function GraphCanvas({
               isHead={headId === commit.id}
 
               onSelect={onSelect}
+
+              onContextMenu={onCommitContextMenu}
 
               showSpineBelow={false}
 

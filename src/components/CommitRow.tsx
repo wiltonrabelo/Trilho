@@ -1,4 +1,5 @@
 import { Cloud, GitBranch, Tag } from "lucide-react";
+import type { MouseEvent } from "react";
 
 import type { CommitDto } from "@/types";
 
@@ -7,6 +8,8 @@ interface CommitRowProps {
   selected: boolean;
   isHead: boolean;
   onSelect: (commit: CommitDto) => void;
+  /** Clique direito — menu com as mesmas ações do painel Detalhes. */
+  onContextMenu?: (commit: CommitDto, clientX: number, clientY: number) => void;
   showSpineBelow: boolean;
   showDot?: boolean;
   dotColor?: string;
@@ -95,6 +98,7 @@ export function CommitRow({
   selected,
   isHead,
   onSelect,
+  onContextMenu,
   showSpineBelow,
   showDot = true,
   dotColor,
@@ -108,6 +112,13 @@ export function CommitRow({
   const absTime = new Date(commit.authoredAt).toLocaleString("pt-BR");
   const relTime = formatRelativeTime(commit.authoredAt);
 
+  function handleContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(commit);
+    onContextMenu?.(commit, e.clientX, e.clientY);
+  }
+
   if (compact) {
     // Grafo do Source Control do VS Code: uma linha só — mensagem + autor
     // esmaecido no mesmo texto truncável, refs (pílulas com ícone) à direita.
@@ -120,6 +131,7 @@ export function CommitRow({
         <button
           type="button"
           onClick={() => onSelect(commit)}
+          onContextMenu={handleContextMenu}
           title={`${commit.summary}\n${commit.shortId} · ${commit.authorName} · ${absTime}`}
           aria-selected={selected}
           className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-[13px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
@@ -163,6 +175,7 @@ export function CommitRow({
       <button
         type="button"
         onClick={() => onSelect(commit)}
+        onContextMenu={handleContextMenu}
         title={absTime}
         aria-selected={selected}
         className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${

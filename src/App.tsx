@@ -6,11 +6,16 @@ import { BranchCompareDialog } from "@/components/BranchCompareDialog";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { PrStatusBadge } from "@/components/PrStatusBadge";
 import { CommitCenterPanel } from "@/components/CommitCenterPanel";
+import {
+  CommitContextMenu,
+  type CommitContextMenuItem,
+} from "@/components/CommitContextMenu";
 import { ConnectDialog } from "@/components/ConnectDialog";
 import { CloneDialog } from "@/components/CloneDialog";
 import { CherryPickDialog } from "@/components/CherryPickDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
+import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { loadStoredTrailBase } from "@/components/TrailBaseSelector";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
@@ -20,7 +25,11 @@ import { RepoPicker } from "@/components/RepoPicker";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
 import { StashDialog } from "@/components/StashDialog";
-import { StatusPanel } from "@/components/StatusPanel";
+import {
+  StatusPanel,
+  type CommitFileContext,
+  type WorktreeFileContext,
+} from "@/components/StatusPanel";
 import { ResetDialog } from "@/components/ResetDialog";
 import { RewordDialog } from "@/components/RewordDialog";
 import { TagDialog } from "@/components/TagDialog";
@@ -41,8 +50,24 @@ import { useRepoChanged } from "@/hooks/useRepoChanged";
 import { useStashes } from "@/hooks/useStashes";
 import { useTags } from "@/hooks/useTags";
 import { useSync } from "@/hooks/useSync";
-import { getAppInfo, getRepoInfo, getRepoStatus, executeWriteOperation, listCommits, previewWriteOperation, runningInTauri } from "@/lib/api";
-import type { AppInfo, AssistantWriteCompletedDto, RepoInfo } from "@/types";
+import {
+  getAppInfo,
+  getRepoInfo,
+  getRepoStatus,
+  executeWriteOperation,
+  listCommits,
+  openWorktreePath,
+  previewWriteOperation,
+  resolveWorktreePath,
+  revealWorktreePath,
+  runningInTauri,
+} from "@/lib/api";
+import type {
+  AppInfo,
+  AssistantWriteCompletedDto,
+  CommitDto,
+  RepoInfo,
+} from "@/types";
 
 function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -55,6 +80,18 @@ function App() {
   const [rewordOpen, setRewordOpen] = useState(false);
   const [cherryPickOpen, setCherryPickOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [commitMenu, setCommitMenu] = useState<{
+    commit: CommitDto;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [fileMenu, setFileMenu] = useState<{
+    title: string;
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+  } | null>(null);
+  const [openBlameRequest, setOpenBlameRequest] = useState(0);
   const [branchCompareOpen, setBranchCompareOpen] = useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
   const [cloneSetupWarning, setCloneSetupWarning] = useState<string | null>(null);
@@ -544,6 +581,257 @@ function App() {
     if (canReword) setRewordOpen(true);
   }, [canAmend, canReword, isSelectedHead, selectedCommit, writeDisabled]);
 
+  const handleCommitContextMenu = useCallback(
+    (commit: CommitDto, clientX: number, clientY: number) => {
+      setWorkingCopySelected(false);
+      clearFileSelection();
+      void selectCommit(commit);
+      setFileMenu(null);
+      setCommitMenu({ commit, x: clientX, y: clientY });
+    },
+    [clearFileSelection, selectCommit],
+  );
+
+  const copyPath = useCallback(async (path: string) => {
+    try {
+      const abs = runningInTauri()
+        ? await resolveWorktreePath(path)
+        : path;
+      await navigator.clipboard.writeText(abs);
+    } catch {
+      /* clipboard pode falhar sem permissão */
+    }
+  }, []);
+
+  const handleWorktreeFileContextMenu = useCallback(
+    (ctx: WorktreeFileContext) => {
+      setCommitMenu(null);
+      const canOpen = ctx.kind !== "deleted";
+      const items: ContextMenuItem[] = [
+        {
+          id: "view",
+          label: "Ver diff / detalhes",
+          onSelect: () =>
+            void selectFile(ctx.path, ctx.section === "staged"),
+        },
+        {
+          id: "open",
+          label: "Abrir",
+          disabled: !canOpen || !runningInTauri(),
+          onSelect: () => void openWorktreePath(ctx.path).catch(() => undefined),
+        },
+        {
+          id: "reveal",
+          label: "Mostrar no Explorer",
+          disabled: !runningInTauri(),
+          onSelect: () =>
+            void revealWorktreePath(ctx.path).catch(() => undefined),
+        },
+        {
+          id: "copy",
+          label: "Copiar caminho",
+          onSelect: () => void copyPath(ctx.path),
+        },
+      ];
+
+      if (ctx.section === "staged" && !writeDisabled && ctx.kind !== "conflicted") {
+        items.push({
+          id: "unstage",
+          label: "Unstage",
+          separatorBefore: true,
+          onSelect: () =>
+            void ops.request({ kind: "unstage", path: ctx.path }),
+        });
+      }
+      if (
+        (ctx.section === "unstaged" || ctx.section === "untracked") &&
+        !writeDisabled &&
+        ctx.kind !== "conflicted"
+      ) {
+        items.push({
+          id: "stage",
+          label: ctx.section === "untracked" ? "Adicionar (stage)" : "Stage",
+          separatorBefore: true,
+          primary: true,
+          onSelect: () => void ops.request({ kind: "stage", path: ctx.path }),
+        });
+      }
+      if (
+        ctx.section === "unstaged" &&
+        !writeDisabled &&
+        ctx.kind !== "conflicted"
+      ) {
+        items.push({
+          id: "discard",
+          label: "Descartar alterações",
+          onSelect: () =>
+            void ops.request({ kind: "discardWorktree", path: ctx.path }),
+        });
+      }
+      if (ctx.section === "untracked" && !writeDisabled) {
+        items.push({
+          id: "remove",
+          label: "Remover",
+          onSelect: () =>
+            void ops.request({ kind: "removeUntracked", path: ctx.path }),
+        });
+      }
+      if (ctx.kind === "conflicted" && !writeDisabled) {
+        items.push({
+          id: "conflict",
+          label: "Resolver conflito…",
+          separatorBefore: true,
+          primary: true,
+          onSelect: () => void selectFile(ctx.path, ctx.section === "staged"),
+        });
+      }
+
+      setFileMenu({
+        title: ctx.path,
+        x: ctx.clientX,
+        y: ctx.clientY,
+        items,
+      });
+    },
+    [copyPath, ops, selectFile, writeDisabled],
+  );
+
+  const handleCommitFileContextMenu = useCallback(
+    (ctx: CommitFileContext) => {
+      setCommitMenu(null);
+      const openCommitFile = async () => {
+        clearFileSelection();
+        await selectCommitFile(ctx.path);
+      };
+      // Arquivo já commitado: sem Abrir / Explorer (só working tree / stage).
+      const items: ContextMenuItem[] = [
+        {
+          id: "view",
+          label: "Ver diff",
+          onSelect: () => void openCommitFile(),
+        },
+        {
+          id: "blame",
+          label: "Blame",
+          disabled: ctx.kind === "deleted" || ctx.kind === "added",
+          onSelect: () => {
+            void openCommitFile().then(() => {
+              setBlameSource("commit");
+              setOpenBlameRequest((n) => n + 1);
+            });
+          },
+        },
+        {
+          id: "copy",
+          label: "Copiar caminho",
+          separatorBefore: true,
+          onSelect: () => void copyPath(ctx.path),
+        },
+      ];
+      setFileMenu({
+        title: ctx.path,
+        x: ctx.clientX,
+        y: ctx.clientY,
+        items,
+      });
+    },
+    [clearFileSelection, copyPath, selectCommitFile, setBlameSource],
+  );
+
+  const commitMenuItems = useMemo((): CommitContextMenuItem[] => {
+    if (!commitMenu) return [];
+    const c = commitMenu.commit;
+    const isHead = Boolean(headCommit && c.id === headCommit.id);
+    const items: CommitContextMenuItem[] = [];
+
+    const showRevert =
+      headCommit &&
+      !isHead &&
+      c.parentIds.length <= 1 &&
+      !writeDisabled &&
+      !focusedBranch;
+    if (showRevert) {
+      items.push({
+        id: "revert",
+        label: "Reverter commit",
+        onSelect: () =>
+          void ops.request({ kind: "revert", commitId: c.id }),
+      });
+    }
+
+    const showReset =
+      headCommit && !isHead && !writeDisabled && !focusedBranch;
+    if (showReset) {
+      items.push({
+        id: "reset",
+        label: "Resetar para aqui…",
+        onSelect: () => setResetOpen(true),
+      });
+    }
+
+    const showCherryPick =
+      headCommit &&
+      !isHead &&
+      !writeDisabled &&
+      c.parentIds.length <= 1;
+    if (showCherryPick) {
+      items.push({
+        id: "cherryPick",
+        label: "Cherry-pick",
+        onSelect: () => setCherryPickOpen(true),
+      });
+    }
+
+    items.push({
+      id: "tag",
+      label: "Criar tag…",
+      onSelect: () => setTagOpen(true),
+    });
+
+    const showEditHead = isHead && canAmend && !writeDisabled;
+    const showReword =
+      !isHead &&
+      !writeDisabled &&
+      !focusedBranch &&
+      (c.isLocalOnly || upstreamConfigured);
+    if (showEditHead || showReword) {
+      items.push({
+        id: "editMessage",
+        label: "Editar mensagem",
+        primary: true,
+        onSelect: () => {
+          if (showEditHead) {
+            setWorkingCopySelected(true);
+            setAmendIntent((n) => n + 1);
+          } else {
+            setRewordOpen(true);
+          }
+        },
+      });
+    }
+
+    const showUncommit =
+      isHead && Boolean(headCommit?.isLocalOnly) && !writeDisabled && !repo?.isDetached;
+    if (showUncommit) {
+      items.push({
+        id: "uncommit",
+        label: "Uncommit (soft)",
+        onSelect: () => void ops.request({ kind: "uncommit" }),
+      });
+    }
+
+    return items;
+  }, [
+    commitMenu,
+    headCommit,
+    writeDisabled,
+    focusedBranch,
+    canAmend,
+    upstreamConfigured,
+    repo?.isDetached,
+    ops,
+  ]);
+
   const changeCount =
     (status?.staged.length ?? 0) +
     (status?.unstaged.length ?? 0) +
@@ -633,6 +921,25 @@ function App() {
       <a href="#trilho-main" className="skip-to-main">
         Ir para o conteúdo principal
       </a>
+      {commitMenu && (
+        <CommitContextMenu
+          commit={commitMenu.commit}
+          x={commitMenu.x}
+          y={commitMenu.y}
+          items={commitMenuItems}
+          onClose={() => setCommitMenu(null)}
+        />
+      )}
+      {fileMenu && (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          title={fileMenu.title}
+          ariaLabel={`Ações do arquivo ${fileMenu.title}`}
+          items={fileMenu.items}
+          onClose={() => setFileMenu(null)}
+        />
+      )}
       <OperationDialog
         preview={activePreview}
         loading={activeLoading}
@@ -1162,6 +1469,7 @@ function App() {
                       stagedCount={status?.staged.length ?? 0}
                       onSelectWorkingCopy={handleSelectWorkingCopy}
                       onSelect={(c) => void handleSelectCommit(c)}
+                      onCommitContextMenu={handleCommitContextMenu}
                       onLoadMore={() => void loadMore()}
                       hasMore={hasMore}
                       loading={commitsLoading}
@@ -1278,6 +1586,8 @@ function App() {
                         onSelectCommitFile={(p) =>
                           void handleSelectCommitFile(p)
                         }
+                        onWorktreeFileContextMenu={handleWorktreeFileContextMenu}
+                        onCommitFileContextMenu={handleCommitFileContextMenu}
                         onStage={
                           writeDisabled
                             ? undefined
@@ -1448,6 +1758,7 @@ function App() {
                     blameFocusLine={blameFocusLine}
                     blameLoading={blameLoading}
                     blameError={blameError}
+                    openBlameRequest={openBlameRequest}
                     onLineClick={selectBlameLine}
                     workingTreeFile={Boolean(
                       selectedFile &&

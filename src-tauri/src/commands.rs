@@ -160,6 +160,45 @@ pub async fn read_worktree_file(path: String, state: State<'_, AppState>) -> Res
     })
 }
 
+/// Abre o arquivo do working tree com o app padrão do SO.
+#[tauri::command]
+pub async fn open_worktree_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let repo_path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::open_worktree_path(&repo_path, &path)
+    })
+    .await
+    .map_err(|e| format!("Abertura interrompida: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+/// Revela o arquivo no Explorer (Windows).
+#[tauri::command]
+pub async fn reveal_worktree_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let repo_path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::reveal_worktree_path(&repo_path, &path)
+    })
+    .await
+    .map_err(|e| format!("Revelar interrompido: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+/// Caminho absoluto do arquivo no working tree (clipboard).
+#[tauri::command]
+pub async fn resolve_worktree_path(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let repo_path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::infrastructure::absolute_worktree_path(&repo_path, &path)
+    })
+    .await
+    .map_err(|e| format!("Resolução interrompida: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
 /// Path exibido no status (rename `a → b`) → path real no Git.
 fn diff_file_path(display_path: &str) -> String {
     display_path

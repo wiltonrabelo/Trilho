@@ -33,6 +33,8 @@ interface DetailPanelProps {
   onSaveWorktreeFile?: (content: string) => Promise<void>;
   fileReloadKey?: string | null;
   branchName?: string | null;
+  /** Incrementar para abrir a aba Blame (menu de contexto do arquivo). */
+  openBlameRequest?: number;
 }
 
 export function DetailPanel({
@@ -58,6 +60,7 @@ export function DetailPanel({
   onSaveWorktreeFile,
   fileReloadKey,
   branchName,
+  openBlameRequest = 0,
 }: DetailPanelProps) {
   const [diffExpanded, setDiffExpanded] = useState(false);
   const [conflictExpanded, setConflictExpanded] = useState(false);
@@ -83,6 +86,13 @@ export function DetailPanel({
     setDetailTab("diff");
     setWorktreeView("changes");
   }, [commit?.id]);
+
+  useEffect(() => {
+    if (openBlameRequest > 0 && filePath && !conflicted) {
+      setDetailTab("blame");
+      setDiffExpanded(false);
+    }
+  }, [openBlameRequest, filePath, conflicted]);
 
   useEffect(() => {
     if (conflicted && filePath) {

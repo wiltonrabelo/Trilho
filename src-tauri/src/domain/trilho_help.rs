@@ -208,8 +208,8 @@ No painel Detalhes do commit selecionado:
 - Uncommit (soft) — desfaz o último commit mantendo alterações.
 - Criar tag…
 
-Via Assistente: pode propor revert, cherry-pick, push, pull. NÃO pode propor reset
-nem force push (use o UI manual).
+Via Assistente: pode propor revert, cherry-pick, push, pull, uncommit, tags, stash…
+NÃO pode propor reset/force/reword (reescrevem histórico — só UI).
 "#;
 
 const HELP_CONFLICTS: &str = r#"# Conflitos (RF-20)
@@ -300,18 +300,33 @@ const HELP_ASSISTANT: &str = r#"# Assistente LLM (RF-21)
 Aba Assistente (centro-baixo). Opt-in desligado por padrão; provedores Ollama /
 OpenAI / Anthropic; chaves no Credential Manager (nunca no código).
 
-Pode: ler status/commits/blame/sync; propor stage/unstage/commit/push/pull/revert/
-cherry-pick; responder dúvidas sobre o Trilho via **get_trilho_help** (catálogo atualizado).
+Toda escrita proposta → preview RF-08 + confirmação humana (nunca executa sozinho).
 
-Não pode: reset, force push, reword, discard, reverter trecho, salvar na aba Arquivo,
-publish, shell arbitrário.
+## Pode (leitura)
+status, commits, arquivos do commit, sync, branches locais/remotas, stashes, tags,
+origem da branch, trilha comparada (dual trail), diff entre branches (lista de arquivos),
+status de PR, leitura 3 vias de conflito, blame, fetch; diff de arquivo se
+«enviar diffs» estiver ligado; **get_trilho_help** para dúvidas do produto.
 
-Toda escrita proposta → preview RF-08 + confirmação humana.
+## Pode (propor → confirmação)
+stage/unstage (1, vários ou all), commit/amend, uncommit, push, pull --ff-only,
+unshallow, publish, switch branch (+ track remoto), stash push/apply/pop/drop,
+criar/excluir tag, revert, cherry-pick, abort/continue/skip de revert|merge|cherry-pick,
+aceitar lado ours/theirs em conflito.
 
-Exemplos de perguntas para a ajuda embutida:
-- «como funciona reverter trecho?»
-- «onde faço stage?»
-- «o que é trilha comparada?»
+## Não pode (e por quê) — use a UI manual
+- **reset** (soft/mixed/hard): reescreve HEAD; risco de perda — painel do commit → Reset.
+- **force push**: sobrescreve histórico remoto — Sync → Force push.
+- **reword**: altera SHA e descendentes — «Editar mensagem» no commit.
+- **discard / clean / reverter trecho**: apaga trabalho não commitado — Alterações ou Diff.
+- **salvar aba Arquivo**: grava conteúdo arbitrário — editor do painel de diff.
+- **resolver conflito com texto gerado pela LLM**: risco de corromper merge — resolvedor 3 vias
+  (ou propor ours/theirs).
+- **clone remoto**: chat exige repo já aberto — diálogo Clonar.
+- **Conectar GitHub / GCM / SSH / PAT / chaves LLM**: só nos diálogos do app.
+- **shell / git arbitrário**: bloqueado por segurança.
+
+Exemplos: «como funciona reverter trecho?», «onde faço stage?», «o que é trilha comparada?»
 "#;
 
 const HELP_SAFETY: &str = r#"# Segurança
@@ -358,7 +373,7 @@ Stash push/apply/drop; criar/listar/excluir tags.
 
 ## history-ops
 Revert, reset, cherry-pick, reword, uncommit, criar tag — no Detalhes.
-Assistente: revert/cherry-pick/push/pull sim; reset/force não.
+Assistente: revert/cherry-pick/push/pull/uncommit/tags/stash sim; reset/force/reword não.
 
 ## conflicts
 3 vias, aceitar lados/blocos, continue/abort/skip.
@@ -375,7 +390,8 @@ GCM/PAT/SSH; badge PR (github.com + GHE, multi-PR).
 Histórico 7 dias; marca assistente.
 
 ## assistant
-Opt-in; Ollama/OpenAI/Anthropic; allowlist; get_trilho_help para dúvidas do produto.
+Opt-in; allowlist ampla (stage…stash/tags/switch/conflitos); default-deny em
+reset/force/reword/discard; get_trilho_help topic=assistant.
 
 ## safety
 Preview, sem shell, cofre de credenciais, default-deny destrutivas no assistente.

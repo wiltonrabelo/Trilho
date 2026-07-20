@@ -19,6 +19,11 @@ interface CommitGraphProps {
   stagedCount?: number;
   onSelectWorkingCopy?: () => void;
   onSelect: (commit: CommitDto) => void;
+  onCommitContextMenu?: (
+    commit: CommitDto,
+    clientX: number,
+    clientY: number,
+  ) => void;
   onLoadMore?: () => void;
   hasMore?: boolean;
   loading?: boolean;
@@ -58,6 +63,7 @@ export function CommitGraph({
   stagedCount,
   onSelectWorkingCopy,
   onSelect,
+  onCommitContextMenu,
   onLoadMore,
   hasMore,
   loading,
@@ -143,6 +149,7 @@ export function CommitGraph({
         stagedCount={stagedCount}
         onSelectWorkingCopy={onSelectWorkingCopy}
         onSelect={onSelect}
+        onCommitContextMenu={onCommitContextMenu}
       />
       {hasMore && (
         <div className="border-t border-border p-2">

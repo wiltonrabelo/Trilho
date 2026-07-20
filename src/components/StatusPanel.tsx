@@ -1,4 +1,5 @@
 import { Plus, Trash2, Undo2 } from "lucide-react";
+import type { MouseEvent } from "react";
 import {
   countChecked,
   fileCheckKey,
@@ -6,6 +7,25 @@ import {
   type FileCheckSection,
 } from "@/lib/fileCheck";
 import type { CommitDto, FileChangeDto, FileChangeKind, OperationInProgressDto } from "@/types";
+
+/** Contexto do clique direito em arquivo da working tree. */
+export type WorktreeFileSection = "staged" | "unstaged" | "untracked";
+
+export interface WorktreeFileContext {
+  path: string;
+  section: WorktreeFileSection;
+  kind: FileChangeKind;
+  clientX: number;
+  clientY: number;
+}
+
+/** Contexto do clique direito em arquivo de um commit. */
+export interface CommitFileContext {
+  path: string;
+  kind: FileChangeKind;
+  clientX: number;
+  clientY: number;
+}
 
 interface StatusPanelProps {
   staged: FileChangeDto[];
@@ -28,6 +48,8 @@ interface StatusPanelProps {
   commitFiles: FileChangeDto[];
   selectedCommitFile: string | null;
   onSelectCommitFile: (path: string) => void;
+  onWorktreeFileContextMenu?: (ctx: WorktreeFileContext) => void;
+  onCommitFileContextMenu?: (ctx: CommitFileContext) => void;
   onStage?: (path: string) => void;
   onStageMany?: (paths: string[]) => void;
   onStageAll?: () => void;
@@ -89,11 +111,13 @@ function FileList({
   files,
   staged,
   checkSection,
+  menuSection,
   selectedPath,
   selectedStaged,
   checkedPaths,
   onSelect,
   onToggleCheck,
+  onContextMenu,
   onStage,
   onUnstage,
   onDiscard,
@@ -103,6 +127,7 @@ function FileList({
   files: FileChangeDto[];
   staged: boolean;
   checkSection: FileCheckSection;
+  menuSection: WorktreeFileSection;
   selectedPath: string | null;
   selectedStaged: boolean | null;
   checkedPaths: ReadonlySet<string>;
@@ -112,11 +137,25 @@ function FileList({
     meta?: { ctrlKey?: boolean; shiftKey?: boolean },
   ) => void;
   onToggleCheck: (path: string, section: FileCheckSection) => void;
+  onContextMenu?: (ctx: WorktreeFileContext) => void;
   onStage?: (path: string) => void;
   onUnstage?: (path: string) => void;
   onDiscard?: (path: string) => void;
   onRemoveUntracked?: (path: string) => void;
 }) {
+  function handleContextMenu(e: MouseEvent, f: FileChangeDto) {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(f.path, staged);
+    onContextMenu?.({
+      path: f.path,
+      section: menuSection,
+      kind: f.kind,
+      clientX: e.clientX,
+      clientY: e.clientY,
+    });
+  }
+
   return (
     <section className="mb-4 border-b border-border/60 pb-3 last:mb-0 last:border-0">
       <div className="mb-1.5 flex items-center justify-between px-1">
@@ -128,7 +167,7 @@ function FileList({
       {files.length === 0 ? (
         <p className="px-2 py-1 text-xs text-muted/70">—</p>
       ) : (
-        <ul className="space-y-0.5">
+        <ul className="space-y-0.5" onContextMenu={(e) => e.preventDefault()}>
           {files.map((f) => {
             const isSelected =
               selectedPath === f.path && selectedStaged === staged;
@@ -159,6 +198,7 @@ function FileList({
                       shiftKey: e.shiftKey,
                     })
                   }
+                  onContextMenu={(e) => handleContextMenu(e, f)}
                   className={`flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
                     isSelected || isChecked
                       ? "bg-surface ring-1 ring-border"
@@ -234,10 +274,12 @@ function CommitFileList({
   files,
   selectedPath,
   onSelect,
+  onContextMenu,
 }: {
   files: FileChangeDto[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
+  onContextMenu?: (ctx: CommitFileContext) => void;
 }) {
   if (files.length === 0) {
     return (
@@ -247,7 +289,7 @@ function CommitFileList({
     );
   }
   return (
-    <ul className="space-y-0.5">
+    <ul className="space-y-0.5" onContextMenu={(e) => e.preventDefault()}>
       {files.map((f) => {
         const isSelected = selectedPath === f.path;
         return (
@@ -255,6 +297,17 @@ function CommitFileList({
             <button
               type="button"
               onClick={() => onSelect(f.path)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSelect(f.path);
+                onContextMenu?.({
+                  path: f.path,
+                  kind: f.kind,
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                });
+              }}
               className={`flex w-full items-start gap-2 rounded-md px-2 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
                 isSelected
                   ? "bg-surface ring-1 ring-border"
@@ -291,6 +344,8 @@ export function StatusPanel({
   commitFiles,
   selectedCommitFile,
   onSelectCommitFile,
+  onWorktreeFileContextMenu,
+  onCommitFileContextMenu,
   onStage,
   onStageMany,
   onStageAll,
@@ -306,7 +361,10 @@ export function StatusPanel({
 }: StatusPanelProps) {
   if (commit) {
     return (
-      <div className="flex h-full flex-col">
+      <div
+        className="flex h-full flex-col"
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted">
           Arquivos do commit{" "}
           <span className="font-mono text-[10px]">{commit.shortId}</span>
@@ -317,6 +375,7 @@ export function StatusPanel({
             files={commitFiles}
             selectedPath={selectedCommitFile}
             onSelect={onSelectCommitFile}
+            onContextMenu={onCommitFileContextMenu}
           />
         </div>
       </div>
@@ -572,11 +631,13 @@ export function StatusPanel({
               files={staged}
               staged
               checkSection="staged"
+              menuSection="staged"
               selectedPath={selectedPath}
               selectedStaged={selectedStaged}
               checkedPaths={checkedPaths}
               onSelect={onSelectFile}
               onToggleCheck={onToggleCheck}
+              onContextMenu={onWorktreeFileContextMenu}
               onUnstage={onUnstage}
             />
             <FileList
@@ -584,11 +645,13 @@ export function StatusPanel({
               files={unstaged}
               staged={false}
               checkSection="working"
+              menuSection="unstaged"
               selectedPath={selectedPath}
               selectedStaged={selectedStaged}
               checkedPaths={checkedPaths}
               onSelect={onSelectFile}
               onToggleCheck={onToggleCheck}
+              onContextMenu={onWorktreeFileContextMenu}
               onStage={onStage}
               onDiscard={onDiscard}
             />
@@ -597,11 +660,13 @@ export function StatusPanel({
               files={untracked}
               staged={false}
               checkSection="working"
+              menuSection="untracked"
               selectedPath={selectedPath}
               selectedStaged={selectedStaged}
               checkedPaths={checkedPaths}
               onSelect={onSelectFile}
               onToggleCheck={onToggleCheck}
+              onContextMenu={onWorktreeFileContextMenu}
               onStage={onStage}
               onRemoveUntracked={onRemoveUntracked}
             />

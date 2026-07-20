@@ -192,6 +192,24 @@ export async function readWorktreeFile(path: string): Promise<string> {
   return invoke<string>("read_worktree_file", { path });
 }
 
+/** Abre o arquivo do working tree com o app padrão. */
+export async function openWorktreePath(path: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("open_worktree_path", { path });
+}
+
+/** Revela o arquivo no Explorer. */
+export async function revealWorktreePath(path: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke("reveal_worktree_path", { path });
+}
+
+/** Caminho absoluto do arquivo no working tree. */
+export async function resolveWorktreePath(path: string): Promise<string> {
+  if (!isTauri()) return path;
+  return invoke<string>("resolve_worktree_path", { path });
+}
+
 
 
 export async function getCommitDiff(commitId: string): Promise<string> {

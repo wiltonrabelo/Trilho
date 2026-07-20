@@ -70,7 +70,10 @@ pub use validation::{
     validate_compare_ref, validate_folder_name, validate_git_object_id, validate_remote_name,
     validate_remote_url, validate_repo_relative_path, validate_tag_name,
 };
-pub use worktree_file::{save_worktree_file, worktree_file_exists};
+pub use worktree_file::{
+    absolute_worktree_path, open_worktree_path, reveal_worktree_path, save_worktree_file,
+    worktree_file_exists,
+};
 
 use crate::application::{BlameProvider, GitError, GitReader, TrailReader};
 use crate::domain::{Commit, TrailEntry, TrailKind};

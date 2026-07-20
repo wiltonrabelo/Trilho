@@ -348,6 +348,7 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Recorte 2** — push / pull `--ff-only` / revert / cherry-pick via assistente (ainda RF-08); reset e force push continuam default-deny
 - [x] **Recorte 3** — contexto de UI (commit/arquivo/linha) + tools `get_commit_summary` / `get_file_blame`
 - [x] **Ajuda do produto** — catálogo embutido + tool `get_trilho_help` (dúvidas sobre funcionalidades)
+- [x] **Allowlist ampliada (útil + seguro)** — leitura (refs remotas, stash/tags, origem, dual trail, diff branches, PR, conflitos); propostas (uncommit, publish, switch, stash, tags, unshallow, continue/abort/skip, ours/theirs); default-deny com motivo em prompt/`denied_tool_reason`/`get_trilho_help` topic=assistant (reset, force, reword, discard, save file, resolve content, clone, shell)
 
 ## Backlog F4 — Lista de arquivos no commit ✅
 
