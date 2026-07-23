@@ -40,6 +40,18 @@ export function applyTheme(pref: ThemePreference): void {
   root.classList.toggle("dark", effective === "dark" || effective === "coffee");
   root.classList.toggle("coffee", effective === "coffee");
   root.classList.toggle("violet", effective === "violet");
+  void syncNativeTitlebar(effective);
+}
+
+/** Titlebar do Windows acompanha o tema (claro ↔ escuro). */
+async function syncNativeTitlebar(effective: EffectiveTheme): Promise<void> {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const dark = effective === "dark" || effective === "coffee";
+    await getCurrentWindow().setTheme(dark ? "dark" : "light");
+  } catch {
+    /* web / API indisponível */
+  }
 }
 
 export function setPreference(pref: ThemePreference): void {
