@@ -8,12 +8,58 @@ mod infrastructure;
 use application::AppState;
 use tauri::Manager;
 
+/// Em debug: ao focar a janela, se a WebView ficou na página de erro do Edge
+/// (HTTP 400 após idle), força volta ao Vite em 127.0.0.1.
+#[cfg(debug_assertions)]
+fn install_dev_idle_recovery(app: &tauri::AppHandle) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    let win2 = win.clone();
+    let _ = win.on_window_event(move |event| {
+        if !matches!(event, tauri::WindowEvent::Focused(true)) {
+            return;
+        }
+        let w = win2.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let vite_ok = ureq::get("http://127.0.0.1:1420/")
+                .timeout(std::time::Duration::from_secs(2))
+                .call()
+                .map(|r| (200..400).contains(&r.status()))
+                .unwrap_or(false);
+            if !vite_ok {
+                return;
+            }
+            // Roda mesmo na página de erro do Edge (ainda permite eval).
+            let _ = w.eval(
+                r#"(function(){
+  try {
+    var root = document.getElementById('root');
+    var text = (document.body && document.body.innerText) || '';
+    var broken = !root || root.childElementCount === 0
+      || /HTTP ERROR/i.test(text)
+      || /n\u00e3o est\u00e1 funcionando/i.test(text)
+      || /This page isn't working/i.test(text)
+      || /chrome-error/i.test(String(location.href));
+    if (broken) location.replace('http://127.0.0.1:1420/');
+  } catch (e) {
+    location.replace('http://127.0.0.1:1420/');
+  }
+})()"#,
+            );
+        });
+    });
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let state = AppState::new(app.handle())?;
             app.manage(state);
+            #[cfg(debug_assertions)]
+            install_dev_idle_recovery(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
