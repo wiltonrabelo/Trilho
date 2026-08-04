@@ -8,8 +8,18 @@ import {
   Search,
   Tag,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from "react";
 
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "@/components/ContextMenu";
 import {
   filterBranches,
   filterRemoteBranches,
@@ -67,6 +77,8 @@ interface RefsPanelProps {
   onFocusBranch: (branch: string) => void;
   onSwitchLocal: (branch: string) => void;
   onSwitchRemote: (remote: string, branch: string) => void;
+  onDeleteLocal?: (branch: string) => void;
+  onDeleteRemote?: (remote: string, branch: string) => void;
   onStashApply: (index: number) => void;
   onStashPop: (index: number) => void;
   onStashDrop: (index: number) => void;
@@ -74,6 +86,39 @@ interface RefsPanelProps {
   onTagDelete: (name: string) => void;
   onCompareBranches?: () => void;
 }
+
+type RefsMenuState =
+  | {
+      kind: "local";
+      branch: string;
+      x: number;
+      y: number;
+      active: boolean;
+    }
+  | {
+      kind: "remote";
+      remote: string;
+      branch: string;
+      x: number;
+      y: number;
+      active: boolean;
+      hasLocal: boolean;
+    }
+  | {
+      kind: "tag";
+      name: string;
+      commitId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "stash";
+      index: number;
+      reference: string;
+      message: string;
+      x: number;
+      y: number;
+    };
 
 function CollapsibleSection({
   title,
@@ -124,6 +169,8 @@ export function RefsPanel({
   onFocusBranch,
   onSwitchLocal,
   onSwitchRemote,
+  onDeleteLocal,
+  onDeleteRemote,
   onStashApply,
   onStashPop,
   onStashDrop,
@@ -133,6 +180,7 @@ export function RefsPanel({
 }: RefsPanelProps) {
   const [query, setQuery] = useState("");
   const [sections, setSections] = useState<SectionState>(loadSectionState);
+  const [menu, setMenu] = useState<RefsMenuState | null>(null);
 
   useEffect(() => {
     persistSectionState(sections);
@@ -141,6 +189,212 @@ export function RefsPanel({
   const toggleSection = useCallback((key: SectionKey) => {
     setSections((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
+  const openLocalMenu = useCallback(
+    (e: MouseEvent, branch: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu({
+        kind: "local",
+        branch,
+        x: e.clientX,
+        y: e.clientY,
+        active: branch === currentBranch,
+      });
+    },
+    [currentBranch],
+  );
+
+  const openRemoteMenu = useCallback(
+    (e: MouseEvent, remote: string, branch: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu({
+        kind: "remote",
+        remote,
+        branch,
+        x: e.clientX,
+        y: e.clientY,
+        active: branch === currentBranch,
+        hasLocal: branches.includes(branch),
+      });
+    },
+    [branches, currentBranch],
+  );
+
+  const openTagMenu = useCallback((e: MouseEvent, name: string, commitId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ kind: "tag", name, commitId, x: e.clientX, y: e.clientY });
+  }, []);
+
+  const openStashMenu = useCallback(
+    (e: MouseEvent, index: number, reference: string, message: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu({
+        kind: "stash",
+        index,
+        reference,
+        message,
+        x: e.clientX,
+        y: e.clientY,
+      });
+    },
+    [],
+  );
+
+  const menuItems: ContextMenuItem[] = useMemo(() => {
+    if (!menu) return [];
+    const busy = Boolean(writeDisabled || loading);
+
+    if (menu.kind === "tag") {
+      return [
+        {
+          id: "goto",
+          label: "Ir para o commit",
+          primary: true,
+          onSelect: () => onTagSelect(menu.commitId),
+        },
+        {
+          id: "delete-tag",
+          label: "Excluir tag",
+          separatorBefore: true,
+          disabled: busy,
+          onSelect: () => onTagDelete(menu.name),
+        },
+      ];
+    }
+
+    if (menu.kind === "stash") {
+      return [
+        {
+          id: "apply",
+          label: "Aplicar",
+          primary: true,
+          disabled: busy,
+          onSelect: () => onStashApply(menu.index),
+        },
+        {
+          id: "pop",
+          label: "Pop (aplicar e remover)",
+          disabled: busy,
+          onSelect: () => onStashPop(menu.index),
+        },
+        {
+          id: "drop",
+          label: "Excluir",
+          separatorBefore: true,
+          disabled: busy,
+          onSelect: () => onStashDrop(menu.index),
+        },
+      ];
+    }
+
+    if (menu.kind === "local") {
+      const remotesForBranch = [
+        ...new Set(
+          remoteBranches
+            .filter((r) => r.branch === menu.branch)
+            .map((r) => r.remote),
+        ),
+      ];
+      const allRemotes = [...new Set(remoteBranches.map((r) => r.remote))];
+      const remotesToShow =
+        remotesForBranch.length > 0
+          ? remotesForBranch
+          : allRemotes.includes("origin")
+            ? ["origin"]
+            : allRemotes.length > 0
+              ? [allRemotes[0]!]
+              : ["origin"];
+
+      const items: ContextMenuItem[] = [
+        {
+          id: "checkout",
+          label: "Checkout",
+          disabled: menu.active || busy,
+          primary: !menu.active,
+          onSelect: () => onSwitchLocal(menu.branch),
+        },
+      ];
+
+      if (onDeleteLocal) {
+        items.push({
+          id: "delete-local",
+          label: "Remover localmente",
+          separatorBefore: true,
+          disabled: menu.active || busy,
+          onSelect: () => onDeleteLocal(menu.branch),
+        });
+      }
+
+      if (onDeleteRemote) {
+        for (const remote of remotesToShow) {
+          items.push({
+            id: `delete-remote-${remote}`,
+            label: `Remover no repositório remoto (${remote})`,
+            separatorBefore: !onDeleteLocal && remote === remotesToShow[0],
+            disabled: menu.active || busy,
+            onSelect: () => onDeleteRemote(remote, menu.branch),
+          });
+        }
+      }
+
+      return items;
+    }
+
+    const items: ContextMenuItem[] = [
+      {
+        id: "checkout",
+        label: "Checkout",
+        disabled: menu.active || busy,
+        primary: !menu.active,
+        onSelect: () => {
+          if (menu.hasLocal) {
+            onSwitchLocal(menu.branch);
+          } else {
+            onSwitchRemote(menu.remote, menu.branch);
+          }
+        },
+      },
+    ];
+
+    if (onDeleteRemote) {
+      items.push({
+        id: "delete-remote",
+        label: `Remover no repositório remoto (${menu.remote})`,
+        separatorBefore: true,
+        disabled: menu.active || busy,
+        onSelect: () => onDeleteRemote(menu.remote, menu.branch),
+      });
+    }
+
+    if (onDeleteLocal && menu.hasLocal) {
+      items.push({
+        id: "delete-local",
+        label: "Remover localmente",
+        disabled: menu.active || busy,
+        onSelect: () => onDeleteLocal(menu.branch),
+      });
+    }
+
+    return items;
+  }, [
+    loading,
+    menu,
+    onDeleteLocal,
+    onDeleteRemote,
+    onStashApply,
+    onStashDrop,
+    onStashPop,
+    onSwitchLocal,
+    onSwitchRemote,
+    onTagDelete,
+    onTagSelect,
+    remoteBranches,
+    writeDisabled,
+  ]);
 
   const filteredLocals = useMemo(
     () => filterBranches(branches, query),
@@ -220,7 +474,10 @@ export function RefsPanel({
           Nenhuma ref corresponde ao filtro.
         </p>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          onContextMenu={(e) => e.preventDefault()}
+        >
           <div className="flex flex-col gap-2 pb-1">
             {filteredLocals.length > 0 || (!query && branches.length > 0) ? (
               <CollapsibleSection
@@ -241,15 +498,15 @@ export function RefsPanel({
                         <li key={branch}>
                           <button
                             type="button"
-                            disabled={active}
                             onClick={() => onFocusBranch(branch)}
                             onDoubleClick={() => {
                               if (!active) onSwitchLocal(branch);
                             }}
+                            onContextMenu={(e) => openLocalMenu(e, branch)}
                             title={
                               active
-                                ? "Branch em checkout"
-                                : `Clique: commits exclusivos de ${branch} · Duplo clique: checkout`
+                                ? "Branch em checkout · Botão direito: ações"
+                                : `Clique: commits exclusivos de ${branch} · Duplo clique: checkout · Botão direito: ações`
                             }
                             className={`w-full truncate rounded-md px-2 py-1 text-left text-xs ${
                               active
@@ -257,7 +514,7 @@ export function RefsPanel({
                                 : focused
                                   ? "bg-amber-500/15 font-medium text-amber-700 dark:text-amber-300"
                                   : "text-text hover:bg-surface"
-                            } disabled:cursor-default`}
+                            }`}
                           >
                             {branch}
                             {active ? " ✓" : focused ? " ◉" : ""}
@@ -294,7 +551,6 @@ export function RefsPanel({
                             <li key={label}>
                               <button
                                 type="button"
-                                disabled={active}
                                 onClick={() => onFocusBranch(ref.branch)}
                                 onDoubleClick={() => {
                                   if (active) return;
@@ -304,12 +560,15 @@ export function RefsPanel({
                                     onSwitchRemote(ref.remote, ref.branch);
                                   }
                                 }}
+                                onContextMenu={(e) =>
+                                  openRemoteMenu(e, ref.remote, ref.branch)
+                                }
                                 title={
                                   active
-                                    ? "Branch em checkout"
+                                    ? "Branch em checkout · Botão direito: ações"
                                     : hasLocal
-                                      ? `Clique: commits exclusivos · Duplo clique: checkout em ${ref.branch}`
-                                      : `Clique: commits exclusivos · Duplo clique: criar e rastrear ${label}`
+                                      ? `Clique: commits exclusivos · Duplo clique: checkout em ${ref.branch} · Botão direito: ações`
+                                      : `Clique: commits exclusivos · Duplo clique: criar e rastrear ${label} · Botão direito: ações`
                                 }
                                 className={`w-full truncate rounded-md px-2 py-1 text-left text-xs ${
                                   active
@@ -317,7 +576,7 @@ export function RefsPanel({
                                     : focused
                                       ? "bg-amber-500/15 font-medium text-amber-700 dark:text-amber-300"
                                       : "text-muted hover:bg-surface hover:text-text"
-                                } disabled:cursor-default`}
+                                }`}
                               >
                                 {ref.branch}
                                 {!hasLocal ? " ↓" : ""}
@@ -348,15 +607,15 @@ export function RefsPanel({
                 ) : (
                   <ul className="flex flex-col gap-0.5">
                     {filteredTags.map((tag) => (
-                      <li
-                        key={tag.name}
-                        className="rounded-md px-2 py-1 hover:bg-surface"
-                      >
+                      <li key={tag.name}>
                         <button
                           type="button"
                           onClick={() => onTagSelect(tag.commitId)}
-                          title={`Ir para o commit ${tag.shortId}`}
-                          className="w-full truncate text-left text-xs"
+                          onContextMenu={(e) =>
+                            openTagMenu(e, tag.name, tag.commitId)
+                          }
+                          title={`Ir para o commit ${tag.shortId} · Botão direito: ações`}
+                          className="w-full truncate rounded-md px-2 py-1 text-left text-xs hover:bg-surface"
                         >
                           <span className="font-medium text-amber-600 dark:text-amber-400">
                             {tag.name}
@@ -364,13 +623,6 @@ export function RefsPanel({
                           <span className="ml-1 font-mono text-[10px] text-muted">
                             {tag.shortId}
                           </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onTagDelete(tag.name)}
-                          className="mt-0.5 text-[10px] text-red-600 hover:underline dark:text-red-400"
-                        >
-                          Excluir
                         </button>
                       </li>
                     ))}
@@ -394,46 +646,27 @@ export function RefsPanel({
                     Nenhum stash guardado.
                   </p>
                 ) : (
-                  <ul className="flex flex-col gap-1">
+                  <ul className="flex flex-col gap-0.5">
                     {filteredStashes.map((stash) => (
-                      <li
-                        key={stash.reference}
-                        className="rounded-md px-2 py-1 hover:bg-surface"
-                      >
-                        <div
-                          className="truncate text-xs text-text"
-                          title={stash.message}
+                      <li key={stash.reference}>
+                        <button
+                          type="button"
+                          onContextMenu={(e) =>
+                            openStashMenu(
+                              e,
+                              stash.index,
+                              stash.reference,
+                              stash.message,
+                            )
+                          }
+                          title={`${stash.message} · Botão direito: ações`}
+                          className="w-full truncate rounded-md px-2 py-1 text-left text-xs hover:bg-surface"
                         >
                           <span className="font-mono text-[10px] text-muted">
                             {stash.reference}
                           </span>
-                          <span className="ml-1">{stash.message}</span>
-                        </div>
-                        {!writeDisabled ? (
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => onStashApply(stash.index)}
-                              className="text-[10px] text-accent hover:underline"
-                            >
-                              Aplicar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onStashPop(stash.index)}
-                              className="text-[10px] text-accent hover:underline"
-                            >
-                              Pop
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onStashDrop(stash.index)}
-                              className="text-[10px] text-red-600 hover:underline dark:text-red-400"
-                            >
-                              Excluir
-                            </button>
-                          </div>
-                        ) : null}
+                          <span className="ml-1 text-text">{stash.message}</span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -443,6 +676,33 @@ export function RefsPanel({
           </div>
         </div>
       )}
+
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          title={
+            menu.kind === "local"
+              ? menu.branch
+              : menu.kind === "remote"
+                ? `${menu.remote}/${menu.branch}`
+                : menu.kind === "tag"
+                  ? menu.name
+                  : menu.reference
+          }
+          ariaLabel={
+            menu.kind === "local"
+              ? `Ações da branch ${menu.branch}`
+              : menu.kind === "remote"
+                ? `Ações da branch remota ${menu.remote}/${menu.branch}`
+                : menu.kind === "tag"
+                  ? `Ações da tag ${menu.name}`
+                  : `Ações do stash ${menu.reference}`
+          }
+          items={menuItems}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
     </div>
   );
 }

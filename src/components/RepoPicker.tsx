@@ -1,7 +1,11 @@
+import { useCallback, useState, type MouseEvent } from "react";
 import { Download, FolderOpen, History, X } from "lucide-react";
-
 import { open } from "@tauri-apps/plugin-dialog";
 
+import {
+  ContextMenu,
+  type ContextMenuItem,
+} from "@/components/ContextMenu";
 import { runningInTauri } from "@/lib/api";
 
 interface RepoPickerProps {
@@ -25,6 +29,14 @@ export function RepoPicker({
   loading,
   currentPath,
 }: RepoPickerProps) {
+  const [menu, setMenu] = useState<{
+    path: string;
+    name: string;
+    x: number;
+    y: number;
+    active: boolean;
+  } | null>(null);
+
   async function pickFolder() {
     if (!runningInTauri()) {
       onOpen("C:\\Projetos\\Trilho");
@@ -39,6 +51,40 @@ export function RepoPicker({
       onOpen(selected);
     }
   }
+
+  const openRecentMenu = useCallback(
+    (e: MouseEvent, path: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const name = path.split(/[/\\]/).pop() ?? path;
+      const active = !!currentPath && pathsMatch(path, currentPath);
+      setMenu({ path, name, x: e.clientX, y: e.clientY, active });
+    },
+    [currentPath],
+  );
+
+  const menuItems: ContextMenuItem[] = menu
+    ? [
+        {
+          id: "switch",
+          label: "Trocar para este repositório",
+          disabled: menu.active || Boolean(loading),
+          primary: !menu.active,
+          onSelect: () => onOpen(menu.path),
+        },
+        ...(onRemoveRecent
+          ? [
+              {
+                id: "remove",
+                label: "Remover dos recentes",
+                separatorBefore: true,
+                disabled: Boolean(loading),
+                onSelect: () => onRemoveRecent(menu.path),
+              } satisfies ContextMenuItem,
+            ]
+          : []),
+      ]
+    : [];
 
   return (
     <div className="flex shrink-0 flex-col gap-3 p-3">
@@ -67,7 +113,7 @@ export function RepoPicker({
       )}
 
       {recentRepos.length > 0 && (
-        <div>
+        <div onContextMenu={(e) => e.preventDefault()}>
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
             <History size={14} />
             Recentes
@@ -82,6 +128,7 @@ export function RepoPicker({
                     type="button"
                     disabled={loading}
                     onClick={() => onOpen(path)}
+                    onContextMenu={(e) => openRecentMenu(e, path)}
                     aria-label={`Abrir repositório ${path}`}
                     className={`min-w-0 flex-1 truncate rounded px-2 py-1.5 text-left text-xs ${
                       active
@@ -110,6 +157,17 @@ export function RepoPicker({
             })}
           </ul>
         </div>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          title={menu.name}
+          ariaLabel={`Ações do repositório ${menu.name}`}
+          items={menuItems}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );

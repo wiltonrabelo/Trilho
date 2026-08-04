@@ -956,54 +956,58 @@ function App() {
                 ? "Completar histórico"
                 : ops.pending?.kind === "switchBranch"
                   ? "Trocar de branch"
-                  : ops.pending?.kind === "stashPush"
-                    ? "Guardar no stash"
-                    : ops.pending?.kind === "stashApply"
-                      ? "Aplicar stash"
-                      : ops.pending?.kind === "stashPop"
-                        ? "Aplicar e remover stash"
-                        : ops.pending?.kind === "stashDrop"
-                          ? "Excluir stash"
-                          : ops.pending?.kind === "createTag"
-                            ? "Criar tag"
-                            : ops.pending?.kind === "deleteTag"
-                              ? "Excluir tag"
-                              : ops.pending?.kind === "reword"
-                                ? ops.pending.forcePush
-                                  ? "Reescrever e enviar ao remoto"
-                                  : "Reescrever mensagem"
-                                : ops.pending?.kind === "cherryPick"
-                                  ? "Cherry-pick"
-                                  : ops.pending?.kind === "revert"
-                                    ? "Reverter commit"
-                                    : ops.pending?.kind === "push"
-                                      ? "Enviar ao remoto"
-                                      : ops.pending?.kind === "pushForce"
-                                    ? "Push forçado"
-                                    : ops.pending?.kind === "discardWorktree" ||
-                                  ops.pending?.kind === "discardWorktreeMany" ||
-                                  ops.pending?.kind === "discardWorktreeAll" ||
-                                  ops.pending?.kind === "discardHunk"
-                                ? "Descartar alterações"
-                                : ops.pending?.kind === "removeUntracked" ||
-                                    ops.pending?.kind === "removeUntrackedMany"
-                                  ? "Remover não rastreado"
-                                  : ops.pending?.kind === "continueRevert"
-                                    ? "Finalizar revert"
-                                    : ops.pending?.kind === "skipRevert"
-                                      ? "Pular revert"
-                                    : ops.pending?.kind === "continueMerge"
-                                      ? "Finalizar merge"
-                                      : ops.pending?.kind === "continueCherryPick"
-                                        ? "Finalizar cherry-pick"
-                                        : ops.pending?.kind === "skipCherryPick"
-                                          ? "Pular cherry-pick"
-                                        : ops.pending?.kind ===
-                                              "resolveConflictSide" ||
-                                            ops.pending?.kind ===
-                                              "resolveConflictContent"
-                                          ? "Resolver conflito"
-                                          : undefined
+                  : ops.pending?.kind === "deleteLocalBranch"
+                    ? "Remover branch local"
+                    : ops.pending?.kind === "deleteRemoteBranch"
+                      ? "Remover branch no remoto"
+                      : ops.pending?.kind === "stashPush"
+                        ? "Guardar no stash"
+                        : ops.pending?.kind === "stashApply"
+                          ? "Aplicar stash"
+                          : ops.pending?.kind === "stashPop"
+                            ? "Aplicar e remover stash"
+                            : ops.pending?.kind === "stashDrop"
+                              ? "Excluir stash"
+                              : ops.pending?.kind === "createTag"
+                                ? "Criar tag"
+                                : ops.pending?.kind === "deleteTag"
+                                  ? "Excluir tag"
+                                  : ops.pending?.kind === "reword"
+                                    ? ops.pending.forcePush
+                                      ? "Reescrever e enviar ao remoto"
+                                      : "Reescrever mensagem"
+                                    : ops.pending?.kind === "cherryPick"
+                                      ? "Cherry-pick"
+                                      : ops.pending?.kind === "revert"
+                                        ? "Reverter commit"
+                                        : ops.pending?.kind === "push"
+                                          ? "Enviar ao remoto"
+                                          : ops.pending?.kind === "pushForce"
+                                            ? "Push forçado"
+                                            : ops.pending?.kind === "discardWorktree" ||
+                                          ops.pending?.kind === "discardWorktreeMany" ||
+                                          ops.pending?.kind === "discardWorktreeAll" ||
+                                          ops.pending?.kind === "discardHunk"
+                                        ? "Descartar alterações"
+                                        : ops.pending?.kind === "removeUntracked" ||
+                                            ops.pending?.kind === "removeUntrackedMany"
+                                          ? "Remover não rastreado"
+                                          : ops.pending?.kind === "continueRevert"
+                                            ? "Finalizar revert"
+                                            : ops.pending?.kind === "skipRevert"
+                                              ? "Pular revert"
+                                            : ops.pending?.kind === "continueMerge"
+                                              ? "Finalizar merge"
+                                              : ops.pending?.kind === "continueCherryPick"
+                                                ? "Finalizar cherry-pick"
+                                                : ops.pending?.kind === "skipCherryPick"
+                                                  ? "Pular cherry-pick"
+                                                : ops.pending?.kind ===
+                                                      "resolveConflictSide" ||
+                                                    ops.pending?.kind ===
+                                                      "resolveConflictContent"
+                                                  ? "Resolver conflito"
+                                                  : undefined
         }
       />
       <CloneDialog
@@ -1382,6 +1386,16 @@ function App() {
                       kind: "switchBranch",
                       branch,
                       trackRemote: remote,
+                    })
+                  }
+                  onDeleteLocal={(branch) =>
+                    void ops.request({ kind: "deleteLocalBranch", branch })
+                  }
+                  onDeleteRemote={(remote, branch) =>
+                    void ops.request({
+                      kind: "deleteRemoteBranch",
+                      remote,
+                      branch,
                     })
                   }
                   onStashApply={(index) =>

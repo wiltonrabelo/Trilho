@@ -330,6 +330,8 @@ export type WriteRequestDto =
   | { kind: "pullFfOnly" }
   | { kind: "unshallowHistory" }
   | { kind: "switchBranch"; branch: string; trackRemote?: string | null }
+  | { kind: "deleteLocalBranch"; branch: string }
+  | { kind: "deleteRemoteBranch"; remote: string; branch: string }
   | {
       kind: "stashPush";
       message?: string | null;

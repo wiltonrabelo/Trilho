@@ -10,6 +10,16 @@ import "@/index.css";
 initTheme();
 installDevBlankRecovery();
 
+// App desktop: bloqueia o menu nativo do WebView (Atualizar, Inspecionar…).
+// Menus customizados (ramos, commits, arquivos…) continuam via onContextMenu próprio.
+document.addEventListener(
+  "contextmenu",
+  (e) => {
+    e.preventDefault();
+  },
+  true,
+);
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <AppErrorBoundary>

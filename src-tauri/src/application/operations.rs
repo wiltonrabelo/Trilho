@@ -663,6 +663,44 @@ impl GitOperation for SwitchBranch {
     }
 }
 
+/// Remove branch local (`git branch -D`).
+pub struct DeleteLocalBranch {
+    pub branch: String,
+}
+
+impl GitOperation for DeleteLocalBranch {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec!["branch".into(), "-D".into(), self.branch.clone()],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Remove a branch apenas no repositório local."
+    }
+}
+
+/// Remove branch no remoto (`git push <remote> --delete <branch>`).
+pub struct DeleteRemoteBranch {
+    pub remote: String,
+    pub branch: String,
+}
+
+impl GitOperation for DeleteRemoteBranch {
+    fn command(&self) -> GitCommand {
+        GitCommand {
+            args: vec![
+                "push".into(),
+                self.remote.clone(),
+                "--delete".into(),
+                self.branch.clone(),
+            ],
+        }
+    }
+    fn description(&self) -> &'static str {
+        "Remove a branch no repositório remoto (servidor)."
+    }
+}
+
 pub struct StashPush {
     pub message: Option<String>,
     pub include_untracked: bool,

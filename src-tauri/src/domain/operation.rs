@@ -91,6 +91,17 @@ pub enum WriteRequest {
         #[serde(default, rename = "trackRemote")]
         track_remote: Option<String>,
     },
+    /// Remove branch local (`git branch -D`).
+    #[serde(rename = "deleteLocalBranch")]
+    DeleteLocalBranch {
+        branch: String,
+    },
+    /// Remove branch no remoto (`git push <remote> --delete <branch>`).
+    #[serde(rename = "deleteRemoteBranch")]
+    DeleteRemoteBranch {
+        remote: String,
+        branch: String,
+    },
     /// Guarda alterações em stash (`git stash push`).
     StashPush {
         #[serde(default)]

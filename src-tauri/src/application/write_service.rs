@@ -3,13 +3,12 @@
 use crate::application::backup_ref::{backup_ref_preview_command, create_backup_ref};
 use crate::application::operations::{
     AddRemote, ApplyReversePatch, AbortCherryPick, AbortMerge, AbortRevert, CherryPickCommit,
-    ContinueMerge, CreateCommit, CreateTag, DeleteTag, DiscardWorktree,
-    DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushForceWithLease,
-    PushSetUpstream, PushTag,
-    PushUpstream, RemoveUntracked, RemoveUntrackedMany, ResetCommit, ResetMode, RevertCommit,
-    SetRemoteUrl, SkipCherryPick, SkipRevert, Stage,
-    StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
-    UnshallowRemote, Unstage, UnstageAll, UnstageMany,
+    ContinueMerge, CreateCommit, CreateTag, DeleteLocalBranch, DeleteRemoteBranch, DeleteTag,
+    DiscardWorktree, DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly,
+    PushForceWithLease, PushSetUpstream, PushTag, PushUpstream, RemoveUntracked,
+    RemoveUntrackedMany, ResetCommit, ResetMode, RevertCommit, SetRemoteUrl, SkipCherryPick,
+    SkipRevert, Stage, StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush,
+    SwitchBranch, UncommitSoft, UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
 use crate::application::write_gates::{head_is_local_only, is_commit_on_remote};
 use crate::application::{GitCommand, GitError, GitWriter, RepoContext};
@@ -224,6 +223,36 @@ pub fn preview_write(
                 .flat_map(|c| GitWriter::preview(ctx.writer(), c))
                 .collect();
             (commands, op.effect_description(), blocked)
+        }
+        WriteRequest::DeleteLocalBranch { branch } => {
+            let branch = validate_clone_branch(Some(branch))?
+                .ok_or_else(|| GitError::Git("Nome de branch inválido.".into()))?;
+            let blocked = gate_delete_local_branch(ctx, repo_path, &branch)?;
+            let op = DeleteLocalBranch {
+                branch: branch.clone(),
+            };
+            let description = format!(
+                "Remove a branch local «{branch}» (git branch -D). Não altera o remoto."
+            );
+            (ctx.preview_op(&op), description, blocked)
+        }
+        WriteRequest::DeleteRemoteBranch { remote, branch } => {
+            let remote = match validate_remote_name(remote) {
+                Ok(r) => r,
+                Err(GitError::Git(msg)) => return Ok(blocked_preview(repo_path, &msg)),
+                Err(e) => return Err(e),
+            };
+            let branch = validate_clone_branch(Some(branch))?
+                .ok_or_else(|| GitError::Git("Nome de branch inválido.".into()))?;
+            let blocked = gate_delete_remote_branch(repo_path, &remote, &branch)?;
+            let op = DeleteRemoteBranch {
+                remote: remote.clone(),
+                branch: branch.clone(),
+            };
+            let description = format!(
+                "Remove a branch «{branch}» no remoto «{remote}» (git push {remote} --delete {branch}). Esta ação afeta o repositório no servidor."
+            );
+            (ctx.preview_op(&op), description, blocked)
         }
         WriteRequest::StashPush {
             message,
@@ -759,6 +788,17 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
             for cmd in op.all_commands() {
                 GitWriter::run(ctx.writer(), &cmd)?;
             }
+        }
+        WriteRequest::DeleteLocalBranch { branch } => {
+            let branch = validate_clone_branch(Some(&branch))?
+                .ok_or_else(|| GitError::Git("Nome de branch inválido.".into()))?;
+            ctx.execute_op(&DeleteLocalBranch { branch })?;
+        }
+        WriteRequest::DeleteRemoteBranch { remote, branch } => {
+            let remote = validate_remote_name(&remote)?;
+            let branch = validate_clone_branch(Some(&branch))?
+                .ok_or_else(|| GitError::Git("Nome de branch inválido.".into()))?;
+            ctx.execute_op(&DeleteRemoteBranch { remote, branch })?;
         }
         WriteRequest::StashPush {
             message,
@@ -2220,6 +2260,41 @@ fn gate_switch_branch(
             Ok(None)
         }
     }
+}
+
+fn gate_delete_local_branch(
+    ctx: &RepoContext,
+    repo_path: &str,
+    branch: &str,
+) -> Result<Option<String>, GitError> {
+    let origin = ctx.reader().get_branch_origin()?;
+    if origin.current_branch.as_deref() == Some(branch) {
+        return Ok(Some(
+            "Não é possível remover a branch em checkout — troque de branch antes.".into(),
+        ));
+    }
+    let locals = list_local_branches(repo_path)?;
+    if !locals.iter().any(|b| b == branch) {
+        return Ok(Some("Branch local não encontrada.".into()));
+    }
+    Ok(None)
+}
+
+fn gate_delete_remote_branch(
+    repo_path: &str,
+    remote: &str,
+    branch: &str,
+) -> Result<Option<String>, GitError> {
+    let remotes = list_remote_branches(repo_path)?;
+    if !remotes
+        .iter()
+        .any(|r| r.remote == remote && r.branch == branch)
+    {
+        return Ok(Some(
+            "Branch remota não encontrada — atualize com «Buscar» (fetch) e tente de novo.".into(),
+        ));
+    }
+    Ok(None)
 }
 
 /// Se a branch local já existe, troca localmente em vez de `--track`.
