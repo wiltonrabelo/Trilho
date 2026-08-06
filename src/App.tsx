@@ -1,4 +1,4 @@
-import { GitBranch, KeyRound, ScrollText, TrainFront, X } from "lucide-react";
+import { GitBranch, KeyRound, ScrollText, Terminal, TrainFront, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AuditLogDialog } from "@/components/AuditLogDialog";
@@ -56,6 +56,7 @@ import {
   getRepoStatus,
   executeWriteOperation,
   listCommits,
+  openGitBash,
   openWorktreePath,
   previewWriteOperation,
   resolveWorktreePath,
@@ -1275,6 +1276,22 @@ function App() {
             >
               <KeyRound size={14} />
               GitHub
+            </button>
+          )}
+          {!webOnly && repo && (
+            <button
+              type="button"
+              onClick={() => {
+                void openGitBash().catch((e) => {
+                  ops.setError(e instanceof Error ? e.message : String(e));
+                });
+              }}
+              className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              title={`Abrir Git Bash em ${repo.path}`}
+              aria-label="Abrir Git Bash no repositório"
+            >
+              <Terminal size={14} />
+              Terminal
             </button>
           )}
           {!webOnly && (

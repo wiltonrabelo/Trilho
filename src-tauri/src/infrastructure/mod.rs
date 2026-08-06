@@ -71,8 +71,8 @@ pub use validation::{
     validate_remote_url, validate_repo_relative_path, validate_tag_name,
 };
 pub use worktree_file::{
-    absolute_worktree_path, open_worktree_path, reveal_worktree_path, save_worktree_file,
-    worktree_file_exists,
+    absolute_worktree_path, open_git_bash, open_worktree_path, reveal_worktree_path,
+    save_worktree_file, worktree_file_exists,
 };
 
 use crate::application::{BlameProvider, GitError, GitReader, TrailReader};

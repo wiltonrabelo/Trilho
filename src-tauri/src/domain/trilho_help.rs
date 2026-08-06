@@ -25,7 +25,10 @@ Tópicos (passe `topic` em get_trilho_help):
 - github — conexão GitHub/GHE, PR, SSH/GCM
 - audit — histórico de ações
 - assistant — o que o assistente pode / não pode fazer
-- safety — regras de segurança (preview, default-deny)
+- safety — regras de segurança (preview RF-08, comando Git longo, default-deny)
+
+Sobre o produto: responda só com o que este catálogo afirma. Se o tópico não
+cobrir a dúvida, diga que não está documentado — não invente.
 "#
 }
 
@@ -55,7 +58,9 @@ pub fn help_for_topic(topic: &str) -> String {
         "github" | "pr" | "conectar" | "ssh" | "gcm" | "ghe" | "enterprise" => HELP_GITHUB,
         "audit" | "auditoria" | "acoes" | "ações" | "historico" | "histórico" => HELP_AUDIT,
         "assistant" | "assistente" | "llm" => HELP_ASSISTANT,
-        "safety" | "seguranca" | "segurança" | "preview" | "rf-08" => HELP_SAFETY,
+        "safety" | "seguranca" | "segurança" | "preview" | "rf-08"
+        | "comando-git" | "comando" | "git-cli" | "preview-comando" | "porque-comando"
+        | "por-que-comando" | "porquê-comando" | "defensive" | "overrides" => HELP_SAFETY,
         "all" | "tudo" | "completo" => HELP_ALL,
         _ => {
             return format!(
@@ -73,7 +78,8 @@ Layout principal:
 1. Esquerda — Repo picker / recentes; painel Refs (Ramos, Remotos, Tags, Pilhas).
 2. Centro — grafo de commits (topo) + painel Detalhes | Assistente (baixo).
 3. Direita — Alterações locais (topo) + diff/blame/editor (baixo).
-4. Header — branch, origem, badge de PR, sync (fetch/push/pull), GitHub, Ações, tema.
+4. Header — branch, origem, badge de PR, sync (fetch/push/pull), GitHub, **Terminal**
+   (abre Git Bash no cwd do repo aberto), Ações, tema.
 
 Painel inferior direito (arquivo do working tree):
 - Abas **Alterações | Arquivo** no topo do diff.
@@ -135,6 +141,13 @@ Uncommit (soft) no Detalhes do HEAD quando o commit ainda é local / elegível.
 **Importante:** Stage e Descartar arquivo **não** aparecem no painel do diff — use o painel
 Alterações acima. O painel do diff trata de visualização, blame e **reverter trecho**
 (ver tópico `working-tree`).
+
+## Por que o comando do preview parece «cheio»?
+Stage (e qualquer escrita) abre o diálogo RF-08 com o comando Git **real** que o Trilho
+vai executar. O final é o equivalente ao que você digitaria no Git Bash (ex.: stage tudo
+→ `git add -A`, perto de `git add .`). Os muitos `-c …` e o `-C <pasta>` **não** são
+passos extras: são overrides defensivos aplicados a **toda** escrita. Detalhe completo:
+tópico `safety` (ou `comando-git`).
 "#;
 
 const HELP_WORKING_TREE: &str = r#"# Working tree — Alterações, Arquivo, reverter trecho
@@ -326,7 +339,14 @@ aceitar lado ours/theirs em conflito.
 - **Conectar GitHub / GCM / SSH / PAT / chaves LLM**: só nos diálogos do app.
 - **shell / git arbitrário**: bloqueado por segurança.
 
-Exemplos: «como funciona reverter trecho?», «onde faço stage?», «o que é trilha comparada?»
+Exemplos: «como funciona reverter trecho?», «onde faço stage?», «o que é trilha comparada?»,
+«por que o comando do stage tem tantos -c?» (tópico `safety` / `comando-git`).
+
+## Não inventar
+Responda dúvidas do produto **somente** com o retorno de `get_trilho_help` (e dados
+das ferramentas de leitura). Se o catálogo não cobrir a pergunta, diga explicitamente
+que isso **não está documentado** no Trilho. Não invente flags Git, motivos de UI,
+atalhos ou comportamento.
 "#;
 
 const HELP_SAFETY: &str = r#"# Segurança
@@ -337,6 +357,36 @@ const HELP_SAFETY: &str = r#"# Segurança
 - Credenciais no Windows Credential Manager / GCM.
 - Assistente: allowlist + saída tratada como não confiável; prompt injection
   em diffs/mensagens é ignorado; destrutivas default-deny via assistente.
+
+## Por que o «Comando Git» do diálogo parece longo? (RF-08)
+
+Não é uma sequência de vários comandos. É **um** `git` com:
+
+1. `-C <caminho-do-repo>` — roda no repositório aberto (sem depender do cwd do processo).
+2. Vários `-c chave=valor` — **overrides defensivos** aplicados a **toda** invocação Git
+   do Trilho (leitura e escrita), para o resultado ser previsível e não depender da
+   config local do usuário (hooks, LFS, fsmonitor, etc.).
+3. O verbo da operação — ex.: `add -A` (stage tudo), `commit …`, `push`, etc.
+
+No Git Bash você costuma digitar só o verbo (`git add .`). No Trilho o preview mostra
+o comando **como ele realmente será executado**, daí a aparência «cheia».
+
+### Overrides fixos (não inventar outros)
+
+Estes são exatamente os aplicados pelo executor seguro (`defensive_config_args`):
+
+- `core.fsmonitor=false` — evita fsmonitor externo interferindo.
+- `core.hooksPath=` — desativa hooks do repo/usuário nesta invocação.
+- `gc.auto=0` — não dispara garbage collection automática no meio da operação.
+- `protocol.ext.allow=never` — bloqueia protocolo `ext::` (risco de execução).
+- `filter.lfs.required=false` e `filter.lfs.process=` / `clean=` / `smudge=` vazios —
+  desliga filtros Git LFS nesta invocação.
+
+Equivalência prática: stage tudo no preview ≈ `git add -A` no Bash (semelhante a
+`git add .`). Os `-c`/`-C` são só o envelope de segurança do Trilho.
+
+Se a dúvida do usuário não estiver neste catálogo, diga que **não está documentado**
+no Trilho — **não invente** flags, motivos ou comportamento.
 "#;
 
 const HELP_ALL: &str = r#"# Ajuda completa do Trilho
@@ -394,7 +444,9 @@ Opt-in; allowlist ampla (stage…stash/tags/switch/conflitos); default-deny em
 reset/force/reword/discard; get_trilho_help topic=assistant.
 
 ## safety
-Preview, sem shell, cofre de credenciais, default-deny destrutivas no assistente.
+Preview RF-08; comando longo = `-C` + `-c` defensivos + verbo (`add -A` etc.);
+sem shell; cofre de credenciais; default-deny destrutivas no assistente; não inventar
+fora do catálogo.
 "#;
 
 #[cfg(test)]
@@ -444,6 +496,16 @@ mod tests {
     fn topico_fonte_blame_alias() {
         let t = help_for_topic("fonte-blame");
         assert!(t.contains("Seletor Commit"));
+    }
+
+    #[test]
+    fn topico_comando_git_explica_overrides() {
+        let t = help_for_topic("comando-git");
+        assert!(t.contains("core.fsmonitor=false"));
+        assert!(t.contains("core.hooksPath="));
+        assert!(t.contains("filter.lfs.required=false"));
+        assert!(t.contains("add -A"));
+        assert!(t.to_lowercase().contains("não invente") || t.to_lowercase().contains("não inventar"));
     }
 
     #[test]

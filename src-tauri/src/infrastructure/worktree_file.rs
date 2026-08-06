@@ -170,6 +170,93 @@ fn reveal_path_os(path: &Path) -> Result<(), GitError> {
     }
 }
 
+/// Abre o Git Bash com cwd no repositório aberto.
+pub fn open_git_bash(repo_path: &str) -> Result<(), GitError> {
+    let root = Path::new(repo_path);
+    if !root.is_dir() {
+        return Err(GitError::Io(
+            "Pasta do repositório inválida ou inexistente.".into(),
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let bash = find_git_bash()?;
+        let native = native_path_string(root);
+        // `git-bash.exe --cd=<dir>` inicia já na pasta do repo.
+        // Sem CREATE_NO_WINDOW — precisa de janela visível.
+        let mut cmd = std::process::Command::new(&bash);
+        if bash
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case("git-bash.exe"))
+        {
+            cmd.arg(format!("--cd={native}"));
+        } else {
+            cmd.current_dir(root).args(["--login", "-i"]);
+        }
+        cmd.spawn()
+            .map_err(|e| GitError::Io(format!("Falha ao abrir o Git Bash: {e}")))?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = root;
+        Err(GitError::Io(
+            "Abrir Git Bash só é suportado no Windows.".into(),
+        ))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn find_git_bash() -> Result<std::path::PathBuf, GitError> {
+    use std::path::PathBuf;
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    for env_key in ["PROGRAMFILES", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+        if let Ok(base) = std::env::var(env_key) {
+            let root = PathBuf::from(base);
+            if env_key == "LOCALAPPDATA" {
+                candidates.push(root.join(r"Programs\Git\git-bash.exe"));
+                candidates.push(root.join(r"Programs\Git\bin\bash.exe"));
+            } else {
+                candidates.push(root.join(r"Git\git-bash.exe"));
+                candidates.push(root.join(r"Git\bin\bash.exe"));
+            }
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("where").arg("git").output() {
+        if output.status.success() {
+            if let Some(line) = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+            {
+                let git_exe = PathBuf::from(line);
+                // ...\Git\cmd\git.exe → ...\Git\git-bash.exe
+                if let Some(git_root) = git_exe.parent().and_then(|p| p.parent()) {
+                    candidates.push(git_root.join("git-bash.exe"));
+                    candidates.push(git_root.join(r"bin\bash.exe"));
+                }
+            }
+        }
+    }
+
+    for path in candidates {
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+
+    Err(GitError::Io(
+        "Git Bash não encontrado. Instale o Git for Windows (git-bash.exe) ou verifique se está no PATH."
+            .into(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

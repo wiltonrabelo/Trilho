@@ -8,6 +8,32 @@ mod infrastructure;
 use application::AppState;
 use tauri::Manager;
 
+/// Reaplica o ícone da janela principal (titlebar + taskbar no Windows).
+/// Após idle/sleep/reload da WebView2 o HWND às vezes perde o ícone e
+/// cai no placeholder genérico do sistema.
+fn reapply_main_window_icon(app: &tauri::AppHandle) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Some(icon) = app.default_window_icon() {
+        let _ = win.set_icon(icon.clone());
+    }
+}
+
+/// Ao focar a janela, restaura o ícone (mitiga perda após idle no Windows).
+fn install_window_icon_keepalive(app: &tauri::AppHandle) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    reapply_main_window_icon(app);
+    let app2 = app.clone();
+    let _ = win.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Focused(true)) {
+            reapply_main_window_icon(&app2);
+        }
+    });
+}
+
 /// Em debug: ao focar a janela, se a WebView ficou na página de erro do Edge
 /// (HTTP 400 após idle), força volta ao Vite em 127.0.0.1.
 #[cfg(debug_assertions)]
@@ -16,11 +42,13 @@ fn install_dev_idle_recovery(app: &tauri::AppHandle) {
         return;
     };
     let win2 = win.clone();
+    let app2 = app.clone();
     let _ = win.on_window_event(move |event| {
         if !matches!(event, tauri::WindowEvent::Focused(true)) {
             return;
         }
         let w = win2.clone();
+        let app = app2.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
             let vite_ok = ureq::get("http://127.0.0.1:1420/")
@@ -29,6 +57,7 @@ fn install_dev_idle_recovery(app: &tauri::AppHandle) {
                 .map(|r| (200..400).contains(&r.status()))
                 .unwrap_or(false);
             if !vite_ok {
+                reapply_main_window_icon(&app);
                 return;
             }
             // Roda mesmo na página de erro do Edge (ainda permite eval).
@@ -48,6 +77,9 @@ fn install_dev_idle_recovery(app: &tauri::AppHandle) {
   }
 })()"#,
             );
+            // Reload da WebView pode limpar o ícone do HWND de novo.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            reapply_main_window_icon(&app);
         });
     });
 }
@@ -58,6 +90,7 @@ pub fn run() {
         .setup(|app| {
             let state = AppState::new(app.handle())?;
             app.manage(state);
+            install_window_icon_keepalive(app.handle());
             #[cfg(debug_assertions)]
             install_dev_idle_recovery(app.handle());
             Ok(())
@@ -78,6 +111,7 @@ pub fn run() {
             commands::open_worktree_path,
             commands::reveal_worktree_path,
             commands::resolve_worktree_path,
+            commands::open_git_bash,
             commands::get_commit_diff,
             commands::list_commit_files,
             commands::get_commit_file_diff,

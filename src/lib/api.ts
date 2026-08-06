@@ -204,6 +204,14 @@ export async function revealWorktreePath(path: string): Promise<void> {
   return invoke("reveal_worktree_path", { path });
 }
 
+/** Abre o Git Bash com cwd no repositório aberto. */
+export async function openGitBash(): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Abrir Git Bash só funciona no app desktop (Tauri).");
+  }
+  return invoke("open_git_bash");
+}
+
 /** Caminho absoluto do arquivo no working tree. */
 export async function resolveWorktreePath(path: string): Promise<string> {
   if (!isTauri()) return path;

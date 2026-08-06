@@ -184,6 +184,16 @@ pub async fn reveal_worktree_path(path: String, state: State<'_, AppState>) -> R
     .map_err(|e| e.to_string())
 }
 
+/// Abre o Git Bash com cwd no repositório aberto.
+#[tauri::command]
+pub async fn open_git_bash(state: State<'_, AppState>) -> Result<(), String> {
+    let repo_path = state.repo_path()?;
+    tauri::async_runtime::spawn_blocking(move || crate::infrastructure::open_git_bash(&repo_path))
+        .await
+        .map_err(|e| format!("Abertura do terminal interrompida: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
 /// Caminho absoluto do arquivo no working tree (clipboard).
 #[tauri::command]
 pub async fn resolve_worktree_path(

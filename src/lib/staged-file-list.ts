@@ -38,5 +38,5 @@ export function formatStagedFileListText(staged: FileChangeDto[]): string {
   const lines = buildStagedFileLines(staged);
   if (lines.length === 0) return "";
   const list = lines.map(({ symbol, path }) => `${symbol} ${path}`).join("\n");
-  return `Arquivos do commit:\n\n${list}`;
+  return `\n\nArquivos do commit:\n\n${list}`;
 }

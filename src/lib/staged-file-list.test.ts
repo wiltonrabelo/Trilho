@@ -40,7 +40,7 @@ describe("formatStagedFileListText", () => {
       { path: "src/novo.ts", kind: "added", staged: true },
     ];
     expect(formatStagedFileListText(staged)).toBe(
-      "Arquivos do commit:\n\n~ src/App.tsx\n+ src/novo.ts",
+      "\n\nArquivos do commit:\n\n~ src/App.tsx\n+ src/novo.ts",
     );
   });
 
