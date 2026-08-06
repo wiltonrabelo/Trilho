@@ -573,16 +573,24 @@ export function AssistantChat({
             />
             Enviar metadados (branch/status)
           </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={settings.sendDiffs}
-              disabled={settingsSaving}
-              onChange={(e) =>
-                void saveSettings({ sendDiffs: e.target.checked })
-              }
-            />
-            Enviar diffs ao provedor
+          <label className="flex flex-col gap-1">
+            <span className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.sendDiffs}
+                disabled={settingsSaving}
+                onChange={(e) =>
+                  void saveSettings({ sendDiffs: e.target.checked })
+                }
+              />
+              Enviar diffs ao provedor (revisão de código)
+            </span>
+            <span className="pl-6 text-[10px] leading-snug text-muted">
+              Permite diffs e leitura de arquivos em refs. A revisão só cobre o
+              que as tools buscarem (pode truncar); não varre o repo inteiro e
+              não substitui testes/CI. O assistente deve avisar isso antes de
+              revisar.
+            </span>
           </label>
           <div className="flex gap-2">
             <button
@@ -608,7 +616,8 @@ export function AssistantChat({
         {messages.length === 0 && (
           <p className="text-[11px] text-muted">
             Peça em português, por exemplo: «como funciona o stash?», «faz push»,
-            «reverte este commit» ou «quem alterou esta linha?».
+            «reverte este commit», «quem alterou esta linha?» ou «revise esta
+            branch contra master» (com «Enviar diffs» ligado — revisão parcial).
           </p>
         )}
         {messages.map((m, i) => (

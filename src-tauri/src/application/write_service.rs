@@ -154,8 +154,7 @@ pub fn preview_write(
             let sha =
                 validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
             let blocked = gate_revert(ctx, repo_path)?
-                .or(gate_revert_merge(ctx, &sha)?)
-                .or(gate_not_head_commit(repo_path, &sha, "reverter")?);
+                .or(gate_revert_merge(ctx, &sha)?);
             let op = RevertCommit { sha };
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
@@ -1488,12 +1487,6 @@ fn gate_reword(
     if let Some(msg) = gate_clean_worktree(ctx)? {
         return Ok(Some(msg));
     }
-    if is_head_commit(repo_path, sha)? {
-        return Ok(Some(
-            "Este é o último commit — use Amend em «Alterações locais» para alterar a mensagem."
-                .into(),
-        ));
-    }
     let repo = Repository::discover(repo_path).map_err(|e| GitError::Io(e.to_string()))?;
     let oid = git2::Oid::from_str(sha).map_err(|e| GitError::Git(e.to_string()))?;
     let commit = repo
@@ -1506,6 +1499,7 @@ fn gate_reword(
     }
     // Reword reaplica com cherry-pick linear; merges no caminho trazem
     // commits laterais e costumam gerar conflito (ex.: «could not apply …»).
+    // No HEAD o intervalo é vazio — esta checagem não bloqueia.
     if range_has_merge_commits(ctx.writer(), sha)? {
         return Ok(Some(
             "Há merges no histórico após este commit — o Trilho ainda não reaplica \

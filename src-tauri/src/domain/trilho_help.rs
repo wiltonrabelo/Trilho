@@ -11,15 +11,15 @@ Como consultar: aba **Assistente** (com LLM configurado) ou ferramenta `get_tril
 Não há ainda um botão «Guia» dedicado na UI — o catálogo abaixo é a fonte de verdade.
 
 Tópicos (passe `topic` em get_trilho_help):
-- overview — visão geral e layout
-- open-clone — abrir repo e clonar remoto
+- overview — visão geral, Terminal (Git Bash), menus de contexto
+- open-clone — abrir repo, clonar remoto, recentes
 - graph — grafo / trilha de commits / trilha comparada
-- changes-commit — alterações, stage, commit, amend, descartar
+- changes-commit — alterações, stage, commit, lista de arquivos na descrição
 - working-tree — abas Alterações|Arquivo, editor, reverter trecho
 - sync — fetch, push, pull, force push, publicar
-- branches-refs — ramos, remotos, checkout, comparar
-- stash-tags — pilhas (stash) e tags
-- history-ops — revert, reset, reword, cherry-pick, uncommit
+- branches-refs — ramos, remotos, checkout, remoção local/remota, comparar
+- stash-tags — pilhas (stash) e tags (menus de contexto)
+- history-ops — revert (inclui HEAD), reset, reword, cherry-pick, uncommit
 - conflicts — resolução 3 vias
 - blame-diff — diff, blame, destacar diff
 - github — conexão GitHub/GHE, PR, SSH/GCM
@@ -37,8 +37,10 @@ pub fn help_for_topic(topic: &str) -> String {
     let key = topic.trim().to_lowercase().replace('_', "-").replace(' ', "-");
     let body = match key.as_str() {
         "" | "index" | "ajuda" | "help" | "guia" => help_index(),
-        "overview" | "geral" | "visao" | "visão" => HELP_OVERVIEW,
-        "open-clone" | "clone" | "abrir" | "repo" => HELP_OPEN_CLONE,
+        "overview" | "geral" | "visao" | "visão" | "terminal" | "git-bash" | "menu-contexto" => {
+            HELP_OVERVIEW
+        }
+        "open-clone" | "clone" | "abrir" | "repo" | "recentes" => HELP_OPEN_CLONE,
         "graph" | "grafo" | "trilha" | "commits" | "trilha-comparada" | "dual-trail" => {
             HELP_GRAPH
         }
@@ -81,6 +83,18 @@ Layout principal:
 4. Header — branch, origem, badge de PR, sync (fetch/push/pull), GitHub, **Terminal**
    (abre Git Bash no cwd do repo aberto), Ações, tema.
 
+## Menus de contexto (botão direito)
+- Em itens (ramos, tags, pilhas, commits, arquivos, recentes): menu **do Trilho**
+  (Checkout, Remover, etc.) — não o menu do navegador.
+- Em **espaço vazio** da UI: o clique direito **não faz nada** (menu nativo do
+  WebView bloqueado de propósito).
+
+## Terminal (Git Bash)
+Com repositório aberto, botão **Terminal** no header abre o **Git Bash** já com
+cwd na pasta do repo selecionado (`git-bash.exe --cd=…`). Exige Git for Windows
+instalado. Não é um shell embutido no app; o assistente **não** pode abrir o
+terminal nem rodar git arbitrário.
+
 Painel inferior direito (arquivo do working tree):
 - Abas **Alterações | Arquivo** no topo do diff.
 - Sub-abas **Diff | Blame** dentro de Alterações.
@@ -102,6 +116,10 @@ Clonar (RF-22): botão Clonar — URL, pasta destino, nome, branch opcional, sha
 progresso, abre o repo ao terminar. Auth HTTPS via GCM na 1ª vez.
 Pós-clone: origin + tracking já configurados; se clone raso, use «Completar histórico»
 (unshallow) na barra de sync.
+
+## Recentes (botão direito)
+- **Trocar para este repositório** — desabilitado se já for o repo aberto.
+- **Remover dos recentes** — tira da lista (e fecha se for o aberto, conforme a UI).
 "#;
 
 const HELP_GRAPH: &str = r#"# Grafo / trilha
@@ -135,6 +153,8 @@ Operações em lote e por arquivo (somente neste painel):
 Commit (painel central inferior):
 - Resumo + descrição opcional; amend quando permitido.
 - Opção «Listar arquivos na descrição» pré-preenche +/~/- dos staged (localStorage).
+  O texto começa com **duas linhas em branco** e depois «Arquivos do commit:», para
+  sobrar espaço digitar mensagem manual acima da lista.
 
 Uncommit (soft) no Detalhes do HEAD quando o commit ainda é local / elegível.
 
@@ -196,7 +216,26 @@ Erros de auth abrem o fluxo Conectar (GCM/PAT/SSH).
 const HELP_BRANCHES: &str = r#"# Branches e refs
 
 Painel Refs: Ramos (locais), Remotos, Tags, Pilhas; pesquisa.
-Checkout: git switch em local; remota com --track.
+Checkout: git switch em local; remota com --track (ou switch local se a branch já existir).
+Clique: foca commits exclusivos; duplo clique: checkout.
+
+## Menu de contexto — Ramos (locais)
+Botão direito num ramo:
+- **Checkout** — desabilitado se já for a branch em checkout.
+- **Remover localmente** — `git branch -D` (só local); desabilitado na branch atual.
+- **Remover no repositório remoto (…)** — `git push <remote> --delete <branch>`; o rótulo
+  deixa claro que remove **no servidor**; desabilitado na branch atual. Se não houver
+  tracking listado, usa `origin` (ou o primeiro remoto conhecido).
+
+## Menu de contexto — Remotos
+- **Checkout** — desabilitado se já estiver nessa branch; cria tracking se ainda não
+  houver local.
+- **Remover no repositório remoto (…)** — remove no servidor; desabilitado se for a
+  branch em checkout.
+- **Remover localmente** — só se existir branch local com o mesmo nome (e não for a atual).
+
+Todas as remoções passam pelo preview RF-08. O assistente **não** propõe delete de
+branch — só a UI (Refs).
 
 Comparar branches (RF-14): ícone nos Ramos — escolhe A/B, modo merge-base (`A...B`) ou tips (`A..B`),
 lista de arquivos e diff por arquivo; layout lado a lado ou unificado; ordenação por checkouts recentes.
@@ -205,24 +244,40 @@ lista de arquivos e diff por arquivo; layout lado a lado ou unificado; ordenaç�
 const HELP_STASH_TAGS: &str = r#"# Stash e tags
 
 Stash (RF-23): «Guardar» nas alterações (mensagem, incluir untracked opcional).
-Pilhas no Refs: aplicar / pop / excluir.
+Pilhas no Refs: botão direito → **Aplicar** / **Pop (aplicar e remover)** / **Excluir**
+(preview RF-08). Não há botões inline — só menu de contexto.
+
 Tags (RF-24): «Criar tag…» no commit; anotada ou leve; push opcional.
-Listar/excluir na seção Tags do Refs; clique na tag foca o commit no grafo.
+Na seção Tags do Refs: clique foca o commit; botão direito → **Ir para o commit** /
+**Excluir tag** (preview RF-08).
 "#;
 
 const HELP_HISTORY: &str = r#"# Operações de histórico
 
-No painel Detalhes do commit selecionado:
-- Reverter — não no HEAD; não em merge (nesta versão).
-- Resetar para aqui — soft/mixed/hard; hard com backup/stash se WT suja.
-- Cherry-pick — um ou vários (visão de branch); flag -x opcional.
-- Editar mensagem — amend no HEAD ou reword (RF-16) em commit local; reword já
-  enviado pode exigir force-with-lease.
-- Uncommit (soft) — desfaz o último commit mantendo alterações.
+No painel Detalhes do commit selecionado (e no menu de contexto do grafo, quando couber):
+
+## Reverter (`git revert`)
+- Cria um **novo commit** que desfaz o selecionado; **não** apaga o histórico.
+- **Permitido no HEAD (último commit)** — útil quando a empresa precisa desfazer o
+  último envio com um commit de revert (planejamento / rollback seguro).
+- **Não** disponível em commit de **merge** nesta versão (use os commits individuais
+  da branch mesclada).
+- Working tree precisa estar limpa; o resultado fica local até o usuário dar Push.
+- Diferente de **Uncommit** (soft): uncommit remove o último commit e mantém alterações
+  no working tree / stage, sem criar commit de revert.
+
+## Outras ações
+- Resetar para aqui — soft/mixed/hard; hard com backup/stash se WT suja. Só em commit
+  que **não** é o HEAD.
+- Cherry-pick — um ou vários (visão de branch); flag -x opcional; não no HEAD.
+- Editar mensagem — **Amend** no HEAD ainda local; **reword** no HEAD já enviado
+  (com force-with-lease) ou em commit anterior; reword já enviado exige confirmar
+  o push forçado.
+- Uncommit (soft) — desfaz o último commit mantendo alterações (quando elegível / local).
 - Criar tag…
 
-Via Assistente: pode propor revert, cherry-pick, push, pull, uncommit, tags, stash…
-NÃO pode propor reset/force/reword (reescrevem histórico — só UI).
+Via Assistente: pode propor revert (inclui HEAD), cherry-pick, push, pull, uncommit,
+tags, stash… NÃO pode propor reset/force/reword (reescrevem histórico — só UI).
 "#;
 
 const HELP_CONFLICTS: &str = r#"# Conflitos (RF-20)
@@ -318,14 +373,31 @@ Toda escrita proposta → preview RF-08 + confirmação humana (nunca executa so
 ## Pode (leitura)
 status, commits, arquivos do commit, sync, branches locais/remotas, stashes, tags,
 origem da branch, trilha comparada (dual trail), diff entre branches (lista de arquivos),
-status de PR, leitura 3 vias de conflito, blame, fetch; diff de arquivo se
-«enviar diffs» estiver ligado; **get_trilho_help** para dúvidas do produto.
+status de PR, leitura 3 vias de conflito, blame, fetch; **get_trilho_help** para dúvidas
+do produto.
+
+Com **«Enviar diffs ao provedor»** ligado (necessário para revisão de código):
+- `get_file_diff` — diff WT/stage
+- `get_commit_file_diff` — patch de um arquivo em um commit
+- `get_branch_file_diff` — diff de um arquivo entre duas refs (ex.: `master` vs branch atual)
+- `show_file_at_ref` — conteúdo do arquivo em uma ref (`HEAD`, branch ou SHA)
+
+Fluxo típico de revisão: `list_branch_diff_files` (ou `list_commit_files`) → escolher
+arquivos relevantes → `get_branch_file_diff` / `get_commit_file_diff` / `show_file_at_ref`.
+
+### Limitações da revisão (avisar ao usuário antes de começar)
+- Só vê o que as tools devolverem — **não** indexa o repositório inteiro.
+- Diffs/conteúdos grandes são **truncados**.
+- Achados são **sugestões** (podem falhar); não substituem testes, CI nem revisão humana.
+- Sem a opção «Enviar diffs» ligada, a revisão de código **não** está disponível.
+
+O assistente deve declarar essas limitações em 1–2 frases **antes** de iniciar a análise.
 
 ## Pode (propor → confirmação)
 stage/unstage (1, vários ou all), commit/amend, uncommit, push, pull --ff-only,
 unshallow, publish, switch branch (+ track remoto), stash push/apply/pop/drop,
-criar/excluir tag, revert, cherry-pick, abort/continue/skip de revert|merge|cherry-pick,
-aceitar lado ours/theirs em conflito.
+criar/excluir tag, **revert (incluindo HEAD; não merge)**, cherry-pick,
+abort/continue/skip de revert|merge|cherry-pick, aceitar lado ours/theirs em conflito.
 
 ## Não pode (e por quê) — use a UI manual
 - **reset** (soft/mixed/hard): reescreve HEAD; risco de perda — painel do commit → Reset.
@@ -337,10 +409,14 @@ aceitar lado ours/theirs em conflito.
   (ou propor ours/theirs).
 - **clone remoto**: chat exige repo já aberto — diálogo Clonar.
 - **Conectar GitHub / GCM / SSH / PAT / chaves LLM**: só nos diálogos do app.
+- **remover branch local/remota**: só no painel Refs (menu de contexto) — preview RF-08.
+- **abrir Terminal / Git Bash**: só o botão Terminal no header.
 - **shell / git arbitrário**: bloqueado por segurança.
 
-Exemplos: «como funciona reverter trecho?», «onde faço stage?», «o que é trilha comparada?»,
-«por que o comando do stage tem tantos -c?» (tópico `safety` / `comando-git`).
+Exemplos: «revise esta branch contra master», «compare o arquivo X com o commit Y»,
+«como funciona reverter trecho?», «posso reverter o HEAD?», «onde fica o Terminal?»,
+«por que o comando do stage tem tantos -c?» (tópicos `assistant`, `history-ops`,
+`overview`, `branches-refs`, `safety`).
 
 ## Não inventar
 Responda dúvidas do produto **somente** com o retorno de `get_trilho_help` (e dados
@@ -395,19 +471,22 @@ const HELP_ALL: &str = r#"# Ajuda completa do Trilho
 
 ## overview
 Cliente Git desktop: grafo, preview RF-08, auditoria RF-11.
-Layout: Refs | grafo+Detalhes/Assistente | Alterações+diff/editor. Stage/descartar na lista
-Alterações; diff com reverter trecho e aba Arquivo editável.
+Layout: Refs | grafo+Detalhes/Assistente | Alterações+diff/editor.
+Header com **Terminal** (Git Bash no cwd do repo). Menus de contexto nos itens;
+espaço vazio sem menu do navegador. Stage/descartar na lista Alterações.
 
 ## open-clone
-Abrir pasta Git; Clonar URL+destino+branch/shallow; unshallow na sync.
+Abrir pasta Git; Clonar URL+destino+branch/shallow; unshallow na sync; recentes com
+menu (trocar / remover).
 
 ## graph
 Trilha de commits, alterações locais, paginação, trilha comparada (dual trail),
 seletor Comparar com, badge convergência.
 
 ## changes-commit
-Stage/unstage/commit/amend na lista Alterações; listar arquivos na descrição; stash;
-uncommit. Sem stage/descartar no painel do diff.
+Stage/unstage/commit/amend na lista Alterações; listar arquivos na descrição (com
+duas linhas em branco antes de «Arquivos do commit:»); stash; uncommit.
+Sem stage/descartar no painel do diff.
 
 ## working-tree
 Abas Alterações|Arquivo; reverter trecho por hunk; editor com Salvar/Ctrl+S; destacar diff.
@@ -416,14 +495,17 @@ Abas Alterações|Arquivo; reverter trecho por hunk; editor com Salvar/Ctrl+S; d
 Fetch, push, pull --ff-only, force-with-lease, publicar, unshallow.
 
 ## branches-refs
-Ramos/Remotos/Tags/Pilhas; switch; comparar branches (diff de arquivos).
+Ramos/Remotos; checkout; menu: remover local / remover no repositório remoto;
+comparar branches (diff de arquivos). Delete de branch só na UI.
 
 ## stash-tags
-Stash push/apply/drop; criar/listar/excluir tags.
+Stash e tags via menu de contexto (aplicar/pop/excluir; ir ao commit / excluir tag).
 
 ## history-ops
-Revert, reset, cherry-pick, reword, uncommit, criar tag — no Detalhes.
-Assistente: revert/cherry-pick/push/pull/uncommit/tags/stash sim; reset/force/reword não.
+Revert (inclui HEAD; não merge), reset (não-HEAD), cherry-pick, reword (HEAD
+enviado ou commit anterior; force-with-lease se remoto), uncommit, criar tag.
+Assistente: revert/cherry-pick/push/pull/uncommit/tags/stash sim; reset/force/reword/
+delete-branch/Terminal não.
 
 ## conflicts
 3 vias, aceitar lados/blocos, continue/abort/skip.
@@ -440,7 +522,8 @@ GCM/PAT/SSH; badge PR (github.com + GHE, multi-PR).
 Histórico 7 dias; marca assistente.
 
 ## assistant
-Opt-in; allowlist ampla (stage…stash/tags/switch/conflitos); default-deny em
+Opt-in; allowlist ampla (stage…stash/tags/switch/conflitos); com send_diffs: revisão
+de código (diff commit/branch + show_file_at_ref); default-deny em
 reset/force/reword/discard; get_trilho_help topic=assistant.
 
 ## safety
@@ -506,6 +589,25 @@ mod tests {
         assert!(t.contains("filter.lfs.required=false"));
         assert!(t.contains("add -A"));
         assert!(t.to_lowercase().contains("não invente") || t.to_lowercase().contains("não inventar"));
+    }
+
+    #[test]
+    fn topico_revert_permite_head() {
+        let t = help_for_topic("revert");
+        assert!(t.contains("Permitido no HEAD") || t.contains("incluindo o HEAD"));
+        assert!(t.to_lowercase().contains("merge"));
+    }
+
+    #[test]
+    fn topico_terminal_e_ramos_menu() {
+        let overview = help_for_topic("terminal");
+        assert!(overview.contains("Git Bash"));
+        assert!(overview.contains("espaço vazio"));
+        let branches = help_for_topic("branches-refs");
+        assert!(branches.contains("Remover no repositório remoto"));
+        assert!(branches.contains("Remover localmente"));
+        let changes = help_for_topic("changes-commit");
+        assert!(changes.contains("duas linhas em branco"));
     }
 
     #[test]

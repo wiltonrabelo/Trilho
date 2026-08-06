@@ -70,10 +70,11 @@ export function RewordDialog({
         </div>
 
         <p className="mb-3 text-xs text-muted">
-          Reescreve a mensagem e reaplica os commits seguintes — todos receberão novos SHAs.
+          Reescreve a mensagem do commit. Se houver commits depois dele, eles são
+          reaplicados e recebem novos SHAs. No HEAD, só a mensagem do último commit muda.
           {requiresForcePush
             ? " Como este commit já está no remoto, o histórico reescrito será enviado com push forçado (--force-with-lease)."
-            : " Só vale para commits ainda não enviados ao remoto."}
+            : " Só vale para commits ainda não enviados ao remoto (ou use Amend no HEAD local)."}
         </p>
 
         {requiresForcePush && (

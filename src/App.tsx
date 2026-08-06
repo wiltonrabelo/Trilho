@@ -477,7 +477,7 @@ function App() {
   const upstreamConfigured = Boolean(repo?.upstream || sync?.upstream);
   const amendUnavailableReason =
     headCommit && !canAmend && !writeDisabled
-      ? "Amend indisponível — o último commit já foi enviado ao remoto. Só é possível alterar a mensagem antes do push."
+      ? "Amend na barra de commit só vale antes do push. No HEAD já enviado, use «Editar mensagem» (reword + force-with-lease)."
       : null;
   const isSelectedHead = Boolean(
     selectedCommit && headCommit && selectedCommit.id === headCommit.id,
@@ -485,10 +485,11 @@ function App() {
   const canReword =
     Boolean(
       selectedCommit &&
-        !isSelectedHead &&
         !workingCopySelected &&
         !focusedBranch &&
-        (selectedCommit.isLocalOnly || upstreamConfigured),
+        (selectedCommit.isLocalOnly || upstreamConfigured) &&
+        // HEAD ainda local: usar Amend. HEAD já enviado: reword + force-with-lease.
+        !(isSelectedHead && selectedCommit.isLocalOnly),
     ) && !writeDisabled;
   const rewordRequiresForcePush = Boolean(
     selectedCommit && !selectedCommit.isLocalOnly && upstreamConfigured,
@@ -510,8 +511,6 @@ function App() {
       : null;
   const canRevert = Boolean(
     selectedCommit &&
-      headCommit &&
-      selectedCommit.id !== headCommit.id &&
       selectedCommit.parentIds.length <= 1 &&
       !workingCopySelected &&
       !writeDisabled &&
@@ -521,20 +520,18 @@ function App() {
     selectedCommit && !workingCopySelected && !writeDisabled && !canRevert
       ? focusedBranch
         ? "Saia do foco de branch para reverter commits."
-        : isSelectedHead
-          ? "Não é possível reverter o HEAD (último commit). Selecione um commit anterior — não merge."
-          : selectedCommit.parentIds.length > 1
-            ? "Revert de commit de merge não está disponível nesta versão. Reverta os commits individuais da branch mesclada."
-            : null
+        : selectedCommit.parentIds.length > 1
+          ? "Revert de commit de merge não está disponível nesta versão. Reverta os commits individuais da branch mesclada."
+          : null
       : null;
   const revertInfoHint = canRevert
-    ? "Revert cria um commit local que desfaz o selecionado. Não envia ao remoto — use Push depois."
+    ? "Revert cria um commit local que desfaz o selecionado (incluindo o HEAD, se precisar). Não envia ao remoto — use Push depois."
     : null;
   const canEditMessageOnHead = Boolean(isSelectedHead && canAmend) && !writeDisabled;
   const messageEditHint =
     selectedCommit && !workingCopySelected && !writeDisabled
-      ? isSelectedHead && !canAmend
-        ? "Este commit já está no remoto. Para corrigir a mensagem antes de enviar, use Amend em «Alterações locais» (só vale para o último commit local)."
+      ? isSelectedHead && !canAmend && !canReword
+        ? "Este commit já está no remoto, mas a branch não tem upstream — configure o remoto antes de editar a mensagem."
         : !isSelectedHead && !selectedCommit.isLocalOnly && !upstreamConfigured
           ? "Este commit já foi enviado, mas a branch não tem upstream — configure o remoto antes do reword."
           : null
@@ -573,8 +570,8 @@ function App() {
 
   const handleEditMessage = useCallback(() => {
     if (writeDisabled || !selectedCommit) return;
-    if (isSelectedHead) {
-      if (!canAmend) return;
+    // HEAD local → Amend; HEAD já enviado ou commit anterior → Reword.
+    if (isSelectedHead && canAmend) {
       setWorkingCopySelected(true);
       setAmendIntent((n) => n + 1);
       return;
@@ -746,11 +743,7 @@ function App() {
     const items: CommitContextMenuItem[] = [];
 
     const showRevert =
-      headCommit &&
-      !isHead &&
-      c.parentIds.length <= 1 &&
-      !writeDisabled &&
-      !focusedBranch;
+      c.parentIds.length <= 1 && !writeDisabled && !focusedBranch;
     if (showRevert) {
       items.push({
         id: "revert",
@@ -791,10 +784,10 @@ function App() {
 
     const showEditHead = isHead && canAmend && !writeDisabled;
     const showReword =
-      !isHead &&
       !writeDisabled &&
       !focusedBranch &&
-      (c.isLocalOnly || upstreamConfigured);
+      (c.isLocalOnly || upstreamConfigured) &&
+      (!isHead || !c.isLocalOnly);
     if (showEditHead || showReword) {
       items.push({
         id: "editMessage",

@@ -3,7 +3,8 @@
 use crate::application::{GitCommand, GitError};
 use crate::infrastructure::SafeGitCli;
 
-/// Reescreve a mensagem de um commit não-HEAD reaplicando os descendentes.
+/// Reescreve a mensagem de um commit (HEAD ou anterior).
+/// No HEAD a cadeia de descendentes é vazia — só a mensagem muda.
 pub fn execute_reword(cli: &SafeGitCli, target_sha: &str, new_message: &str) -> Result<(), GitError> {
     let branch = cli
         .run(&GitCommand {
