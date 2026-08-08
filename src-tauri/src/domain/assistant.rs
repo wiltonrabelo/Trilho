@@ -10,6 +10,8 @@ pub enum LlmProviderKind {
     Ollama,
     OpenAi,
     Anthropic,
+    /// Claude Code CLI já autenticado no PC (plano Pro/Max) — sem API key no Trilho.
+    ClaudeCode,
 }
 
 impl Default for LlmProviderKind {

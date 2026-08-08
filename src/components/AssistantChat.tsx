@@ -1,4 +1,4 @@
-import { Bot, Send, Settings2 } from "lucide-react";
+import { Bot, Check, Copy, Send, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -183,12 +183,31 @@ export function AssistantChat({
   const [thinkingSince, setThinkingSince] = useState<number | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [testHint, setTestHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<AssistantSettingsViewDto | null>(null);
   const saveSeqRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  const copyMessage = useCallback(async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedKey(null), 1500);
+    } catch {
+      /* clipboard pode falhar sem permissão */
+    }
+  }, []);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -202,6 +221,8 @@ export function AssistantChat({
         return "gpt-4o-mini";
       case "anthropic":
         return "claude-3-5-haiku-latest";
+      case "claudeCode":
+        return "sonnet";
     }
   };
 
@@ -469,7 +490,8 @@ export function AssistantChat({
               >
                 <option value="ollama">Ollama (local)</option>
                 <option value="openAi">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
+                <option value="anthropic">Anthropic (API key)</option>
+                <option value="claudeCode">Claude Code (plano)</option>
               </select>
             </label>
             <label className="flex items-center gap-1">
@@ -508,9 +530,24 @@ export function AssistantChat({
                 />
               </label>
               <p className="text-[10px] text-muted">
-                Ollama é local — não usa API key. Informe URL e modelo (ex. llama3.2).
+                Ollama via app local (URL abaixo). Modelos “:cloud” (ex.
+                glm-5.2:cloud) usam a conta Ollama Cloud — exigem assinatura, não
+                só login.
               </p>
             </div>
+          )}
+          {settings.provider === "claudeCode" && (
+            <p className="text-[10px] leading-snug text-muted">
+              Usa o Claude Code (CLI ou extensão VS Code/Cursor) já autenticado
+              neste PC — não o app Desktop/chat. Tools do Trilho (leitura /
+              propostas) usam o mesmo loop dos outros provedores. Cada mensagem
+              sobe o CLI de novo (pode levar vários segundos a mais). Se só
+              usa a extensão, o Trilho procura o binário em{" "}
+              <span className="font-mono">
+                .vscode/extensions/anthropic.claude-code-*
+              </span>
+              . Modelo: sonnet (ou opus / haiku). Plano Pro/Max — sem API key.
+            </p>
           )}
           {(settings.provider === "openAi" ||
             settings.provider === "anthropic") && (
@@ -620,34 +657,60 @@ export function AssistantChat({
             branch contra master» (com «Enviar diffs» ligado — revisão parcial).
           </p>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={`${m.role}-${m.at}-${i}`}
-            className={`rounded-lg px-2.5 py-1.5 text-[11px] leading-snug ${
-              m.role === "user"
-                ? "ml-6 bg-accent/15 text-text"
-                : m.role === "system"
-                  ? "mx-2 border border-emerald-500/30 bg-emerald-500/10 text-text"
-                  : "mr-6 bg-bg/80 text-text"
-            }`}
-          >
-            <div className="mb-0.5 flex items-center justify-between gap-2">
-              <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">
-                {roleLabel(m.role)}
-              </span>
-              <span className="shrink-0 font-mono text-[9px] text-muted">
-                {formatMessageTime(m.at)}
-                {m.responseSecs != null && (
-                  <span title="Tempo de resposta">
-                    {" "}
-                    · {formatDuration(m.responseSecs)}
-                  </span>
-                )}
-              </span>
+        {messages.map((m, i) => {
+          const msgKey = `${m.role}-${m.at}-${i}`;
+          const canCopy = m.role === "assistant" && m.content.trim().length > 0;
+          return (
+            <div
+              key={msgKey}
+              className={`rounded-lg px-2.5 py-1.5 text-[11px] leading-snug ${
+                m.role === "user"
+                  ? "ml-6 bg-accent/15 text-text"
+                  : m.role === "system"
+                    ? "mx-2 border border-emerald-500/30 bg-emerald-500/10 text-text"
+                    : "mr-6 bg-bg/80 text-text"
+              }`}
+            >
+              <div className="mb-0.5 flex items-center justify-between gap-2">
+                <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">
+                  {roleLabel(m.role)}
+                </span>
+                <span className="flex shrink-0 items-center gap-1 font-mono text-[9px] text-muted">
+                  {formatMessageTime(m.at)}
+                  {m.responseSecs != null && (
+                    <span title="Tempo de resposta">
+                      · {formatDuration(m.responseSecs)}
+                    </span>
+                  )}
+                  {canCopy && (
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-muted opacity-50 transition-opacity hover:bg-surface hover:text-text hover:opacity-100"
+                      title={
+                        copiedKey === msgKey
+                          ? "Copiado"
+                          : "Copiar resposta"
+                      }
+                      aria-label={
+                        copiedKey === msgKey
+                          ? "Copiado"
+                          : "Copiar resposta"
+                      }
+                      onClick={() => void copyMessage(msgKey, m.content)}
+                    >
+                      {copiedKey === msgKey ? (
+                        <Check size={11} className="text-accent" />
+                      ) : (
+                        <Copy size={11} />
+                      )}
+                    </button>
+                  )}
+                </span>
+              </div>
+              <p className="whitespace-pre-wrap">{m.content}</p>
             </div>
-            <p className="whitespace-pre-wrap">{m.content}</p>
-          </div>
-        ))}
+          );
+        })}
         {loading && thinkingSince != null && (
           <div className="mr-6 rounded-lg bg-bg/80 px-2.5 py-1.5 text-[11px] leading-snug text-text">
             <div className="mb-0.5 flex items-center justify-between gap-2">
@@ -735,6 +798,8 @@ function providerLabel(p: LlmProviderKindDto): string {
       return "OpenAI";
     case "anthropic":
       return "Anthropic";
+    case "claudeCode":
+      return "Claude Code";
   }
 }
 
@@ -749,6 +814,9 @@ function providerReady(s: AssistantSettingsViewDto): boolean {
       return s.hasOpenaiKey;
     case "anthropic":
       return s.hasAnthropicKey;
+    case "claudeCode":
+      // Auth fica no CLI do usuário; o Trilho só precisa do modelo.
+      return true;
   }
 }
 

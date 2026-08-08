@@ -404,7 +404,11 @@ export interface CloneResultDto {
 }
 
 /** RF-21 — assistente LLM. */
-export type LlmProviderKindDto = "ollama" | "openAi" | "anthropic";
+export type LlmProviderKindDto =
+  | "ollama"
+  | "openAi"
+  | "anthropic"
+  | "claudeCode";
 
 export interface AssistantSettingsDto {
   enabled: boolean;
