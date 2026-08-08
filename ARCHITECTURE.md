@@ -26,7 +26,7 @@ Não é um IDE nem um substituto genérico do Git CLI: é um visualizador/operad
 | Backend | Rust 2021 (`rust-version = "1.77"`), crate lib `trilho_lib` |
 | Git | `git2` (leitura) + **CLI Git** via `SafeGitCli` (escrita / ops sensíveis) |
 | LLM HTTP | `ureq` (Ollama / OpenAI / Anthropic) |
-| LLM plano Claude | subprocesso do **Claude Code CLI** (não API key) |
+| LLM plano Claude / ChatGPT | subprocesso **Claude Code** / **Codex CLI** (não API key) |
 | Testes FE | Vitest + jsdom |
 | Testes E2E | Playwright (`e2e/`) |
 | Testes Rust | `cargo test` + `clippy -D warnings` |
@@ -91,7 +91,7 @@ Tipos e regras sem I/O:
 
 - `git2_reader.rs` — leitura rápida (commits, status, origem…)
 - `git_cli.rs` — **`SafeGitCli`**: único caminho preferido para Git CLI com config defensiva
-- `llm/` — Ollama / OpenAI / Anthropic / **Claude Code**
+- `llm/` — Ollama / OpenAI / Anthropic / **Claude Code** / **Codex CLI**
 - `llm_credentials.rs`, `assistant_settings.rs`, `credential.rs`, `ssh_keys.rs`
 - `branch_diff.rs`, `conflict.rs`, `reword.rs`, `repo_watcher.rs`, `github_pr.rs`…
 
@@ -190,7 +190,8 @@ Leituras úteis (não exaustivo):
 | Valor serde | Uso |
 |-------------|-----|
 | `ollama` | Local / Cloud via app Ollama (`ollamaBaseUrl`) |
-| `openAi` | API key |
+| `openAi` | API key (`api.openai.com`) |
+| `codexCli` | Codex CLI (`codex login` / ChatGPT) — **≠** API key OpenAI |
 | `anthropic` | API key (Console) — **≠** plano claude.ai |
 | `claudeCode` | CLI/extensão Claude Code já logado no PC (plano Pro/Max) |
 
@@ -200,7 +201,7 @@ Leituras úteis (não exaustivo):
 - `send_diffs` — default **off**; necessário para revisão de código / tools de diff
 - `send_metadata` — repo/branch/status/UI; o **gate de `send_diffs`** continua sendo informado mesmo com metadados off (intencional)
 
-### Chat com tools (Ollama / OpenAI / Anthropic / Claude Code)
+### Chat com tools (todos os provedores)
 
 `run_chat` → até `MAX_TOOL_ROUNDS` → `run_tool` → leituras voltam ao modelo; `propose_*` acumula `pending_writes`.
 
@@ -208,10 +209,10 @@ Leituras úteis (não exaustivo):
 |----------|----------------------------------|
 | Ollama / OpenAI | Tool-calling estilo OpenAI no HTTP |
 | Anthropic (API key) | `tool_use` da Messages API |
-| Claude Code | Protocolo textual no adaptador (abaixo) — **mesma** allowlist |
+| Claude Code / Codex CLI | Protocolo textual no adaptador — **mesma** allowlist |
 
-Claude Code não usa `tool_use` da API Anthropic no subprocesso `-p`. O adaptador
-(`claude_code.rs`) instrui o modelo a emitir:
+CLIs não usam tool-calling HTTP da API no subprocesso. Os adaptadores
+(`claude_code.rs`, `codex_cli.rs`) instruem o modelo a emitir:
 
 ```
 <<<TRILHO_TOOL_CALLS>>>
@@ -238,11 +239,23 @@ Isso existe porque modelos pequenos (ex. llama3.2) inventam tools/arquivos.
 - **Não** usar `--bare` (ignora OAuth do plano)
 - Prompt grande via **stdin**; `--permission-mode dontAsk` (modo documentado)
 - cwd neutro em temp (evita carregar `CLAUDE.md` do repo do Trilho **e** impede o agent do CLI de operar no working tree do usuário)
-- Chat geral: allowlist + protocolo `<<<TRILHO_TOOL_CALLS>>>` (parity com outros provedores)
-- Sem Bash/`git` arbitrário do Claude Code — só o que o Trilho executar na allowlist
+- **Sem Bash/`git` arbitrário do Claude Code** — só o que o Trilho executar na allowlist
+- Chat geral: allowlist + protocolo `<<<TRILHO_TOOL_CALLS>>>`
 - Timeout ~300s com kill
 
-**Claude Desktop (chat) ≠ Claude Code CLI.** Extensão VS Code embute o CLI; o Trilho procura esse path.
+**Claude Desktop (chat) ≠ Claude Code CLI.**
+
+### Codex CLI (`codexCli`)
+
+- Arquivo: `infrastructure/llm/codex_cli.rs`
+- Comando: `codex exec --ephemeral --sandbox read-only --skip-git-repo-check` (+ `--ask-for-approval never` se a build aceitar) `-`
+- Auth: `codex login` / extensão ChatGPT (`~/.codex/auth.json`); subprocesso **remove** `OPENAI_API_KEY` / `CODEX_API_KEY` para não forçar API key
+- Resolve binário (nesta ordem): extensão `openai.chatgpt-*/bin/windows-x86_64/codex.exe` → `%APPDATA%\npm` → PATH; no Windows só PE (MZ), ignora `bin/linux-*` da extensão
+- cwd neutro + sandbox read-only; **sem Bash/`git` livre do agent** — só allowlist do Trilho
+- Mesmo protocolo textual de tools que Claude Code
+- Timeout ~300s com kill
+
+**OpenAI (API key) ≠ Codex CLI (plano ChatGPT).**
 
 Ajuda de produto para o modelo: `get_trilho_help` → `domain/trilho_help.rs` (manter alinhado a estas regras).
 
@@ -305,7 +318,7 @@ Portas Vite: `1420` / `1421`. Se “address already in use”, encerrar `trilho.
 3. Assistente **default-deny** — sem shell; reset/force-push/reword/discard só na UI dedicada.
 4. **`send_diffs` off por padrão** — não enviar diffs sem opt-in.
 5. **Sem API keys em arquivo** — só Credential Manager.
-6. **Claude Code ≠ Anthropic API key** — CLI/extensão autenticada; sem `--bare`.
+6. **Claude Code ≠ Anthropic API key**; **Codex CLI ≠ OpenAI API key** — CLIs autenticados no plano; sem `--bare` no Claude.
 7. Commands finos; lógica na application.
 8. Manter mocks de `dev:web` alinhados com `api.ts`.
 9. Windows WebView: há keepalive de ícone e recovery de página em branco em `lib.rs` / frontend — não remover sem motivo.
@@ -343,4 +356,4 @@ Centro-baixo: abas **Detalhes** | **Assistente**.
 
 ---
 
-*Última atualização orientativa: RF-21 com tools em todos os provedores (Claude Code via protocolo textual), `count_commits`, revisão determinística e SafeGitCli/RF-08.*
+*Última atualização orientativa: RF-21 com tools em todos os provedores (Claude Code + Codex CLI via protocolo textual), resolução PE do Codex na extensão VS Code, `count_commits`, revisão determinística e SafeGitCli/RF-08.*

@@ -11,7 +11,8 @@ use crate::domain::{
     LlmProviderKind, WriteRequest,
 };
 use crate::infrastructure::llm::{
-    ping_ollama, AnthropicProvider, ClaudeCodeProvider, OllamaProvider, OpenAiProvider,
+    ping_ollama, AnthropicProvider, ClaudeCodeProvider, CodexCliProvider, OllamaProvider,
+    OpenAiProvider,
 };
 use crate::infrastructure::{
     get_branch_file_diff, get_branch_pr_status, get_conflict_file, get_llm_api_key, list_branch_diff,
@@ -683,6 +684,13 @@ pub fn build_provider(settings: &AssistantSettings) -> Result<Box<dyn LlmProvide
         LlmProviderKind::ClaudeCode => Ok(Box::new(ClaudeCodeProvider {
             model: if settings.model.trim().is_empty() {
                 "sonnet".into()
+            } else {
+                settings.model.clone()
+            },
+        })),
+        LlmProviderKind::CodexCli => Ok(Box::new(CodexCliProvider {
+            model: if settings.model.trim().is_empty() {
+                "gpt-5.4-mini".into()
             } else {
                 settings.model.clone()
             },

@@ -223,6 +223,8 @@ export function AssistantChat({
         return "claude-3-5-haiku-latest";
       case "claudeCode":
         return "sonnet";
+      case "codexCli":
+        return "gpt-5.4-mini";
     }
   };
 
@@ -489,7 +491,8 @@ export function AssistantChat({
                 }}
               >
                 <option value="ollama">Ollama (local)</option>
-                <option value="openAi">OpenAI</option>
+                <option value="openAi">OpenAI (API key)</option>
+                <option value="codexCli">Codex CLI (ChatGPT)</option>
                 <option value="anthropic">Anthropic (API key)</option>
                 <option value="claudeCode">Claude Code (plano)</option>
               </select>
@@ -547,6 +550,16 @@ export function AssistantChat({
                 .vscode/extensions/anthropic.claude-code-*
               </span>
               . Modelo: sonnet (ou opus / haiku). Plano Pro/Max — sem API key.
+            </p>
+          )}
+          {settings.provider === "codexCli" && (
+            <p className="text-[10px] leading-snug text-muted">
+              Usa o Codex CLI (`codex exec`) com login ChatGPT neste PC — não a
+              API key OpenAI. Rode{" "}
+              <span className="font-mono">codex login</span> uma vez. Tools do
+              Trilho usam o mesmo loop; o agent do Codex fica em sandbox
+              read-only e cwd neutro (não edita o repo). Modelo típico:
+              gpt-5.4-mini (ou o que o catálogo Codex listar).
             </p>
           )}
           {(settings.provider === "openAi" ||
@@ -800,6 +813,8 @@ function providerLabel(p: LlmProviderKindDto): string {
       return "Anthropic";
     case "claudeCode":
       return "Claude Code";
+    case "codexCli":
+      return "Codex CLI";
   }
 }
 
@@ -815,6 +830,7 @@ function providerReady(s: AssistantSettingsViewDto): boolean {
     case "anthropic":
       return s.hasAnthropicKey;
     case "claudeCode":
+    case "codexCli":
       // Auth fica no CLI do usuário; o Trilho só precisa do modelo.
       return true;
   }

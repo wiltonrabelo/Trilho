@@ -120,8 +120,8 @@ fn tools_protocol_instructions(tools: &[LlmToolDef]) -> String {
     let catalog_json =
         serde_json::to_string_pretty(&catalog).unwrap_or_else(|_| "[]".into());
     format!(
-        "### Protocolo de tools do Trilho (Claude Code)\n\
-Neste modo o CLI não tem tool-calling da API Anthropic. Para usar uma ferramenta \
+        "### Protocolo de tools do Trilho (adaptador CLI)\n\
+Neste modo o CLI não tem tool-calling HTTP da API. Para usar uma ferramenta \
 da allowlist abaixo, emita EXATAMENTE um bloco (pode haver uma frase curta antes):\n\
 {TOOL_BLOCK_START}\n\
 [{{\"name\":\"count_commits\",\"arguments\":{{}}}}]\n\

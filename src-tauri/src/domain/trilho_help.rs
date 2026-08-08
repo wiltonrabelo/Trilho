@@ -366,17 +366,22 @@ em JSONL local, com sanitização de segredos. Entradas do assistente marcadas �
 const HELP_ASSISTANT: &str = r#"# Assistente LLM (RF-21)
 
 Aba Assistente (centro-baixo). Opt-in desligado por padrão; provedores Ollama /
-OpenAI / Anthropic (API key) / **Claude Code (plano)**.
+OpenAI (API key) / **Codex CLI (ChatGPT)** / Anthropic (API key) /
+**Claude Code (plano)**.
 Chaves OpenAI/Anthropic no Credential Manager (nunca no código).
 
-### Claude Code (plano)
-Usa o CLI `claude` já autenticado no PC (`claude auth login` com Pro/Max) — sem API key
-no Trilho. Modelo típico: `sonnet` (ou `opus` / `haiku`). Requer Claude Code no PATH
-(ou binário da extensão VS Code/Cursor).
-**Mesma allowlist** que Ollama/OpenAI/Anthropic: o adaptador interpreta o bloco textual
-`<<<TRILHO_TOOL_CALLS>>>`…`<<<END_TRILHO_TOOL_CALLS>>>` e o runtime executa as tools.
-Não há Bash/`git` livre do CLI (cwd neutro + `dontAsk`). Revisão por pacote de diffs
-continua **sem** tools.
+### CLIs com plano (sem API key no Trilho)
+- **Claude Code:** `claude auth login` (Pro/Max). Modelo típico: `sonnet` / `opus` / `haiku`.
+- **Codex CLI:** `codex login` (ChatGPT com acesso Codex). Modelo típico: `gpt-5.4-mini`.
+  Invoca `codex exec --sandbox read-only` em cwd neutro; remove `OPENAI_API_KEY`/
+  `CODEX_API_KEY` do subprocesso para preferir auth ChatGPT. Não exige `codex` no PATH
+  se a extensão VS Code/Cursor `openai.chatgpt-*` estiver instalada (usa
+  `bin/windows-x86_64/codex.exe`).
+
+Ambos usam a **mesma allowlist** que Ollama/OpenAI/Anthropic: o adaptador interpreta o
+bloco textual `<<<TRILHO_TOOL_CALLS>>>`…`<<<END_TRILHO_TOOL_CALLS>>>` e o runtime
+executa as tools. Não há Bash/`git` livre do agent do CLI no repo do usuário.
+Revisão por pacote de diffs continua **sem** tools.
 
 Toda escrita proposta → preview RF-08 + confirmação humana (nunca executa sozinho).
 
@@ -538,7 +543,7 @@ GCM/PAT/SSH; badge PR (github.com + GHE, multi-PR).
 Histórico 7 dias; marca assistente.
 
 ## assistant
-Opt-in; Ollama/OpenAI/Anthropic/Claude Code (mesmo loop de tools; Claude Code via
+Opt-in; Ollama/OpenAI/Anthropic/Claude Code/Codex CLI (mesmo loop de tools; CLIs via
 protocolo textual). Leituras: list_commits (máx. 30), **count_commits** (rev-list
 --count; exclude=base para branch desde main), sync, blame, etc. Com send_diffs:
 revisão determinística sem tools + tools de diff no chat geral. Default-deny em

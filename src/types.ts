@@ -408,7 +408,8 @@ export type LlmProviderKindDto =
   | "ollama"
   | "openAi"
   | "anthropic"
-  | "claudeCode";
+  | "claudeCode"
+  | "codexCli";
 
 export interface AssistantSettingsDto {
   enabled: boolean;
