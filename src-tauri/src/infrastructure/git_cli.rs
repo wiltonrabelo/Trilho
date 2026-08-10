@@ -443,11 +443,27 @@ impl SafeGitCli {
     }
 }
 
+/// Uma linha de comando para RF-08 (argv → texto copiável / legível).
+fn format_preview_command_line(parts: &[String]) -> String {
+    parts
+        .iter()
+        .map(|p| {
+            if p.is_empty() || p.chars().any(|c| c.is_whitespace() || matches!(c, '"' | '\'')) {
+                format!("\"{}\"", p.replace('"', "\\\""))
+            } else {
+                p.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl GitWriter for SafeGitCli {
     fn preview(&self, command: &GitCommand) -> Vec<String> {
-        let mut line = vec!["git".to_string()];
-        line.extend(self.full_args(command));
-        line
+        let mut parts = vec!["git".to_string()];
+        parts.extend(self.full_args(command));
+        // Um comando por entrada — a UI junta com `\n` entre operações compostas.
+        vec![format_preview_command_line(&parts)]
     }
 
     fn run(&self, command: &GitCommand) -> Result<String, GitError> {
@@ -557,8 +573,10 @@ mod tests {
             args: vec!["status".into()],
         };
         let preview = cli.preview(&cmd);
-        assert_eq!(preview[0], "git");
-        assert!(preview.contains(&"-C".to_string()));
+        assert_eq!(preview.len(), 1, "preview deve ser uma linha por comando");
+        assert!(preview[0].starts_with("git "));
+        assert!(preview[0].contains("-C"));
+        assert!(preview[0].contains("status"));
         // Sem git real em C:/repo — run falha, mas não com erro de trait quebrado
         let err = cli.run(&cmd).expect_err("repo inexistente");
         assert!(!err.to_string().contains("use o método estático"));

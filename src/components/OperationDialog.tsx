@@ -32,25 +32,26 @@ export function OperationDialog({
   if (!preview) return null;
 
   const blocked = Boolean(preview.blocked);
+  const commandText = preview.commands.join("\n");
 
   async function copyCommands() {
-    await navigator.clipboard.writeText(preview!.commands.join("\n"));
+    await navigator.clipboard.writeText(commandText);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="op-dialog-title"
     >
       <div
         ref={panelRef}
-        className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface shadow-lg"
+        className="flex max-h-[min(90vh,720px)] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-lg"
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
           <h2 id="op-dialog-title" className="text-sm font-semibold">
             {title}
           </h2>
@@ -64,15 +65,20 @@ export function OperationDialog({
           </button>
         </div>
 
-        <div className="space-y-3 px-4 py-3 text-sm">
-          <p className="text-xs text-muted break-all">{preview.repoPath}</p>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 text-sm">
+          <p className="truncate text-xs text-muted" title={preview.repoPath}>
+            {preview.repoPath}
+          </p>
 
           {preview.description && (
             <p className="text-text">{preview.description}</p>
           )}
 
           {progressLine && (
-            <p className="truncate font-mono text-[10px] text-muted" title={progressLine}>
+            <p
+              className="truncate font-mono text-[10px] text-muted"
+              title={progressLine}
+            >
               {progressLine}
             </p>
           )}
@@ -87,27 +93,27 @@ export function OperationDialog({
             </p>
           ) : (
             <div className="rounded-md border border-border bg-bg p-3">
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
                   Comando Git
                 </span>
                 <button
                   type="button"
                   onClick={() => void copyCommands()}
-                  className="flex items-center gap-1 text-[10px] text-accent hover:underline"
+                  className="flex shrink-0 items-center gap-1 text-[10px] text-accent hover:underline"
                 >
                   <Copy size={12} />
                   {copied ? "Copiado" : "Copiar"}
                 </button>
               </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs text-text">
-                {preview.commands.join("\n")}
+              <pre className="max-h-[min(40vh,280px)] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-text">
+                {commandText}
               </pre>
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-surface px-4 py-3">
           <button
             type="button"
             onClick={onCancel}
