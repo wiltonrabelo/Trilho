@@ -153,17 +153,18 @@ Traits na application; implementações na infrastructure. UI e commands não fa
 ### RF-08 — preview antes de escrever
 
 1. UI/assistente propõe `WriteRequest`
-2. `preview_write_operation` monta argv + resumo
+2. `preview_write_operation` monta argv + resumo e, se não bloqueado, emite **token de uso único** (A-02)
 3. Usuário confirma no `OperationDialog`
-4. `execute_write_operation` roda **os mesmos** comandos pré-visualizados
+4. `execute_write_operation` recebe **só o token** (não o request do cliente), consome atomicamente, recalcula preview/gates e exige argv idêntico ao autorizado
 
-**Nunca** executar escrita “silenciosa” pulando o preview.
+**Nunca** executar escrita “silenciosa” pulando o preview. **Nunca** aceitar `WriteRequest` solto no execute IPC.
 
 ### Assistente (RF-21) — allowlist default-deny
 
 - Só tools em `allowlisted_tools`
 - Sem shell / git arbitrário
 - Escrita só via `propose_*` → vira `WriteRequest` → ainda passa RF-08
+- **`propose_fetch_remote`** (não `fetch_remote` automático) — altera refs; exige confirmação
 - Bloqueados no assistente (UI manual): reset, force push, reword, discard/hunk, etc. (`denied_tool_reason`)
 
 Leituras úteis (não exaustivo):
@@ -175,11 +176,18 @@ Leituras úteis (não exaustivo):
 | `get_sync_info` | Ahead/behind vs upstream |
 | `get_trilho_help` | Catálogo de produto (`domain/trilho_help.rs`) |
 
-### Credenciais LLM
+### Credenciais
 
 - **Nunca** em JSON de settings
-- OpenAI/Anthropic: Windows Credential Manager via `git credential`, host `trilho.llm.{provider}`
+- OpenAI/Anthropic API keys: Credential Manager via `git credential`, host `trilho.llm.{provider}`
+- PAT GitHub (API de PRs): mesmo mecanismo, host `trilho.llm.github.api` (migra/apaga arquivo legado `github_api_pat`)
 - Preferências sem segredo: `{app_data_dir}/assistant_settings.json`
+
+### Git endurecido (rede / RCE via config local)
+
+- Toda invocação via `SafeGitCli` aplica `-c` defensivo: hooks off, `protocol.ext` never, LFS filters off, **`core.sshCommand=`**, **`credential.helper=`** + helper confiável do SO (`manager-core` / `osxkeychain`)
+- `fetch_all_remote_branch_refs` usa `SafeGitCli` (não `Command::new("git")` cru)
+- `save_worktree_file` rejeita symlink/junction no caminho (anti escape do worktree)
 
 ---
 
@@ -237,7 +245,7 @@ Isso existe porque modelos pequenos (ex. llama3.2) inventam tools/arquivos.
 - Arquivo: `infrastructure/llm/claude_code.rs`
 - Resolve binário: PATH → `~/.local/bin` → extensão VS Code/Cursor `anthropic.claude-code-*/resources/native-binary/claude.exe` (semver numérico)
 - **Não** usar `--bare` (ignora OAuth do plano)
-- Prompt grande via **stdin**; `--permission-mode dontAsk` (modo documentado)
+- Prompt grande via **stdin**; `--permission-mode dontAsk`; `--allowedTools` vazio (sem tools nativas do Claude)
 - cwd neutro em temp (evita carregar `CLAUDE.md` do repo do Trilho **e** impede o agent do CLI de operar no working tree do usuário)
 - **Sem Bash/`git` arbitrário do Claude Code** — só o que o Trilho executar na allowlist
 - Chat geral: allowlist + protocolo `<<<TRILHO_TOOL_CALLS>>>`
@@ -313,7 +321,7 @@ Portas Vite: `1420` / `1421`. Se “address already in use”, encerrar `trilho.
 
 ## 12. Convenções e armadilhas (leia antes de mudar)
 
-1. **Nunca pular RF-08** — preview e execute devem usar o mesmo argv.
+1. **Nunca pular RF-08** — preview emite token; execute consome só o token e exige o mesmo argv.
 2. Gates **fail-closed** — preferir `SafeGitCli::run_bool`.
 3. Assistente **default-deny** — sem shell; reset/force-push/reword/discard só na UI dedicada.
 4. **`send_diffs` off por padrão** — não enviar diffs sem opt-in.
@@ -356,4 +364,4 @@ Centro-baixo: abas **Detalhes** | **Assistente**.
 
 ---
 
-*Última atualização orientativa: RF-21 com tools em todos os provedores (Claude Code + Codex CLI via protocolo textual), resolução PE do Codex na extensão VS Code, `count_commits`, revisão determinística e SafeGitCli/RF-08.*
+*Última atualização orientativa: A-02 (token RF-08 preview→execute), SafeGitCli, propose_fetch_remote, PAT no Credential Manager, Claude `--allowedTools` vazio.*

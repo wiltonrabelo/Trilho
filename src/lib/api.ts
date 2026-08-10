@@ -465,6 +465,7 @@ export async function previewPublishOperation(
       description: "Mock — publicar branch.",
       repoPath: "/mock",
       blocked: null,
+      authorization: "mock-auth",
     };
   }
   // Contrato com o backend: SÓ `url`. Mandar `url` + `remoteUrl` (aliases do
@@ -475,13 +476,10 @@ export async function previewPublishOperation(
 }
 
 export async function executePublishOperation(
-  remoteUrl?: string | null,
+  authorization: string,
 ): Promise<void> {
-  const url = remoteUrl?.trim() || null;
   if (!isTauri()) return;
-  return invoke("execute_write_operation", {
-    request: { kind: "publish", url },
-  });
+  return invoke("execute_write_operation", { authorization });
 }
 
 export async function previewWriteOperation(
@@ -493,18 +491,20 @@ export async function previewWriteOperation(
       description: "Mock — preview de operação.",
       repoPath: "/mock",
       blocked: null,
+      authorization: "mock-auth",
     };
   }
   return invoke<OperationPreviewDto>("preview_write_operation", { request });
 }
 
+/** Executa escrita autorizada pelo token do preview (A-02). Sem token = rejeitado. */
 export async function executeWriteOperation(
-  request: WriteRequestDto,
+  authorization: string,
   options?: { fromAssistant?: boolean },
 ): Promise<void> {
   if (!isTauri()) return;
   return invoke("execute_write_operation", {
-    request,
+    authorization,
     fromAssistant: options?.fromAssistant ?? false,
   });
 }

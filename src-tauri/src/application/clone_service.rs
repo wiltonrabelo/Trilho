@@ -93,6 +93,8 @@ pub fn preview_clone(req: &CloneRequest) -> Result<OperationPreview, GitError> {
         description: clone_description(&label, &dest, &branch, &depth),
         repo_path: parent.to_string(),
         blocked,
+        // Clone tem IPC próprio (`execute_clone_remote`) — sem token A-02 ainda.
+        authorization: None,
     })
 }
 
@@ -214,6 +216,7 @@ fn blocked_preview(repo_path: &str, msg: &str) -> OperationPreview {
         description: msg.to_string(),
         repo_path: repo_path.to_string(),
         blocked: Some(msg.to_string()),
+        authorization: None,
     }
 }
 

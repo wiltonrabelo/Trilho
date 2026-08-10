@@ -371,7 +371,15 @@ function App() {
     if (op?.kind !== "revert" || !op.canContinue) return;
 
     try {
-      await executeWriteOperation({ kind: "continueRevert" });
+      const preview = await previewWriteOperation({ kind: "continueRevert" });
+      if (preview.blocked) {
+        throw new Error(preview.blocked);
+      }
+      const auth = preview.authorization?.trim();
+      if (!auth) {
+        throw new Error("Confirmação inválida: falta autorização do preview.");
+      }
+      await executeWriteOperation(auth);
       await refreshAll();
       try {
         setRepo(await getRepoInfo());
@@ -467,7 +475,11 @@ function App() {
       if (preview.blocked) {
         throw new Error(preview.blocked);
       }
-      await executeWriteOperation({ kind: "saveWorktreeFile", path, content });
+      const auth = preview.authorization?.trim();
+      if (!auth) {
+        throw new Error("Confirmação inválida: falta autorização do preview.");
+      }
+      await executeWriteOperation(auth);
       await refreshStatus();
       await selectFile(path, staged);
     },

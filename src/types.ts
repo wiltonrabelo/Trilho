@@ -285,6 +285,8 @@ export interface OperationPreviewDto {
   description: string;
   repoPath: string;
   blocked: string | null;
+  /** Token de uso único (A-02) — obrigatório em `executeWriteOperation`. */
+  authorization?: string | null;
 }
 
 /** RF-11 — entrada do log de auditoria (7 dias). */
@@ -328,6 +330,7 @@ export type WriteRequestDto =
     }
   | { kind: "push" }
   | { kind: "pullFfOnly" }
+  | { kind: "fetchRemote" }
   | { kind: "unshallowHistory" }
   | { kind: "switchBranch"; branch: string; trackRemote?: string | null }
   | { kind: "deleteLocalBranch"; branch: string }

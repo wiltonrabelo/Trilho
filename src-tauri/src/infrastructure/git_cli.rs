@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 /// Config defensiva sem `-C` (ex.: `git clone` fora de um repo aberto).
 pub fn defensive_config_args() -> Vec<String> {
-    vec![
+    let mut args = vec![
         "-c".into(),
         "core.fsmonitor=false".into(),
         "-c".into(),
@@ -22,7 +22,28 @@ pub fn defensive_config_args() -> Vec<String> {
         "filter.lfs.clean=".into(),
         "-c".into(),
         "filter.lfs.smudge=".into(),
-    ]
+        // Anula sshCommand / helpers `!` do .git/config do repo (CWE-78).
+        "-c".into(),
+        "core.sshCommand=".into(),
+        "-c".into(),
+        "credential.helper=".into(),
+    ];
+    // Helper confiável do SO — não herdar `credential.helper=!evil` do repo.
+    #[cfg(windows)]
+    {
+        args.push("-c".into());
+        args.push("credential.helper=manager-core".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        args.push("-c".into());
+        args.push("credential.helper=osxkeychain".into());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // Sem helper embutido universal; lista vazia acima já remove `!cmd`.
+    }
+    args
 }
 
 /// Argumentos-base defensivos aplicados a TODA invocação do Git (PLANO §7.7/§11.5).
@@ -270,6 +291,9 @@ mod tests {
         assert_eq!(args[0], "-C");
         assert_eq!(args[1], "C:/repo");
         assert!(args.contains(&"core.fsmonitor=false".to_string()));
+        assert!(args.contains(&"core.sshCommand=".to_string()));
+        assert!(args.contains(&"credential.helper=".to_string()));
+        assert!(args.contains(&"protocol.ext.allow=never".to_string()));
     }
 
     #[test]

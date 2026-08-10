@@ -249,8 +249,9 @@ Sem args: total em HEAD. Com exclude (ex.: main): commits em ref não alcançáv
             }),
         },
         LlmToolDef {
-            name: "fetch_remote".into(),
-            description: "Atualiza refs remotas (git fetch).".into(),
+            name: "propose_fetch_remote".into(),
+            description: "Propõe atualizar refs remotas (git fetch + prune). Requer confirmação RF-08."
+                .into(),
             parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
         },
         LlmToolDef {
@@ -617,6 +618,10 @@ perder trabalho. Use o painel do commit → Reset, com preview e confirmação r
         "propose_push_force" | "propose_force_push" => Some(
             "Force push não é permitido via assistente: sobrescreve o histórico no remoto. \
 Use Sync → Force push (--force-with-lease) na UI.",
+        ),
+        "fetch_remote" => Some(
+            "Fetch automático pelo assistente foi removido (altera refs). \
+Use propose_fetch_remote — o usuário confirma no preview RF-08 — ou o botão Fetch na UI.",
         ),
         "propose_reword" => Some(
             "Reword não é permitido via assistente: altera SHA e reescreve descendentes. \
@@ -1021,12 +1026,7 @@ fn run_tool(
                 Err(e) => ToolOutcome::Read(format!("erro: {e}")),
             }
         }
-        "fetch_remote" => {
-            match crate::infrastructure::fetch_all_remote_branch_refs(ctx.repo_path()) {
-                Ok(()) => ToolOutcome::Read("Fetch concluído.".into()),
-                Err(e) => ToolOutcome::Read(format!("erro: {e}")),
-            }
-        }
+        "propose_fetch_remote" => ToolOutcome::Write(WriteRequest::FetchRemote),
         "get_trilho_help" => {
             let topic = args
                 .get("topic")
@@ -2153,6 +2153,9 @@ mod tests {
         assert!(is_tool_allowed("count_commits", &settings));
         assert!(is_tool_allowed("propose_commit", &settings));
         assert!(is_tool_allowed("propose_uncommit", &settings));
+        assert!(!is_tool_allowed("fetch_remote", &settings));
+        assert!(denied_tool_reason("fetch_remote").is_some());
+        assert!(is_tool_allowed("propose_fetch_remote", &settings));
         assert!(is_tool_allowed("propose_push", &settings));
         assert!(is_tool_allowed("propose_pull", &settings));
         assert!(is_tool_allowed("propose_publish", &settings));

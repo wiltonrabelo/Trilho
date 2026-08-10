@@ -34,7 +34,9 @@ pub use branch_order::order_refs_by_recent_checkout;
 pub use branches::{list_local_branches, list_remote_branches, RemoteBranchRef};
 pub use stashes::{list_stashes, stash_reference, StashEntry};
 pub use tags::{list_tags, TagEntry};
-pub use upstream::{fetch_all_remote_branch_refs, sync_upstream_remote_ref};
+pub use upstream::{
+    fetch_all_remote_branch_refs, preview_fetch_all_remote_branch_refs, sync_upstream_remote_ref,
+};
 
 pub use credential::{
     detect_credential_status, enable_github_use_http_path, ensure_gcm_configured,

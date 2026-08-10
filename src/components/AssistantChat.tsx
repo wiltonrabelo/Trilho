@@ -83,6 +83,8 @@ function writeLabel(req: WriteRequestDto): string {
       return "Push";
     case "pullFfOnly":
       return "Pull (--ff-only)";
+    case "fetchRemote":
+      return "Fetch (refs remotas)";
     case "revert":
       return `Revert ${req.commitId.slice(0, 7)}`;
     case "cherryPick": {
@@ -119,6 +121,8 @@ function writeSuccessMessage(req: WriteRequestDto): string {
       return "Executado: push concluído.";
     case "pullFfOnly":
       return "Executado: pull (--ff-only) concluído.";
+    case "fetchRemote":
+      return "Executado: fetch das refs remotas concluído.";
     case "revert":
       return `Executado: revert do commit ${req.commitId.slice(0, 7)}.`;
     case "cherryPick": {

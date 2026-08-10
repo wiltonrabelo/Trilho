@@ -199,6 +199,15 @@ pub fn preview_write(
             let blocked = gate_pull(ctx)?;
             (ctx.preview_op(&op), op.description().to_string(), blocked)
         }
+        WriteRequest::FetchRemote => {
+            let commands =
+                crate::infrastructure::preview_fetch_all_remote_branch_refs(repo_path)?;
+            (
+                commands,
+                "Atualiza refs remotas (fetch + prune) de todos os remotos.".into(),
+                None,
+            )
+        }
         WriteRequest::UnshallowHistory => {
             let op = UnshallowRemote;
             let blocked = gate_unshallow(ctx)?;
@@ -463,6 +472,7 @@ pub fn preview_write(
                          resolva todos os blocos antes de marcar como resolvido."
                             .into(),
                     ),
+                    authorization: None,
                 });
             }
             (
@@ -686,6 +696,7 @@ pub fn preview_write(
         description,
         repo_path: repo_path.to_string(),
         blocked,
+        authorization: None,
     })
 }
 
@@ -769,6 +780,9 @@ pub fn execute_write(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitErro
         }
         WriteRequest::PullFfOnly => {
             ctx.execute_op(&PullFfOnly)?;
+        }
+        WriteRequest::FetchRemote => {
+            crate::infrastructure::fetch_all_remote_branch_refs(ctx.repo_path())?;
         }
         WriteRequest::UnshallowHistory => {
             ctx.execute_op(&UnshallowRemote)?;
@@ -989,6 +1003,7 @@ fn blocked_preview(repo_path: &str, msg: &str) -> OperationPreview {
         description: String::new(),
         repo_path: repo_path.to_string(),
         blocked: Some(msg.to_string()),
+        authorization: None,
     }
 }
 

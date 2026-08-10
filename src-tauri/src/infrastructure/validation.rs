@@ -127,9 +127,19 @@ pub fn validate_remote_name(name: &str) -> Result<String, GitError> {
         || trimmed.contains('/')
         || trimmed.contains('\\')
         || trimmed.contains(' ')
+        || trimmed.contains('\0')
+        || trimmed.contains("..")
         || trimmed.starts_with('-')
     {
         return Err(GitError::Git("Nome de remoto inválido.".into()));
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(GitError::Git(
+            "Nome de remoto contém caracteres inválidos.".into(),
+        ));
     }
     Ok(trimmed.to_string())
 }

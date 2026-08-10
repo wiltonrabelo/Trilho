@@ -380,6 +380,9 @@ fn run_claude_print(
         // auto-nega tools não pré-aprovadas; adequado a -p não-interativo).
         "--permission-mode".into(),
         "dontAsk".into(),
+        // Sem tools nativas do Claude — só o protocolo textual do Trilho.
+        "--allowedTools".into(),
+        String::new(),
     ];
     if !model.is_empty() {
         args.push("--model".into());

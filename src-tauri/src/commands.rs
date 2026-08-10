@@ -464,19 +464,36 @@ pub async fn preview_write_operation(
 ) -> Result<OperationPreview, String> {
     let path = state.repo_path()?;
     let ctx = repo_context(&state)?;
-    preview_write(&ctx, &path, &request).map_err(|e| e.to_string())
+    let mut preview = preview_write(&ctx, &path, &request).map_err(|e| e.to_string())?;
+    // A-02: só opera se o gate não bloqueou — token amarra preview → execute.
+    if preview.blocked.is_none() {
+        let token = state
+            .write_auth()
+            .issue(&path, &request, &preview.commands)?;
+        preview.authorization = Some(token);
+    }
+    Ok(preview)
 }
 
 #[tauri::command]
 pub async fn execute_write_operation(
-    request: WriteRequest,
+    authorization: String,
     from_assistant: Option<bool>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let entry = state.write_auth().take(&authorization)?;
+    let path = state.repo_path()?;
+    if !crate::application::same_repo_path(&entry.repo_path, &path) {
+        return Err(
+            "Repositório mudou desde o preview. Peça a confirmação novamente.".into(),
+        );
+    }
     let ctx = repo_context(&state)?;
     let data_dir = state.data_dir().clone();
     let from_assistant = from_assistant.unwrap_or(false);
+    let request = entry.request;
+    let expected_commands = entry.commands;
     let result = state.with_watch_suppressed(&app, || {
         let preview = match preview_write(&ctx, ctx.repo_path(), &request) {
             Ok(p) => p,
@@ -484,6 +501,13 @@ pub async fn execute_write_operation(
         };
         if let Some(msg) = preview.blocked.clone() {
             return Err(GitError::Git(msg));
+        }
+        if preview.commands != expected_commands {
+            return Err(GitError::Git(
+                "O comando mudou desde o preview (estado do repo alterado). \
+                 Peça a confirmação novamente."
+                    .into(),
+            ));
         }
         let outcome = execute_write(&ctx, request.clone());
         crate::application::record_write_outcome(

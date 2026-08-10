@@ -1,6 +1,7 @@
 //! Estado compartilhado da aplicação (repositório aberto, sync, watcher).
 
 use crate::infrastructure::RepoWatcher;
+use super::write_auth::WriteAuthStore;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,6 +19,8 @@ pub struct AppState {
     /// RF-11 — diretório de dados do app (`%APPDATA%/…`).
     data_dir: PathBuf,
     watcher: Mutex<Option<RepoWatcher>>,
+    /// A-02 — tokens de preview→execute (RF-08).
+    write_auth: WriteAuthStore,
 }
 
 impl AppState {
@@ -42,11 +45,16 @@ impl AppState {
             recents_file,
             data_dir,
             watcher: Mutex::new(None),
+            write_auth: WriteAuthStore::new(),
         })
     }
 
     pub fn data_dir(&self) -> &PathBuf {
         &self.data_dir
+    }
+
+    pub fn write_auth(&self) -> &WriteAuthStore {
+        &self.write_auth
     }
 
     pub fn repo_path(&self) -> Result<String, String> {

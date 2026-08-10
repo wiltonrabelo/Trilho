@@ -300,7 +300,7 @@ pub fn trigger_github_login(remote_url: Option<&str>) -> Result<(), String> {
     ))
 }
 
-/// Armazena PAT do GitHub (arquivo local do Trilho + GCM opcional).
+/// Armazena PAT do GitHub (Credential Manager do Trilho + approve no GCM do host).
 pub fn store_github_pat(
     pat: &str,
     remote_url: Option<&str>,

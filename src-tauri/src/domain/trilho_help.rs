@@ -415,9 +415,13 @@ Com **«Enviar diffs ao provedor»** ligado (necessário para revisão de códig
 
 ## Pode (propor → confirmação)
 stage/unstage (1, vários ou all), commit/amend, uncommit, push, pull --ff-only,
-unshallow, publish, switch branch (+ track remoto), stash push/apply/pop/drop,
-criar/excluir tag, **revert (incluindo HEAD; não merge)**, cherry-pick,
-abort/continue/skip de revert|merge|cherry-pick, aceitar lado ours/theirs em conflito.
+**fetch (refs remotas)**, unshallow, publish, switch branch (+ track remoto),
+stash push/apply/pop/drop, criar/excluir tag, **revert (incluindo HEAD; não merge)**,
+cherry-pick, abort/continue/skip de revert|merge|cherry-pick, aceitar lado ours/theirs
+em conflito.
+
+Fetch pelo assistente **não** roda sozinho — vira `propose_fetch_remote` + preview RF-08
+(o botão Fetch da UI continua sendo ação humana direta, com Git endurecido).
 
 ## Não pode (e por quê) — use a UI manual
 - **reset** (soft/mixed/hard): reescreve HEAD; risco de perda — painel do commit → Reset.
@@ -448,8 +452,10 @@ atalhos ou comportamento.
 
 const HELP_SAFETY: &str = r#"# Segurança
 
-- RF-08: preview do comando Git real antes de executar (exceto salvar aba Arquivo, que
-  valida gates mas não abre modal se usar fluxo direto após preview interno).
+- RF-08: preview do comando Git real antes de executar; a execução IPC exige
+  o token de uso único emitido no preview (A-02) — o `WriteRequest` sozinho é
+  rejeitado. Salvar na aba Arquivo faz preview interno + execute com o mesmo token
+  (sem modal, mas com vínculo backend).
 - Spawn com lista de args (sem shell); paths confinados; validação de SHAs/refs.
 - Credenciais no Windows Credential Manager / GCM.
 - Assistente: allowlist + saída tratada como não confiável; prompt injection

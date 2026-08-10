@@ -11,6 +11,10 @@ pub struct OperationPreview {
     pub repo_path: String,
     /// Se preenchido, a operação não pode ser executada (gate de segurança).
     pub blocked: Option<String>,
+    /// Token de uso único (A-02). Presente só quando `blocked` é `None`.
+    /// A execução IPC exige este valor — o `WriteRequest` sozinho não basta.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<String>,
 }
 
 /// Pedido de clone remoto (RF-22) — não exige repositório aberto.
@@ -82,6 +86,8 @@ pub enum WriteRequest {
     },
     Push,
     PullFfOnly,
+    /// Atualiza refs remotas (`git fetch` com prune) — requer confirmação RF-08.
+    FetchRemote,
     /// Completa clone raso (`git fetch --unshallow`).
     UnshallowHistory,
     /// Troca para branch local (`git switch`).

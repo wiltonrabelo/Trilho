@@ -10,6 +10,7 @@ mod branch_origin;
 mod llm_provider;
 mod operations;
 mod repo_context;
+mod write_auth;
 mod write_gates;
 mod write_service;
 
@@ -25,6 +26,7 @@ pub use operations::{
     StatusPorcelain,
 };
 pub use repo_context::RepoContext;
+pub use write_auth::{same_repo_path, WriteAuthStore};
 pub use write_service::{execute_write, preview_write};
 
 use crate::domain::{

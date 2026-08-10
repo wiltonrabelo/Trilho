@@ -1,6 +1,7 @@
 //! Resolução de upstream da branch HEAD (DRY para git2_reader e repo_info).
 
-use crate::application::GitError;
+use crate::application::{GitError, GitWriter};
+use crate::infrastructure::git_cli::SafeGitCli;
 use git2::{BranchType, Oid, Repository};
 
 #[derive(Debug, Clone)]
@@ -123,34 +124,57 @@ pub fn sync_upstream_remote_ref(repo_path: &str) -> Result<(), GitError> {
 /// Baixa todas as heads de cada remoto (`+refs/heads/*:refs/remotes/<remote>/*`).
 ///
 /// Ignora refspec restrito no config (ex.: SourceTree que só busca `main`).
+/// Usa `SafeGitCli` (config defensiva) — não spawnar `git` cru.
 pub fn fetch_all_remote_branch_refs(repo_path: &str) -> Result<(), GitError> {
-    use std::process::Command;
+    for cmd in fetch_all_remote_commands(repo_path)? {
+        SafeGitCli::new(repo_path)
+            .run(&cmd)
+            .map_err(|e| GitError::Io(format!("git fetch: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Argv de preview RF-08 para o mesmo fetch de `fetch_all_remote_branch_refs`.
+pub fn preview_fetch_all_remote_branch_refs(repo_path: &str) -> Result<Vec<String>, GitError> {
+    let cli = SafeGitCli::new(repo_path);
+    let mut out = Vec::new();
+    for cmd in fetch_all_remote_commands(repo_path)? {
+        out.extend(cli.preview(&cmd));
+    }
+    Ok(out)
+}
+
+fn fetch_all_remote_commands(repo_path: &str) -> Result<Vec<crate::application::GitCommand>, GitError> {
+    use crate::application::GitCommand;
+    use crate::infrastructure::validation::validate_remote_name;
 
     let repo = Repository::discover(repo_path).map_err(|_| GitError::NotARepository)?;
     let remotes = repo
         .remotes()
         .map_err(|e| GitError::Git(format!("Não foi possível listar remotos: {e}")))?;
 
+    let mut cmds = Vec::new();
     for remote in remotes.iter().flatten() {
         if remote.is_empty() {
             continue;
         }
+        let remote = validate_remote_name(remote)?;
         let spec = format!("+refs/heads/*:refs/remotes/{remote}/*");
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_path)
-            .args(["fetch", remote, &spec, "--prune"])
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GCM_INTERACTIVE", "always")
-            .output()
-            .map_err(|e| GitError::Io(format!("git fetch ({remote}): {e}")))?;
-        if !output.status.success() {
-            return Err(GitError::from_git_stderr(&String::from_utf8_lossy(
-                &output.stderr,
-            )));
-        }
+        cmds.push(GitCommand {
+            args: vec![
+                "fetch".into(),
+                remote,
+                spec,
+                "--prune".into(),
+            ],
+        });
     }
-    Ok(())
+    if cmds.is_empty() {
+        return Err(GitError::Git(
+            "Nenhum remoto configurado para fetch.".into(),
+        ));
+    }
+    Ok(cmds)
 }
 
 #[cfg(test)]

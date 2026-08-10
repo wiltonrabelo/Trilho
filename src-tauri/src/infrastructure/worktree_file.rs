@@ -1,12 +1,13 @@
 //! Leitura/gravação de arquivos no working tree (editor interno).
 
 use git2::Repository;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use crate::application::GitError;
 use crate::infrastructure::validation::validate_repo_relative_path;
 
 /// Grava conteúdo no working tree sem alterar o stage.
+/// Rejeita symlink/junction no caminho (não segue reparse points para fora do repo).
 pub fn save_worktree_file(repo_path: &str, path: &str, content: &str) -> Result<(), GitError> {
     let path = validate_repo_relative_path(path)?;
     let repo = Repository::discover(repo_path)
@@ -14,14 +15,82 @@ pub fn save_worktree_file(repo_path: &str, path: &str, content: &str) -> Result<
     let workdir = repo
         .workdir()
         .ok_or_else(|| GitError::Git("Repositório bare — sem working tree.".into()))?;
-    let full = workdir.join(&path);
+    let full = resolve_safe_workdir_target(workdir, Path::new(&path))?;
     if let Some(parent) = full.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| GitError::Io(format!("Não foi possível criar pasta: {e}")))?;
+        // Revalida após create_dir_all (pode ter criado sob link).
+        let _ = resolve_safe_workdir_target(workdir, Path::new(&path))?;
+    }
+    if full.exists() {
+        let meta = std::fs::symlink_metadata(&full)
+            .map_err(|e| GitError::Io(format!("Não foi possível ler metadados de {path}: {e}")))?;
+        if meta.file_type().is_symlink() || is_windows_reparse(&meta) {
+            return Err(GitError::Io(format!(
+                "Recusado: «{path}» é link simbólico/junction — não gravo fora do repositório."
+            )));
+        }
     }
     std::fs::write(&full, content)
         .map_err(|e| GitError::Io(format!("Não foi possível gravar {path}: {e}")))?;
     Ok(())
+}
+
+/// Garante que `workdir/relative` permanece sob o workdir e não atravessa reparse points.
+pub fn resolve_safe_workdir_target(workdir: &Path, relative: &Path) -> Result<PathBuf, GitError> {
+    let workdir_canon = std::fs::canonicalize(workdir).map_err(|e| {
+        GitError::Io(format!(
+            "Não foi possível canonicalizar o working tree: {e}"
+        ))
+    })?;
+    let mut cur = workdir.to_path_buf();
+    for comp in relative.components() {
+        match comp {
+            Component::Normal(s) => cur.push(s),
+            Component::CurDir => {}
+            _ => {
+                return Err(GitError::Git(
+                    "Caminho de arquivo inválido no working tree.".into(),
+                ));
+            }
+        }
+        if cur.exists() {
+            let meta = std::fs::symlink_metadata(&cur).map_err(|e| {
+                GitError::Io(format!("Não foi possível ler metadados: {e}"))
+            })?;
+            if meta.file_type().is_symlink() || is_windows_reparse(&meta) {
+                return Err(GitError::Io(
+                    "Recusado: caminho contém symlink/junction (possível escape do repositório)."
+                        .into(),
+                ));
+            }
+        }
+    }
+    if let Some(parent) = cur.parent() {
+        if parent.exists() {
+            let parent_canon = std::fs::canonicalize(parent).map_err(|e| {
+                GitError::Io(format!("Não foi possível canonicalizar pasta: {e}"))
+            })?;
+            if !parent_canon.starts_with(&workdir_canon) {
+                return Err(GitError::Io(
+                    "Recusado: destino sairia do working tree do repositório.".into(),
+                ));
+            }
+        }
+    }
+    Ok(cur)
+}
+
+#[cfg(windows)]
+fn is_windows_reparse(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    (meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+}
+
+#[cfg(not(windows))]
+fn is_windows_reparse(_meta: &std::fs::Metadata) -> bool {
+    false
 }
 
 /// Verifica se o path existe no disco dentro do working tree.
@@ -32,8 +101,10 @@ pub fn worktree_file_exists(repo_path: &str, path: &str) -> Result<bool, GitErro
     let workdir = repo
         .workdir()
         .ok_or_else(|| GitError::Git("Repositório bare — sem working tree.".into()))?;
-    let full = workdir.join(Path::new(&path));
-    Ok(full.is_file())
+    match resolve_safe_workdir_target(workdir, Path::new(&path)) {
+        Ok(full) => Ok(full.is_file()),
+        Err(_) => Ok(false),
+    }
 }
 
 fn display_to_git_path(display_path: &str) -> String {
@@ -52,12 +123,7 @@ fn resolve_workdir_path(repo_path: &str, path: &str) -> Result<std::path::PathBu
     let workdir = repo
         .workdir()
         .ok_or_else(|| GitError::Git("Repositório bare — sem working tree.".into()))?;
-    // Git usa `/`; no Windows, path misturado (`C:\repo\src/a.ts`) quebra o Explorer.
-    #[cfg(windows)]
-    let full = workdir.join(path.replace('/', "\\"));
-    #[cfg(not(windows))]
-    let full = workdir.join(Path::new(&path));
-    Ok(full)
+    resolve_safe_workdir_target(workdir, Path::new(&path))
 }
 
 /// Caminho absoluto nativo do arquivo no working tree (para clipboard / Explorer).
@@ -310,5 +376,57 @@ mod tests {
         save_worktree_file(dir.to_str().unwrap(), "foo.txt", "depois\n").unwrap();
         let disk = fs::read_to_string(dir.join("foo.txt")).unwrap();
         assert_eq!(disk, "depois\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_recusa_symlink_no_caminho() {
+        let dir = std::env::temp_dir().join(format!("trilho-wt-link-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!("trilho-wt-out-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&outside);
+        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        init_repo(&dir);
+        fs::write(outside.join("secret.txt"), "segredo\n").unwrap();
+        let link = dir.join("escape");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            // Junction para pasta (não exige admin como symlink de arquivo).
+            let status = std::process::Command::new("cmd")
+                .args([
+                    "/C",
+                    "mklink",
+                    "/J",
+                    link.to_str().unwrap(),
+                    outside.to_str().unwrap(),
+                ])
+                .status()
+                .unwrap();
+            if !status.success() {
+                let _ = fs::remove_dir_all(&dir);
+                let _ = fs::remove_dir_all(&outside);
+                return; // ambiente sem permissão de junction — não falha o suite
+            }
+        }
+        let err = save_worktree_file(
+            dir.to_str().unwrap(),
+            "escape/secret.txt",
+            "pwned\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("symlink") || err.contains("junction") || err.contains("Recusado"),
+            "got {err}"
+        );
+        let outside_content = fs::read_to_string(outside.join("secret.txt")).unwrap();
+        assert_eq!(outside_content, "segredo\n");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&outside);
     }
 }
