@@ -58,7 +58,10 @@ pub use llm_credentials::{
 };
 pub use github_pr::{clear_branch_pr_cache, get_branch_pr_status, BranchPrStatus};
 pub use git2_reader::{repo_info, Git2Reader};
-pub use git_cli::{defensive_config_args, SafeGitCli};
+pub use git_cli::{
+    defensive_config_args, network_operation_timeout, run_unbound_git, wait_child_status_with_timeout,
+    SafeGitCli,
+};
 pub use reword::execute_reword;
 pub use repo_watcher::RepoWatcher;
 pub use validation::{

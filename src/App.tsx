@@ -1383,7 +1383,7 @@ function App() {
               onRemoveRecent={
                 runningInTauri() ? (path) => void removeRecent(path) : undefined
               }
-              onClone={runningInTauri() ? clone.openClone : undefined}
+              onClone={clone.openClone}
               loading={repoLoading}
               currentPath={null}
             />
@@ -1403,7 +1403,7 @@ function App() {
                       ? (path) => void removeRecent(path)
                       : undefined
                   }
-                  onClone={runningInTauri() ? clone.openClone : undefined}
+                  onClone={clone.openClone}
                   loading={repoLoading}
                   currentPath={repo?.path ?? null}
                 />

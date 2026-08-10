@@ -246,9 +246,11 @@ Especificação: `Docs/git-trail-viewer/PLANO.md` (§RF-21, §RF-22, §RF-23, §
 - [x] **Scripts** — `npm run audit`, `npm run build:win`
 - [x] **A11y básica** — skip link, `aria-label` em repo picker / commit / sync; diálogos já tinham `role="dialog"`
 - [x] **Instalador (unsigned)** — `npm run build:win` OK: `Trilho_0.1.0_x64-setup.exe` + `.msi`
-- [ ] **Instalador assinado** — certificado EV (lead time; unsigned para teste interno)
+- [x] **Instalador assinado (pipeline)** — step opcional com `WINDOWS_CERT_PFX`; unsigned sem secret + SHA-256SUMS
 - [x] **E2E smoke (web)** — Playwright `e2e/smoke.spec.ts` + job CI (`npm run test:e2e`)
-- [ ] **E2E desktop** — tauri-driver (opcional pós-MVP)
+- [x] **E2E limites de segurança** — `e2e/security-rf08.spec.ts` + `security_contract` (Rust); tauri-driver nativo opcional
+- [x] **SBOM** — CycloneDX npm + cargo no CI
+- [x] **Threat model** — `THREAT_MODEL.md`
 - [ ] **Validação SysPDV** — repo >5k commits (checklist README — manual)
 - [x] **Hints amend/reword** — mensagens UX quando amend indisponível / reword RF-16
 - [x] **Fixes revisão 2026-07-05** — `run_bool` fail-closed, preview amend+staging, gate revert merge (+3 testes)

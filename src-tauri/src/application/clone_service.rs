@@ -4,8 +4,9 @@ use crate::application::GitError;
 use crate::application::AppState;
 use crate::domain::{CloneRequest, OperationPreview};
 use crate::infrastructure::{
-    defensive_config_args, validate_clone_branch, validate_clone_depth, validate_clone_destination,
-    validate_folder_name, validate_remote_url, repo_name_from_url,
+    defensive_config_args, network_operation_timeout, run_unbound_git, validate_clone_branch,
+    validate_clone_depth, validate_clone_destination, validate_folder_name, validate_remote_url,
+    wait_child_status_with_timeout, repo_name_from_url,
 };
 use serde::Serialize;
 use std::io::{BufRead, BufReader};
@@ -100,25 +101,8 @@ pub fn preview_clone(req: &CloneRequest) -> Result<OperationPreview, GitError> {
 
 pub fn list_clone_remote_branches(url: &str) -> Result<Vec<String>, GitError> {
     let url = validate_remote_url(url)?;
-    let mut cmd = Command::new("git");
-    cmd.args(defensive_config_args())
-        .args(["ls-remote", "--heads", &url])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GCM_INTERACTIVE", "always");
-
-    let output = cmd
-        .output()
-        .map_err(|e| GitError::Io(format!("Não foi possível listar branches remotas: {e}")))?;
-
-    if !output.status.success() {
-        return Err(GitError::from_git_stderr(&String::from_utf8_lossy(
-            &output.stderr,
-        )));
-    }
-
-    parse_ls_remote_heads(&String::from_utf8_lossy(&output.stdout))
+    let stdout = run_unbound_git(&["ls-remote", "--heads", &url], true)?;
+    parse_ls_remote_heads(&stdout)
 }
 
 fn parse_ls_remote_heads(stdout: &str) -> Result<Vec<String>, GitError> {
@@ -195,9 +179,7 @@ pub fn execute_clone(req: &CloneRequest, app: &AppHandle) -> Result<String, GitE
         });
     }
 
-    let status = child
-        .wait()
-        .map_err(|e| GitError::Io(format!("Falha ao aguardar git clone: {e}")))?;
+    let status = wait_child_status_with_timeout(child, network_operation_timeout())?;
 
     if !status.success() {
         return Err(GitError::Git(

@@ -21,6 +21,7 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
     "audit": "npm audit --audit-level=high && cargo audit --manifest-path src-tauri/Cargo.toml",
+    "sbom": "npx --yes @cyclonedx/cyclonedx-npm@4.0.0 --output-file sbom-npm.cdx.json",
     "build:win": "npm run tauri build"
   },
   "dependencies": {

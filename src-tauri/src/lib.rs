@@ -4,6 +4,8 @@ mod application;
 mod commands;
 mod domain;
 mod infrastructure;
+#[cfg(test)]
+mod security_contract;
 
 use application::AppState;
 use tauri::Manager;

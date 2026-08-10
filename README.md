@@ -21,7 +21,7 @@ npm run dev          # app desktop (Tauri)
 npm run dev:web      # browser com mocks
 npm run lint
 npm run test         # Vitest (frontend)
-npm run test:e2e     # Playwright smoke (dev:web + mocks)
+npm run test:e2e     # Playwright smoke + RF-08 (dev:web + mocks)
 npm run test:rust    # clippy + cargo test
 npm run audit        # npm audit + cargo audit (M4)
 npm run build:win    # instalador NSIS/MSI (unsigned)

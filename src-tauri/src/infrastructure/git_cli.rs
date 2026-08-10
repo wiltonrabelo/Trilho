@@ -96,6 +96,15 @@ pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
     args
 }
 
+/// Timeout de operações de rede (fetch/push/clone/ls-remote…).
+pub fn network_operation_timeout() -> Duration {
+    Duration::from_secs(15 * 60)
+}
+
+fn local_operation_timeout() -> Duration {
+    Duration::from_secs(2 * 60)
+}
+
 /// Timeout por classe de operação (M-02): rede pode demorar; local não.
 fn timeout_for_git_command(command: &GitCommand) -> Duration {
     let network = command.args.iter().any(|a| {
@@ -112,9 +121,9 @@ fn timeout_for_git_command(command: &GitCommand) -> Duration {
         )
     });
     if network {
-        Duration::from_secs(15 * 60)
+        network_operation_timeout()
     } else {
-        Duration::from_secs(2 * 60)
+        local_operation_timeout()
     }
 }
 
@@ -162,6 +171,61 @@ fn wait_child_with_timeout(
             )))
         }
     }
+}
+
+/// Aguarda um child cujo stdout/stderr já foram consumidos (ex.: clone com progresso).
+pub fn wait_child_status_with_timeout(
+    mut child: Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, GitError> {
+    let pid = child.id();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(status)) => Ok(status),
+        Ok(Err(e)) => Err(GitError::Io(format!("Falha ao aguardar processo Git: {e}"))),
+        Err(_) => {
+            kill_process_tree(pid);
+            let _ = rx.recv_timeout(Duration::from_secs(2));
+            Err(GitError::Io(format!(
+                "Operação Git excedeu o tempo limite ({}s) e foi interrompida.",
+                timeout.as_secs()
+            )))
+        }
+    }
+}
+
+/// Git sem `-C` (ls-remote / fora de RepoContext), com timeout M-02 e configs defensivas.
+pub fn run_unbound_git(args: &[&str], network: bool) -> Result<String, GitError> {
+    let timeout = if network {
+        network_operation_timeout()
+    } else {
+        local_operation_timeout()
+    };
+    let mut cmd = Command::new("git");
+    cmd.args(defensive_config_args())
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "always");
+    let child = cmd
+        .spawn()
+        .map_err(|e| GitError::Io(format!("Não foi possível executar git: {e}")))?;
+    let output = wait_child_with_timeout(child, timeout)?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if stderr.trim().is_empty() {
+            stdout.as_ref()
+        } else {
+            stderr.as_ref()
+        };
+        return Err(GitError::from_git_stderr(detail));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Adaptador Git CLI vinculado a um repositório — honra `GitWriter` (LSP).

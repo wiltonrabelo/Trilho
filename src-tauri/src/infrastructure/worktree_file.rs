@@ -6,10 +6,19 @@ use std::path::{Component, Path, PathBuf};
 use crate::application::GitError;
 use crate::infrastructure::validation::validate_repo_relative_path;
 
+/// Limite do editor interno (hardening Codex): evita gravar blobs enormes na UI.
+const MAX_WORKTREE_EDIT_BYTES: usize = 2 * 1024 * 1024;
+
 /// Grava conteúdo no working tree sem alterar o stage.
 /// Rejeita symlink/junction no caminho (não segue reparse points para fora do repo).
 pub fn save_worktree_file(repo_path: &str, path: &str, content: &str) -> Result<(), GitError> {
     let path = validate_repo_relative_path(path)?;
+    if content.len() > MAX_WORKTREE_EDIT_BYTES {
+        return Err(GitError::Io(format!(
+            "Arquivo «{path}» excede o limite do editor ({} MiB).",
+            MAX_WORKTREE_EDIT_BYTES / (1024 * 1024)
+        )));
+    }
     let repo = Repository::discover(repo_path)
         .map_err(|e| GitError::Io(format!("Não foi possível abrir o repositório: {e}")))?;
     let workdir = repo
@@ -376,6 +385,21 @@ mod tests {
         save_worktree_file(dir.to_str().unwrap(), "foo.txt", "depois\n").unwrap();
         let disk = fs::read_to_string(dir.join("foo.txt")).unwrap();
         assert_eq!(disk, "depois\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_recusa_arquivo_acima_do_limite() {
+        let dir = std::env::temp_dir().join(format!("trilho-wt-big-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        let huge = "x".repeat(MAX_WORKTREE_EDIT_BYTES + 1);
+        let err = save_worktree_file(dir.to_str().unwrap(), "huge.txt", &huge)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("limite"), "got {err}");
+        assert!(!dir.join("huge.txt").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 

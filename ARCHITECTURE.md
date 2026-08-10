@@ -28,7 +28,8 @@ Não é um IDE nem um substituto genérico do Git CLI: é um visualizador/operad
 | LLM HTTP | `ureq` (Ollama / OpenAI / Anthropic) |
 | LLM plano Claude / ChatGPT | subprocesso **Claude Code** / **Codex CLI** (não API key) |
 | Testes FE | Vitest + jsdom |
-| Testes E2E | Playwright (`e2e/`) |
+| Testes E2E | Playwright (`e2e/` — smoke + RF-08); contratos Rust `security_contract` |
+| Segurança | `SECURITY.md`, `THREAT_MODEL.md`; SBOM + audit no CI |
 | Testes Rust | `cargo test` + `clippy -D warnings` |
 
 ---

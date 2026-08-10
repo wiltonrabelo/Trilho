@@ -22,19 +22,36 @@ Responderemos em até **5 dias úteis** com confirmação de recebimento.
 
 - Execução de comandos Git via CLI (injeção de argumentos, path traversal)
 - IPC Tauri / permissões do app
-- Credenciais (GCM, tokens em memória)
-- Conteúdo malicioso em repositórios abertos (hooks, fsmonitor — mitigado por config efêmera defensiva)
+- Credenciais (GCM, PAT no Credential Manager, SSH, chaves LLM)
+- Conteúdo malicioso em repositórios abertos (hooks, fsmonitor, symlinks)
+- Assistente LLM (prompt injection → tools / escrita)
 
 Fora de escopo: vulnerabilidades no Git, WebView2 ou no sistema operacional, salvo se o Trilho as expuser de forma evitável.
 
-## Mitigações baseline (MVP)
+## Modelo de ameaças
 
-- Toda invocação Git usa config efêmera: `core.fsmonitor=false`, `core.hooksPath=` (vazio), `gc.auto=0`
-- Validação de paths, SHAs e URLs remotas antes de passar ao CLI
-- `GIT_TERMINAL_PROMPT=0` + `GCM_INTERACTIVE=always` (auth via GUI, não terminal)
+Ver **[THREAT_MODEL.md](./THREAT_MODEL.md)** — ativos, superfícies não confiáveis, controles e aceite residual.
+
+## Mitigações baseline
+
+- Config efêmera Git: `core.fsmonitor=false`, `core.hooksPath=`, `core.sshCommand=`, helper de credencial do SO
+- Preview RF-08 + token one-shot (A-02) para escrita e clone
+- Capabilities Tauri: read / write-propose / write-execute / secrets
+- Editor interno rejeita symlink/junction e arquivos > 2 MiB
+- Timeouts + kill de árvore em operações Git
 - CSP restrita no WebView (`tauri.conf.json`)
+
+## Verificação
+
+| Gate | Comando / CI |
+|------|----------------|
+| Deps | `npm run audit` (`npm audit` + `cargo audit`) |
+| E2E RF-08 | `npm run test:e2e` |
+| Contratos Rust | `cargo test --manifest-path src-tauri/Cargo.toml security_contract` |
+| SBOM | job CI `sbom` (CycloneDX npm + cargo) |
+| Instalador | SHA-256 nos artefatos; assinatura EV se `WINDOWS_CERT_PFX` |
 
 ## Política de patch
 
 Correções de segurança **críticas** e **altas** entram em release patch assim que validadas.  
-Dependências: `npm audit` e `cargo audit` no CI (M4).
+Dependências: `npm audit` e `cargo audit` no CI.

@@ -26,7 +26,7 @@ pub use operations::{
     StatusPorcelain,
 };
 pub use repo_context::RepoContext;
-pub use write_auth::{same_repo_path, CloneAuthStore, WriteAuthStore};
+pub use write_auth::same_repo_path;
 pub use write_service::{execute_write, preview_write};
 
 use crate::domain::{
