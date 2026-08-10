@@ -101,23 +101,24 @@ fn redact_prefix_token(input: &str, prefix: &str) -> String {
     let lower = input.to_ascii_lowercase();
     let pref_lower = prefix.to_ascii_lowercase();
     let mut out = String::with_capacity(input.len());
-    let bytes = input.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
+    while i < input.len() {
+        // Índices em `lower`/`input` são por byte UTF-8 — só avançar em fronteiras de char.
         if lower[i..].starts_with(&pref_lower) {
             out.push_str("[redacted-token]");
             i += prefix.len();
-            while i < bytes.len() {
-                let c = bytes[i] as char;
-                if c.is_ascii_alphanumeric() || c == '_' {
-                    i += 1;
+            while i < input.len() {
+                let ch = input[i..].chars().next().unwrap_or('\0');
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    i += ch.len_utf8();
                 } else {
                     break;
                 }
             }
         } else {
-            out.push(bytes[i] as char);
-            i += 1;
+            let ch = input[i..].chars().next().unwrap_or('\0');
+            out.push(ch);
+            i += ch.len_utf8();
         }
     }
     out
@@ -307,6 +308,15 @@ mod tests {
         assert!(!old.exists());
         assert!(today.exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sanitize_nao_panica_com_unicode() {
+        // Mensagens de operação usam «…» — slicing por byte quebrava na fronteira UTF-8.
+        let s = sanitize_for_audit("Revert concluído: «fix: ghp_abcdefghijklmnopqrstuvwxyz123456».");
+        assert!(s.contains('«'));
+        assert!(s.contains("[redacted-token]"));
+        assert!(!s.contains("ghp_abcd"));
     }
 
     #[test]

@@ -29,21 +29,61 @@ pub fn defensive_config_args() -> Vec<String> {
         "credential.helper=".into(),
     ];
     // Helper confiável do SO — não herdar `credential.helper=!evil` do repo.
+    // No Windows o Git for Windows registra em geral `manager` (não `manager-core`);
+    // forçar o nome errado faz o GCM não achar o PAT já salvo.
+    if let Some(helper) = safe_os_credential_helper() {
+        args.push("-c".into());
+        args.push(format!("credential.helper={helper}"));
+    }
+    args
+}
+
+/// Helper de credencial permitido (allowlist). Preferência: config global segura → default do SO.
+fn safe_os_credential_helper() -> Option<&'static str> {
     #[cfg(windows)]
     {
-        args.push("-c".into());
-        args.push("credential.helper=manager-core".into());
+        const ALLOWED: &[&str] = &["manager", "manager-core", "wincred"];
+        if let Some(h) = read_global_credential_helper() {
+            if ALLOWED.iter().any(|a| h.eq_ignore_ascii_case(a)) {
+                // Retorna o nome canônico da allowlist (static).
+                return ALLOWED
+                    .iter()
+                    .find(|a| h.eq_ignore_ascii_case(a))
+                    .copied();
+            }
+        }
+        Some("manager")
     }
     #[cfg(target_os = "macos")]
     {
-        args.push("-c".into());
-        args.push("credential.helper=osxkeychain".into());
+        Some("osxkeychain")
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        // Sem helper embutido universal; lista vazia acima já remove `!cmd`.
+        None
     }
-    args
+}
+
+fn read_global_credential_helper() -> Option<String> {
+    let output = Command::new("git")
+        .args(["config", "--global", "--get", "credential.helper"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let helper = raw.trim();
+    // Ignora helpers perigosos (`!cmd`, path absoluto arbitrário, etc.).
+    if helper.is_empty() || helper.starts_with('!') || helper.contains('/') || helper.contains('\\')
+    {
+        return None;
+    }
+    // `git config` pode devolver só o nome (`manager`) ou com args.
+    let name = helper.split_whitespace().next()?.to_string();
+    Some(name)
 }
 
 /// Argumentos-base defensivos aplicados a TODA invocação do Git (PLANO §7.7/§11.5).
@@ -294,6 +334,22 @@ mod tests {
         assert!(args.contains(&"core.sshCommand=".to_string()));
         assert!(args.contains(&"credential.helper=".to_string()));
         assert!(args.contains(&"protocol.ext.allow=never".to_string()));
+        #[cfg(windows)]
+        {
+            let helper = args
+                .windows(2)
+                .find(|w| w[0] == "-c" && w[1].starts_with("credential.helper=") && w[1] != "credential.helper=")
+                .map(|w| w[1].as_str());
+            assert!(
+                matches!(
+                    helper,
+                    Some("credential.helper=manager")
+                        | Some("credential.helper=manager-core")
+                        | Some("credential.helper=wincred")
+                ),
+                "helper inesperado: {helper:?}"
+            );
+        }
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   executePublishOperation,
@@ -8,6 +8,18 @@ import {
 } from "@/lib/api";
 import type { OperationPreviewDto, WriteRequestDto } from "@/types";
 
+function isStaleAuthError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("autorização") ||
+    m.includes("autorizacao") ||
+    m.includes("já usada") ||
+    m.includes("ja usada") ||
+    m.includes("expirada") ||
+    m.includes("preview novamente")
+  );
+}
+
 export function useOperations(onSuccess: () => Promise<void>) {
   const [preview, setPreview] = useState<OperationPreviewDto | null>(null);
   const [pending, setPending] = useState<WriteRequestDto | null>(null);
@@ -15,6 +27,7 @@ export function useOperations(onSuccess: () => Promise<void>) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const confirmingRef = useRef(false);
 
   const clearInfo = useCallback(() => setInfo(null), []);
 
@@ -75,6 +88,7 @@ export function useOperations(onSuccess: () => Promise<void>) {
   }, []);
 
   const confirm = useCallback(async (): Promise<boolean> => {
+    if (confirmingRef.current) return false;
     const auth = preview?.authorization?.trim();
     if (!pending || preview?.blocked || !auth) {
       if (!auth && pending && !preview?.blocked) {
@@ -82,6 +96,7 @@ export function useOperations(onSuccess: () => Promise<void>) {
       }
       return false;
     }
+    confirmingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -96,9 +111,29 @@ export function useOperations(onSuccess: () => Promise<void>) {
       await onSuccess();
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      // Token sumiu (restart / clique duplo antigo): renova o preview no diálogo.
+      if (pending && isStaleAuthError(msg)) {
+        try {
+          const p =
+            pending.kind === "publish"
+              ? await previewPublishOperation(pending.url)
+              : await previewWriteOperation(pending);
+          setPreview(p);
+          setError(
+            `${msg} Atualizei o preview — clique em Confirmar de novo.`,
+          );
+        } catch (previewErr) {
+          setError(
+            previewErr instanceof Error ? previewErr.message : String(previewErr),
+          );
+        }
+      } else {
+        setError(msg);
+      }
       return false;
     } finally {
+      confirmingRef.current = false;
       setLoading(false);
     }
   }, [pending, preview?.blocked, preview?.authorization, fromAssistant, onSuccess]);

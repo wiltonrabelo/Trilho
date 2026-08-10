@@ -96,6 +96,20 @@ impl WriteAuthStore {
         Ok(entry)
     }
 
+    /// Devolve o token após falha na execução (permite retry no mesmo diálogo).
+    pub fn restore(&self, token: &str, entry: WriteAuthEntry) {
+        let token = token.trim();
+        if token.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.inner.lock() {
+            purge_expired(&mut guard);
+            if Instant::now() <= entry.expires_at {
+                guard.insert(token.to_string(), entry);
+            }
+        }
+    }
+
     /// Descarta um token (cancelamento do diálogo).
     pub fn revoke(&self, token: &str) {
         if let Ok(mut guard) = self.inner.lock() {
@@ -221,6 +235,19 @@ mod tests {
         assert!(same_repo_path(&entry.repo_path, "C:/repo"));
         assert_eq!(entry.commands, cmds);
         assert!(store.take(&token).is_err(), "replay deve falhar");
+    }
+
+    #[test]
+    fn restore_permite_retry_apos_falha() {
+        let store = WriteAuthStore::new();
+        let cmds = vec!["git".into(), "push".into()];
+        let token = store
+            .issue("C:/repo", &sample_req(), &cmds)
+            .expect("issue");
+        let entry = store.take(&token).expect("take");
+        store.restore(&token, entry);
+        let again = store.take(&token).expect("retry");
+        assert_eq!(again.commands, cmds);
     }
 
     #[test]

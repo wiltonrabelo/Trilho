@@ -485,6 +485,7 @@ pub async fn execute_write_operation(
     let entry = state.write_auth().take(&authorization)?;
     let path = state.repo_path()?;
     if !crate::application::same_repo_path(&entry.repo_path, &path) {
+        state.write_auth().restore(&authorization, entry);
         return Err(
             "Repositório mudou desde o preview. Peça a confirmação novamente.".into(),
         );
@@ -492,8 +493,8 @@ pub async fn execute_write_operation(
     let ctx = repo_context(&state)?;
     let data_dir = state.data_dir().clone();
     let from_assistant = from_assistant.unwrap_or(false);
-    let request = entry.request;
-    let expected_commands = entry.commands;
+    let request = entry.request.clone();
+    let expected_commands = entry.commands.clone();
     let result = state.with_watch_suppressed(&app, || {
         let preview = match preview_write(&ctx, ctx.repo_path(), &request) {
             Ok(p) => p,
@@ -523,7 +524,12 @@ pub async fn execute_write_operation(
         );
         outcome
     });
-    result.map_err(|e: GitError| e.to_string())?;
+    if let Err(e) = result {
+        // Mantém o mesmo token no diálogo para o usuário tentar de novo
+        // (ex.: credencial Git ainda não pronta).
+        state.write_auth().restore(&authorization, entry);
+        return Err(e.to_string());
+    }
     let _ = app.emit("repo-changed", ());
     Ok(())
 }
