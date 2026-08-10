@@ -35,14 +35,12 @@ pub use branches::{list_local_branches, list_remote_branches, RemoteBranchRef};
 pub use stashes::{list_stashes, stash_reference, StashEntry};
 pub use tags::{list_tags, TagEntry};
 pub use upstream::{
-    fetch_all_remote_branch_refs, preview_fetch_all_remote_branch_refs, sync_upstream_remote_ref,
+    fetch_all_remote_branch_refs, preview_fetch_all_remote_branch_refs,
 };
 
 pub use credential::{
-    detect_credential_status, enable_github_use_http_path, ensure_gcm_configured,
-    get_github_api_token, get_github_api_token_for_host, logout_github_account,
-    resolve_github_api_token, store_github_pat,
-    trigger_github_login, CredentialStatus, GithubAccount,
+    detect_credential_status, enable_github_use_http_path, ensure_gcm_configured, logout_github_account, store_github_pat,
+    trigger_github_login, CredentialStatus,
 };
 pub use conflict::{
     get_conflict_file, resolve_conflict_content, resolve_conflict_side, ConflictFileView,
@@ -51,13 +49,9 @@ pub use conflict::{
 pub use assistant_settings::{
     load_settings as load_assistant_settings, save_settings as save_assistant_settings,
 };
-pub use github_pat_store::{
-    clear_pat_file as clear_github_pat_file, load_pat_file as load_github_pat_file,
-    save_pat_file as save_github_pat_file, session_pat_token,
-};
 pub use audit_log::{
     append_entry as append_audit_entry, list_entries as list_audit_entries, now_timestamp,
-    purge_old_logs, sanitize_for_audit,
+    purge_old_logs,
 };
 pub use llm_credentials::{
     clear_llm_api_key, get_llm_api_key, has_llm_api_key, store_llm_api_key,

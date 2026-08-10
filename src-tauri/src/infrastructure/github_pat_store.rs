@@ -72,6 +72,7 @@ pub fn load_pat_file(data_dir: &Path) -> Option<String> {
     Some(pat)
 }
 
+#[allow(dead_code)]
 pub fn clear_pat_file(data_dir: &Path) -> Result<(), GitError> {
     set_session_pat(None);
     let _ = clear_llm_api_key(CRED_PROVIDER);
@@ -82,6 +83,7 @@ pub fn clear_pat_file(data_dir: &Path) -> Result<(), GitError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn has_pat_stored(data_dir: &Path) -> bool {
     session_pat_token().is_some()
         || has_llm_api_key(CRED_PROVIDER)

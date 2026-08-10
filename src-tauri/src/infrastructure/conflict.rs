@@ -202,6 +202,7 @@ pub fn parse_conflict_markers(content: &str) -> Vec<ConflictRegion> {
 }
 
 /// Monta o resultado a partir das escolhas por região (`ours` | `theirs` | `both` | `custom`).
+#[allow(dead_code)]
 pub fn build_resolved_content(
     regions: &[ConflictRegion],
     choices: &[ConflictChoice],
@@ -238,6 +239,7 @@ pub fn build_resolved_content(
 
 #[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub enum ConflictChoice {
     Ours,
     Theirs,

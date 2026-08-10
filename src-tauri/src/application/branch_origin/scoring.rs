@@ -227,8 +227,7 @@ fn name_lineage_boost(current: &str, candidate: &str) -> (f64, String) {
     if current == candidate {
         return (0.0, String::new());
     }
-    if current.starts_with(candidate) {
-        let rest = &current[candidate.len()..];
+    if let Some(rest) = current.strip_prefix(candidate) {
         if rest.starts_with('_') || rest.starts_with('/') {
             return (
                 40.0,

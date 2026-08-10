@@ -4,10 +4,14 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, Local, NaiveDate};
+use chrono::{Duration, Local};
+#[cfg(test)]
+use chrono::NaiveDate;
 
 use crate::application::GitError;
-use crate::domain::{AuditEntry, AuditResult};
+use crate::domain::AuditEntry;
+#[cfg(test)]
+use crate::domain::AuditResult;
 
 const RETENTION_DAYS: i64 = 7;
 const FILE_PREFIX: &str = "actions-";
@@ -45,11 +49,10 @@ pub fn purge_old_logs(app_data_dir: &Path) -> Result<usize, GitError> {
         else {
             continue;
         };
-        if date_str < cutoff.as_str() {
-            if fs::remove_file(entry.path()).is_ok() {
+        if date_str < cutoff.as_str()
+            && fs::remove_file(entry.path()).is_ok() {
                 removed += 1;
             }
-        }
     }
     Ok(removed)
 }
@@ -214,7 +217,7 @@ pub fn list_entries(app_data_dir: &Path, days: u32) -> Result<Vec<AuditEntry>, G
         }
         let file = fs::File::open(&path)
             .map_err(|e| GitError::Io(format!("Não foi possível ler {}: {e}", path.display())))?;
-        for line in BufReader::new(file).lines().flatten() {
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
             let line = line.trim();
             if line.is_empty() {
                 continue;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getBranchPrStatus } from "@/lib/api";
-import type { BranchPrStatusDto, CredentialStatusDto, RepoInfo } from "@/types";
+import type { BranchPrStatusDto, RepoInfo } from "@/types";
 
 /** github.com ou GitHub Enterprise (`github.*`). */
 function isGithubRemote(url: string | null | undefined): boolean {
@@ -25,10 +25,7 @@ function isGithubRemote(url: string | null | undefined): boolean {
   return false;
 }
 
-export function usePrStatus(
-  repo: RepoInfo | null,
-  _credential: CredentialStatusDto | null,
-) {
+export function usePrStatus(repo: RepoInfo | null) {
   const [status, setStatus] = useState<BranchPrStatusDto | null>(null);
   const [loading, setLoading] = useState(false);
 

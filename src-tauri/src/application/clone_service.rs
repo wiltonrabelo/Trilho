@@ -93,7 +93,7 @@ pub fn preview_clone(req: &CloneRequest) -> Result<OperationPreview, GitError> {
         description: clone_description(&label, &dest, &branch, &depth),
         repo_path: parent.to_string(),
         blocked,
-        // Clone tem IPC próprio (`execute_clone_remote`) — sem token A-02 ainda.
+        // Token A-02 emitido em `preview_clone_remote` (camada de comando).
         authorization: None,
     })
 }

@@ -80,6 +80,7 @@ fn read_config_upstream(repo: &Repository, branch: &str) -> Option<(String, Opti
 }
 
 /// Garante `refs/remotes/<upstream>` quando o refspec do remoto é restrito (só `main`).
+#[allow(dead_code)]
 pub fn sync_upstream_remote_ref(repo_path: &str) -> Result<(), GitError> {
     use std::process::Command;
 

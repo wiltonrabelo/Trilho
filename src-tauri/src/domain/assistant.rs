@@ -6,7 +6,9 @@ use crate::domain::WriteRequest;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum LlmProviderKind {
+    #[default]
     Ollama,
     OpenAi,
     Anthropic,
@@ -16,11 +18,6 @@ pub enum LlmProviderKind {
     CodexCli,
 }
 
-impl Default for LlmProviderKind {
-    fn default() -> Self {
-        Self::Ollama
-    }
-}
 
 /// Preferências persistidas (sem API key).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

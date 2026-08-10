@@ -163,7 +163,7 @@ pub fn preview_write(
             commit_ids,
             record_origin,
         } => {
-            let shas = resolve_cherry_pick_shas(&commit_id, &commit_ids)?;
+            let shas = resolve_cherry_pick_shas(commit_id, commit_ids)?;
             let blocked = gate_cherry_pick_shas(ctx, repo_path, &shas)?;
             let op = CherryPickCommit {
                 shas: shas.clone(),

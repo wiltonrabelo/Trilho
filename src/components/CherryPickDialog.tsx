@@ -51,7 +51,7 @@ export function CherryPickDialog({
       setSelected(initial);
       setRecordOrigin(false);
     }
-  }, [isOpen, primaryCommit?.id]);
+  }, [isOpen, primaryCommit]);
 
   const hasSelectedMerge = useMemo(
     () => orderedCandidates.some((c) => selected.has(c.id) && isMergeCommit(c)),

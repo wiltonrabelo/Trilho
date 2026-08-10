@@ -1,5 +1,5 @@
-import { Plus, Trash2, Undo2 } from "lucide-react";
-import type { MouseEvent } from "react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Undo2 } from "lucide-react";
+import { useState, type MouseEvent } from "react";
 import {
   countChecked,
   fileCheckKey,
@@ -143,6 +143,8 @@ function FileList({
   onDiscard?: (path: string) => void;
   onRemoveUntracked?: (path: string) => void;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   function handleContextMenu(e: MouseEvent, f: FileChangeDto) {
     e.preventDefault();
     e.stopPropagation();
@@ -158,13 +160,20 @@ function FileList({
 
   return (
     <section className="mb-4 border-b border-border/60 pb-3 last:mb-0 last:border-0">
-      <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="mb-1.5 flex w-full items-center justify-between px-1 py-0.5 text-left hover:bg-surface/60"
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expandir" : "Recolher"}
+      >
+        <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+          {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
           {title}
         </span>
         <span className="text-[10px] tabular-nums text-muted">{files.length}</span>
-      </div>
-      {files.length === 0 ? (
+      </button>
+      {collapsed ? null : files.length === 0 ? (
         <p className="px-2 py-1 text-xs text-muted/70">—</p>
       ) : (
         <ul className="space-y-0.5" onContextMenu={(e) => e.preventDefault()}>

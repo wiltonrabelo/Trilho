@@ -650,21 +650,40 @@ pub async fn list_clone_remote_branches(url: String) -> Result<Vec<String>, Stri
 }
 
 #[tauri::command]
-pub async fn preview_clone_remote(request: CloneRequest) -> Result<OperationPreview, String> {
-    preview_clone(&request).map_err(|e| e.to_string())
+pub async fn preview_clone_remote(
+    request: CloneRequest,
+    state: State<'_, AppState>,
+) -> Result<OperationPreview, String> {
+    let mut preview = preview_clone(&request).map_err(|e| e.to_string())?;
+    // A-02: só opera se o gate não bloqueou — token amarra preview → execute.
+    if preview.blocked.is_none() {
+        let token = state
+            .clone_auth()
+            .issue(&preview.repo_path, &request, &preview.commands)?;
+        preview.authorization = Some(token);
+    }
+    Ok(preview)
 }
 
 #[tauri::command]
 pub async fn execute_clone_remote(
-    request: CloneRequest,
+    authorization: String,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CloneResult, String> {
+    let entry = state.clone_auth().take(&authorization)?;
+    let request = entry.request.clone();
     let app_clone = app.clone();
-    let path = tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
+    let path = match tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
         .await
         .map_err(|e| format!("Clone interrompido: {e}"))?
-        .map_err(|e| e.to_string())?;
+    {
+        Ok(p) => p,
+        Err(e) => {
+            state.clone_auth().restore(&authorization, entry);
+            return Err(e.to_string());
+        }
+    };
     let warning = validate_post_clone(&path).err().map(|e| e.to_string());
     state.set_repo(path.clone(), &app)?;
     let _ = app.emit("repo-changed", ());

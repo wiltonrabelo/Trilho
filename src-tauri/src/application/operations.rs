@@ -17,6 +17,7 @@ pub trait GitOperation: Send + Sync {
     }
 }
 
+#[allow(dead_code)] // preview/execute via WriteRequest::FetchRemote + SafeGitCli
 pub struct FetchRemote;
 
 impl GitOperation for FetchRemote {
@@ -473,6 +474,7 @@ impl GitOperation for AbortRevert {
     }
 }
 
+#[allow(dead_code)] // usado via finish_revert / WriteRequest::ContinueRevert
 pub struct ContinueRevert;
 
 impl GitOperation for ContinueRevert {
@@ -529,6 +531,7 @@ impl GitOperation for AbortCherryPick {
     }
 }
 
+#[allow(dead_code)] // usado via finish_cherry_pick / WriteRequest::ContinueCherryPick
 pub struct ContinueCherryPick;
 
 impl GitOperation for ContinueCherryPick {

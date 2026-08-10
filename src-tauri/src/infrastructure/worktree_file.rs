@@ -188,7 +188,7 @@ fn open_path_os(path: &Path) -> Result<(), GitError> {
         if !status.success() {
             return Err(GitError::Io("Não foi possível abrir o arquivo.".into()));
         }
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -206,7 +206,7 @@ fn open_folder_os(path: &Path) -> Result<(), GitError> {
             .arg(&native)
             .spawn()
             .map_err(|e| GitError::Io(format!("Falha ao abrir pasta: {e}")))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -225,7 +225,7 @@ fn reveal_path_os(path: &Path) -> Result<(), GitError> {
             .args(["/select,", &native])
             .spawn()
             .map_err(|e| GitError::Io(format!("Falha ao revelar: {e}")))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -263,7 +263,7 @@ pub fn open_git_bash(repo_path: &str) -> Result<(), GitError> {
         }
         cmd.spawn()
             .map_err(|e| GitError::Io(format!("Falha ao abrir o Git Bash: {e}")))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]

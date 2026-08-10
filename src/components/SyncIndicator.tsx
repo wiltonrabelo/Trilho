@@ -157,7 +157,7 @@ export function SyncIndicator({
           <button
             type="button"
             onClick={onConnect}
-            disabled={busy}
+            disabled={loading}
             aria-label="Conectar conta GitHub"
             className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
             title="Assistente de conexão GitHub"
@@ -170,7 +170,7 @@ export function SyncIndicator({
           <button
             type="button"
             onClick={onFetch}
-            disabled={busy}
+            disabled={loading}
             aria-label="Conectar ou reautenticar no GitHub"
             className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
             title="Reautenticar via Git Credential Manager"

@@ -185,8 +185,11 @@ Leituras úteis (não exaustivo):
 
 ### Git endurecido (rede / RCE via config local)
 
-- Toda invocação via `SafeGitCli` aplica `-c` defensivo: hooks off, `protocol.ext` never, LFS filters off, **`core.sshCommand=`**, **`credential.helper=`** + helper confiável do SO (`manager-core` / `osxkeychain`)
+- Toda invocação via `SafeGitCli` aplica `-c` defensivo: hooks off, `protocol.ext` never, LFS filters off, **`core.sshCommand=`**, **`credential.helper=`** + helper confiável do SO (`manager` / `manager-core` / `osxkeychain`, preferindo o global allowlisted)
+- Timeout por classe (rede 15 min / local 2 min) com kill da árvore de processos
 - `fetch_all_remote_branch_refs` usa `SafeGitCli` (não `Command::new("git")` cru)
+- Clone remoto também exige token A-02 (`preview_clone_remote` → `execute_clone_remote`)
+- Capabilities Tauri: `allow-repo-read` / `write-propose` / `write-execute` / `allow-secrets`
 - `save_worktree_file` rejeita symlink/junction no caminho (anti escape do worktree)
 
 ---

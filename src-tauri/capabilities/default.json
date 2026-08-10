@@ -1,13 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissões do Trilho (M1 + M2).",
+  "description": "Permissões do Trilho (leitura / proposta / execução / segredos).",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "allow-get-app-info",
     "allow-list-commits-mock",
-    "allow-repo-commands",
+    "allow-repo-read",
+    "allow-repo-write-propose",
+    "allow-repo-write-execute",
+    "allow-secrets",
     "dialog:default"
   ]
 }

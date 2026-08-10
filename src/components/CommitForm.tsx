@@ -125,9 +125,19 @@ export function CommitForm({
     Boolean(summary.trim()) && (amend || stagedCount > 0);
 
   return (
-    <div className="border-t border-border bg-surface px-3 py-2">
-      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-        Commit
+    <div className="bg-surface px-3 py-2">
+      <div className="sticky top-0 z-10 mb-1.5 flex items-center justify-between gap-2 bg-surface pb-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+          Commit
+        </div>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy || !canSubmit}
+          className="shrink-0 rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {amend ? "Amend" : "Commit"}
+        </button>
       </div>
       <input
         type="text"
@@ -142,14 +152,13 @@ export function CommitForm({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder="Descrição (opcional)"
-        rows={4}
+        rows={2}
         disabled={busy}
         aria-label="Descrição do commit (opcional)"
-        className="mb-2 min-h-[5rem] max-h-[min(320px,45vh)] w-full resize-y rounded border border-border bg-bg px-2 py-1.5 font-mono text-xs placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 disabled:opacity-50 disabled:resize-none"
+        className="mb-2 min-h-[2.75rem] max-h-[min(140px,22vh)] w-full resize-y rounded border border-border bg-bg px-2 py-1.5 font-mono text-xs placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 disabled:opacity-50 disabled:resize-none"
       />
       <div className="flex flex-col gap-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
             {canAmend ? (
               <label className="flex items-center gap-1.5 text-xs text-muted">
                 <input
@@ -174,15 +183,6 @@ export function CommitForm({
                 Listar arquivos na descrição
               </label>
             )}
-          </div>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={busy || !canSubmit}
-            className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {amend ? "Amend" : "Commit"}
-          </button>
         </div>
         {!amend && stagedCount === 0 && (
           <p className="text-[11px] leading-snug text-muted">

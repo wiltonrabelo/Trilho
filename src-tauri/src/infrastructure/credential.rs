@@ -189,7 +189,7 @@ fn run_gcm_github(args: &[&str]) -> Result<std::process::Output, String> {
         ("git-credential-manager.exe", vec![]),
     ] {
         let (bin, prefix): (&str, Vec<&str>) = invocation;
-        let mut cmd_args: Vec<&str> = prefix.iter().copied().collect();
+        let mut cmd_args: Vec<&str> = prefix.to_vec();
         cmd_args.push("github");
         cmd_args.extend(args);
         let output = Command::new(bin)
@@ -480,11 +480,13 @@ fn probe_github_credential() -> GithubCredentialProbe {
 }
 
 /// Token HTTPS para a API GitHub / GHE (password do credential helper).
+#[allow(dead_code)]
 pub fn get_github_api_token(credential_path: Option<&str>) -> Option<String> {
     get_github_api_token_for_host("github.com", credential_path)
 }
 
 /// Token para um host específico (github.com ou GHE).
+#[allow(dead_code)]
 pub fn get_github_api_token_for_host(
     host: &str,
     credential_path: Option<&str>,

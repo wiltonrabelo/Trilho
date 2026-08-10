@@ -1,7 +1,9 @@
 //! Executor seguro da Git CLI (escrita e leitura via subprocess).
 
 use crate::application::{GitCommand, GitError, GitWriter};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
 /// Config defensiva sem `-C` (ex.: `git clone` fora de um repo aberto).
 pub fn defensive_config_args() -> Vec<String> {
@@ -94,6 +96,74 @@ pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
     args
 }
 
+/// Timeout por classe de operação (M-02): rede pode demorar; local não.
+fn timeout_for_git_command(command: &GitCommand) -> Duration {
+    let network = command.args.iter().any(|a| {
+        matches!(
+            a.as_str(),
+            "fetch"
+                | "push"
+                | "pull"
+                | "clone"
+                | "ls-remote"
+                | "login"
+                | "approve"
+                | "reject"
+        )
+    });
+    if network {
+        Duration::from_secs(15 * 60)
+    } else {
+        Duration::from_secs(2 * 60)
+    }
+}
+
+fn kill_process_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+fn wait_child_with_timeout(
+    child: Child,
+    timeout: Duration,
+) -> Result<std::process::Output, GitError> {
+    let pid = child.id();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = child.wait_with_output();
+        let _ = tx.send(result);
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(e)) => Err(GitError::Io(format!(
+            "Não foi possível executar git: {e}"
+        ))),
+        Err(_) => {
+            kill_process_tree(pid);
+            // Drena o canal para não deixar zombie da thread.
+            let _ = rx.recv_timeout(Duration::from_secs(2));
+            Err(GitError::Io(format!(
+                "Operação Git excedeu o tempo limite ({}s) e foi interrompida.",
+                timeout.as_secs()
+            )))
+        }
+    }
+}
+
 /// Adaptador Git CLI vinculado a um repositório — honra `GitWriter` (LSP).
 #[derive(Clone)]
 pub struct SafeGitCli {
@@ -146,6 +216,7 @@ impl SafeGitCli {
         self.invoke_with_stdin(command, Some(stdin), &[])
     }
 
+    #[allow(dead_code)]
     pub fn run_with_env(
         &self,
         command: &GitCommand,
@@ -215,9 +286,8 @@ impl SafeGitCli {
             })
         });
 
-        let output = child
-            .wait_with_output()
-            .map_err(|e| GitError::Io(format!("Não foi possível executar git: {e}")))?;
+        let timeout = timeout_for_git_command(command);
+        let output = wait_child_with_timeout(child, timeout)?;
 
         if let Some(handle) = writer {
             let _ = handle.join();

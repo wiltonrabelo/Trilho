@@ -686,17 +686,18 @@ export async function previewCloneRemote(
       description: "Mock — clonar repositório.",
       repoPath: request.parentDir,
       blocked: null,
+      authorization: "mock-auth",
     };
   }
   return invoke<OperationPreviewDto>("preview_clone_remote", { request });
 }
 
 export async function executeCloneRemote(
-  request: CloneRequestDto,
+  authorization: string,
 ): Promise<CloneResultDto> {
   if (!isTauri()) {
     return { repo: MOCK_REPO, warning: null };
   }
-  return invoke<CloneResultDto>("execute_clone_remote", { request });
+  return invoke<CloneResultDto>("execute_clone_remote", { authorization });
 }
 

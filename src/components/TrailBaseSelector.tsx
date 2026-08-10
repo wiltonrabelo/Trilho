@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { listLocalBranches } from "@/lib/api";
-
-const STORAGE_PREFIX = "trilho.trailBase.";
+import { saveStoredTrailBase } from "@/lib/trailBaseStorage";
 
 interface TrailBaseSelectorProps {
   repoPath: string | null;
@@ -12,19 +11,6 @@ interface TrailBaseSelectorProps {
   value: string | null;
   onChange: (base: string | null) => void;
   disabled?: boolean;
-}
-
-function storageKey(repoPath: string): string {
-  return `${STORAGE_PREFIX}${repoPath}`;
-}
-
-export function loadStoredTrailBase(repoPath: string | null): string | null {
-  if (!repoPath || typeof localStorage === "undefined") return null;
-  try {
-    return localStorage.getItem(storageKey(repoPath));
-  } catch {
-    return null;
-  }
 }
 
 export function TrailBaseSelector({
@@ -76,12 +62,7 @@ export function TrailBaseSelector({
           const next = e.target.value || null;
           onChange(next);
           if (repoPath) {
-            try {
-              if (next) localStorage.setItem(storageKey(repoPath), next);
-              else localStorage.removeItem(storageKey(repoPath));
-            } catch {
-              /* ignore */
-            }
+            saveStoredTrailBase(repoPath, next);
           }
         }}
         title="Branch base da trilha comparada (segunda lane)"

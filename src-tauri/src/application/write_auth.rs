@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::domain::WriteRequest;
+use crate::domain::{CloneRequest, WriteRequest};
 
 /// Validade do token após o preview (confirmação humana típica).
 const TTL: Duration = Duration::from_secs(5 * 60);
@@ -15,18 +15,21 @@ const MAX_PENDING: usize = 64;
 static TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
-pub struct WriteAuthEntry {
+pub struct OpAuthEntry<T: Clone> {
     pub repo_path: String,
-    pub request: WriteRequest,
+    pub request: T,
     pub commands: Vec<String>,
     expires_at: Instant,
 }
 
-pub struct WriteAuthStore {
-    inner: Mutex<HashMap<String, WriteAuthEntry>>,
+pub struct OpAuthStore<T: Clone> {
+    inner: Mutex<HashMap<String, OpAuthEntry<T>>>,
 }
 
-impl Default for WriteAuthStore {
+pub type WriteAuthStore = OpAuthStore<WriteRequest>;
+pub type CloneAuthStore = OpAuthStore<CloneRequest>;
+
+impl<T: Clone> Default for OpAuthStore<T> {
     fn default() -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
@@ -34,7 +37,7 @@ impl Default for WriteAuthStore {
     }
 }
 
-impl WriteAuthStore {
+impl<T: Clone> OpAuthStore<T> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -43,11 +46,11 @@ impl WriteAuthStore {
     pub fn issue(
         &self,
         repo_path: &str,
-        request: &WriteRequest,
+        request: &T,
         commands: &[String],
     ) -> Result<String, String> {
         let token = mint_token();
-        let entry = WriteAuthEntry {
+        let entry = OpAuthEntry {
             repo_path: repo_path.to_string(),
             request: request.clone(),
             commands: commands.to_vec(),
@@ -75,7 +78,7 @@ impl WriteAuthStore {
     }
 
     /// Consome atomicamente. Falha se inexistente, expirado ou já usado.
-    pub fn take(&self, token: &str) -> Result<WriteAuthEntry, String> {
+    pub fn take(&self, token: &str) -> Result<OpAuthEntry<T>, String> {
         let token = token.trim();
         if token.is_empty() {
             return Err(
@@ -97,7 +100,7 @@ impl WriteAuthStore {
     }
 
     /// Devolve o token após falha na execução (permite retry no mesmo diálogo).
-    pub fn restore(&self, token: &str, entry: WriteAuthEntry) {
+    pub fn restore(&self, token: &str, entry: OpAuthEntry<T>) {
         let token = token.trim();
         if token.is_empty() {
             return;
@@ -111,6 +114,7 @@ impl WriteAuthStore {
     }
 
     /// Descarta um token (cancelamento do diálogo).
+    #[allow(dead_code)]
     pub fn revoke(&self, token: &str) {
         if let Ok(mut guard) = self.inner.lock() {
             guard.remove(token.trim());
@@ -118,7 +122,7 @@ impl WriteAuthStore {
     }
 }
 
-fn purge_expired(map: &mut HashMap<String, WriteAuthEntry>) {
+fn purge_expired<T: Clone>(map: &mut HashMap<String, OpAuthEntry<T>>) {
     let now = Instant::now();
     map.retain(|_, e| e.expires_at > now);
 }
@@ -271,5 +275,34 @@ mod tests {
     fn same_repo_path_normaliza() {
         assert!(same_repo_path(r"C:\Repo\A", "C:/Repo/A"));
         assert!(!same_repo_path(r"C:\Repo\A", r"C:\Repo\B"));
+    }
+
+    /// B-03 — vínculo preview→execute: request/argv ficam no store; execute sem token falha.
+    #[test]
+    fn bind_preview_execute_rejeita_sem_token_e_exige_argv() {
+        let store = WriteAuthStore::new();
+        let cmds = vec!["git".into(), "push".into()];
+        let token = store
+            .issue("C:/repo", &WriteRequest::Push, &cmds)
+            .unwrap();
+        let entry = store.take(&token).unwrap();
+        assert_eq!(entry.commands, cmds);
+        assert!(matches!(entry.request, WriteRequest::Push));
+        // Sem preview prévio: não há como “adivinhar” o token.
+        assert!(store.take("qualquer-coisa").is_err());
+        // Clone usa store separado — tokens não se misturam.
+        let clone_store = CloneAuthStore::new();
+        let creq = CloneRequest {
+            url: "https://github.com/a/b.git".into(),
+            parent_dir: "C:/tmp".into(),
+            folder_name: "b".into(),
+            branch: None,
+            depth: None,
+        };
+        let ctoken = clone_store
+            .issue("C:/tmp", &creq, &["git".into(), "clone".into()])
+            .unwrap();
+        assert!(store.take(&ctoken).is_err());
+        assert!(clone_store.take(&ctoken).is_ok());
     }
 }

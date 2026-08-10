@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   executeCloneRemote,
@@ -7,6 +7,18 @@ import {
   runningInTauri,
 } from "@/lib/api";
 import type { CloneFormValues, CloneRequestDto, OperationPreviewDto, RepoInfo } from "@/types";
+
+function isStaleAuthError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("autorização") ||
+    m.includes("autorizacao") ||
+    m.includes("já usada") ||
+    m.includes("ja usada") ||
+    m.includes("expirada") ||
+    m.includes("preview novamente")
+  );
+}
 
 export function useClone(
   onSuccess: (info: RepoInfo, warning: string | null) => Promise<void>,
@@ -17,6 +29,7 @@ export function useClone(
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirmingRef = useRef(false);
 
   useEffect(() => {
     if (!runningInTauri()) return;
@@ -84,22 +97,44 @@ export function useClone(
   }, [loading]);
 
   const confirmClone = useCallback(async () => {
-    if (!pending || preview?.blocked) return;
+    if (confirmingRef.current) return;
+    const auth = preview?.authorization?.trim();
+    if (!pending || preview?.blocked || !auth) {
+      if (!auth && pending && !preview?.blocked) {
+        setError("Confirmação inválida: falta autorização do preview.");
+      }
+      return;
+    }
+    confirmingRef.current = true;
     setLoading(true);
     setError(null);
     setProgress("Iniciando clone…");
     try {
-      const result = await executeCloneRemote(pending);
+      const result = await executeCloneRemote(auth);
       setPreview(null);
       setPending(null);
       setProgress(null);
       await onSuccess(result.repo, result.warning ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (pending && isStaleAuthError(msg)) {
+        try {
+          const p = await previewCloneRemote(pending);
+          setPreview(p);
+          setError(`${msg} Atualizei o preview — clique em Confirmar de novo.`);
+        } catch (previewErr) {
+          setError(
+            previewErr instanceof Error ? previewErr.message : String(previewErr),
+          );
+        }
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
+      confirmingRef.current = false;
     }
-  }, [pending, preview?.blocked, onSuccess]);
+  }, [pending, preview?.blocked, preview?.authorization, onSuccess]);
 
   return {
     cloneOpen,

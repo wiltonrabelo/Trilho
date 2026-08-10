@@ -27,7 +27,7 @@ fn install_window_icon_keepalive(app: &tauri::AppHandle) {
     };
     reapply_main_window_icon(app);
     let app2 = app.clone();
-    let _ = win.on_window_event(move |event| {
+    win.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Focused(true)) {
             reapply_main_window_icon(&app2);
         }
@@ -43,7 +43,7 @@ fn install_dev_idle_recovery(app: &tauri::AppHandle) {
     };
     let win2 = win.clone();
     let app2 = app.clone();
-    let _ = win.on_window_event(move |event| {
+    win.on_window_event(move |event| {
         if !matches!(event, tauri::WindowEvent::Focused(true)) {
             return;
         }

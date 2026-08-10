@@ -1688,11 +1688,10 @@ Escopo limitado aos trechos abaixo; conteúdo grande foi truncado.\n",
         push_branch_files_packet(ctx, &left, "HEAD", &mut out, &mut budget);
         // Complemento: WT se houver mudanças locais.
         if let Ok(st) = ctx.reader().get_status() {
-            if !st.staged.is_empty() || !st.unstaged.is_empty() || !st.untracked.is_empty() {
-                if budget > 800 {
+            if (!st.staged.is_empty() || !st.unstaged.is_empty() || !st.untracked.is_empty())
+                && budget > 800 {
                     push_working_tree_packet(ctx, &mut out, &mut budget);
                 }
-            }
         }
     } else {
         out.push_str(

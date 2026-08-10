@@ -16,12 +16,13 @@ import { CherryPickDialog } from "@/components/CherryPickDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
-import { loadStoredTrailBase } from "@/components/TrailBaseSelector";
+import { loadStoredTrailBase } from "@/lib/trailBaseStorage";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
 import { RefsPanel } from "@/components/RefsPanel";
 import { RepoPicker } from "@/components/RepoPicker";
+import { ResizableBottomSection } from "@/components/ResizableBottomSection";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
 import { StashDialog } from "@/components/StashDialog";
@@ -189,17 +190,27 @@ function App() {
   const branchList = useBranches(repo?.path, repo?.branch);
   const stashList = useStashes(repo?.path);
   const tagList = useTags(repo?.path);
+  const refreshBranches = branchList.refresh;
+  const refreshStashes = stashList.refresh;
+  const refreshTags = tagList.refresh;
 
   const onAfterFetch = useCallback(async () => {
     await Promise.all([
       refreshCommits(),
       refreshStatus(),
       refreshOrigin(),
-      branchList.refresh(),
-      stashList.refresh(),
-      tagList.refresh(),
+      refreshBranches(),
+      refreshStashes(),
+      refreshTags(),
     ]);
-  }, [refreshCommits, refreshStatus, refreshOrigin, branchList.refresh, stashList.refresh, tagList.refresh]);
+  }, [
+    refreshCommits,
+    refreshStatus,
+    refreshOrigin,
+    refreshBranches,
+    refreshStashes,
+    refreshTags,
+  ]);
 
   const {
     sync,
@@ -211,7 +222,7 @@ function App() {
     refreshCredential,
   } = useSync(repo, setRepo, onAfterFetch);
 
-  const { prStatus, prLoading, refreshPrStatus } = usePrStatus(repo, credential);
+  const { prStatus, prLoading, refreshPrStatus } = usePrStatus(repo);
   const prOpen = prStatus?.open[0] ?? null;
   const prBaseBranch = prOpen?.baseBranch ?? null;
 
@@ -238,11 +249,19 @@ function App() {
       refreshStatus(),
       syncRefresh(),
       refreshOrigin(),
-      branchList.refresh(),
-      stashList.refresh(),
-      tagList.refresh(),
+      refreshBranches(),
+      refreshStashes(),
+      refreshTags(),
     ]);
-  }, [refreshCommits, refreshStatus, syncRefresh, refreshOrigin, branchList.refresh, stashList.refresh, tagList.refresh]);
+  }, [
+    refreshCommits,
+    refreshStatus,
+    syncRefresh,
+    refreshOrigin,
+    refreshBranches,
+    refreshStashes,
+    refreshTags,
+  ]);
 
   useRepoChanged(refreshAll);
 
@@ -1594,14 +1613,13 @@ function App() {
               )
             }
             right={
+              <div className="flex h-full min-h-0 flex-col">
               <ResizableRows
                 storageKey="trilho.rows.right.v1"
                 defaultTop={fileConflicted && workingCopySelected ? 420 : 280}
-                minTop={140}
-                minBottom={120}
+                minTop={120}
+                minBottom={100}
                 top={
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="min-h-0 flex-1">
                       <StatusPanel
                         staged={status?.staged ?? []}
                         unstaged={status?.unstaged ?? []}
@@ -1746,39 +1764,6 @@ function App() {
                               }
                         }
                       />
-                    </div>
-                    {workingCopySelected &&
-                      !writeDisabled &&
-                      !status?.operationInProgress &&
-                      ((status?.staged.length ?? 0) > 0 || canAmend) && (
-                      <div className="shrink-0">
-                        <CommitForm
-                        canAmend={canAmend}
-                        stagedCount={status?.staged.length ?? 0}
-                        stagedFiles={status?.staged ?? []}
-                        amendUnavailableReason={amendUnavailableReason}
-                        amendSeed={
-                          headCommit
-                            ? {
-                                summary: headCommit.summary,
-                                body: headCommit.body ?? "",
-                              }
-                            : null
-                        }
-                        amendIntent={amendIntent}
-                        busy={ops.loading && ops.pending?.kind === "commit"}
-                        onCommit={(summary, body, amend) => {
-                          void ops.request({
-                            kind: "commit",
-                            summary,
-                            body: body || undefined,
-                            amend,
-                          });
-                        }}
-                      />
-                      </div>
-                    )}
-                  </div>
                 }
                 bottom={
                   <DetailPanel
@@ -1856,6 +1841,44 @@ function App() {
                   />
                 }
               />
+              {workingCopySelected &&
+                !writeDisabled &&
+                !status?.operationInProgress &&
+                ((status?.staged.length ?? 0) > 0 || canAmend) && (
+                  <ResizableBottomSection
+                    storageKey="trilho.rows.commit.v1"
+                    defaultHeight={148}
+                    minHeight={96}
+                    maxHeightRatio={0.5}
+                    ariaLabel="Redimensionar painel de commit"
+                  >
+                    <CommitForm
+                      canAmend={canAmend}
+                      stagedCount={status?.staged.length ?? 0}
+                      stagedFiles={status?.staged ?? []}
+                      amendUnavailableReason={amendUnavailableReason}
+                      amendSeed={
+                        headCommit
+                          ? {
+                              summary: headCommit.summary,
+                              body: headCommit.body ?? "",
+                            }
+                          : null
+                      }
+                      amendIntent={amendIntent}
+                      busy={ops.loading && ops.pending?.kind === "commit"}
+                      onCommit={(summary, body, amend) => {
+                        void ops.request({
+                          kind: "commit",
+                          summary,
+                          body: body || undefined,
+                          amend,
+                        });
+                      }}
+                    />
+                  </ResizableBottomSection>
+                )}
+              </div>
             }
           />
         </main>

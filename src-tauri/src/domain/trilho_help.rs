@@ -34,7 +34,7 @@ cobrir a dúvida, diga que não está documentado — não invente.
 
 /// Texto completo de um tópico, ou índice se `topic` vazio / desconhecido.
 pub fn help_for_topic(topic: &str) -> String {
-    let key = topic.trim().to_lowercase().replace('_', "-").replace(' ', "-");
+    let key = topic.trim().to_lowercase().replace(['_', ' '], "-");
     let body = match key.as_str() {
         "" | "index" | "ajuda" | "help" | "guia" => help_index(),
         "overview" | "geral" | "visao" | "visão" | "terminal" | "git-bash" | "menu-contexto" => {
