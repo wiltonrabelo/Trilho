@@ -38,25 +38,30 @@ Não é um IDE nem um substituto genérico do Git CLI: é um visualizador/operad
 
 ```
 Trilho/
-  README.md, DECISIONS.md, SECURITY.md, ARCHITECTURE.md
+  README.md, DECISIONS.md, SECURITY.md, THREAT_MODEL.md, ARCHITECTURE.md
   package.json, vite.config.ts, vitest.config.ts, playwright.config.ts
   src/                         # Frontend React/TS
     App.tsx                    # Orquestração principal da UI
     main.tsx
     components/                # Painéis, diálogos, grafo, Assistente…
+                               # OperationDialog, StatusPanel, ResizableBottomSection…
     hooks/                     # useRepo, useCommits, useSync, useOperations…
     lib/                       # api.ts (invoke), graph/, mocks, theme…
     types.ts                   # DTOs camelCase (espelham serde)
   src-tauri/
     Cargo.toml
+    permissions/               # capabilities granulares (read / propose / execute / secrets)
+    capabilities/default.json
     src/
       main.rs                  # entry binário
       lib.rs                   # registra módulos, AppState, commands
       commands.rs              # #[tauri::command] finos
-      domain/                  # tipos puros + help embutido
+      domain/                  # tipos puros + help embutido (`trilho_help.rs`)
       application/             # ports, serviços, gates, orquestração
       infrastructure/          # adapters (git2, CLI, LLM, credenciais…)
-  e2e/, assets/, public/
+      security_contract.rs     # testes de contrato (capabilities / configs / limites)
+  e2e/                         # Playwright: smoke + security-rf08
+  assets/, public/
 ```
 
 ---
@@ -158,6 +163,8 @@ Traits na application; implementações na infrastructure. UI e commands não fa
 3. Usuário confirma no `OperationDialog`
 4. `execute_write_operation` recebe **só o token** (não o request do cliente), consome atomicamente, recalcula preview/gates e exige argv idêntico ao autorizado
 
+`SafeGitCli::preview` devolve **uma string por comando** (argv juntado com espaços / aspas), não um elemento por argumento — o diálogo mostra uma linha legível. O `OperationDialog` tem rodapé fixo (Cancelar/Confirmar) e área do comando rolável (importante em 1024×768).
+
 **Nunca** executar escrita “silenciosa” pulando o preview. **Nunca** aceitar `WriteRequest` solto no execute IPC.
 
 ### Assistente (RF-21) — allowlist default-deny
@@ -186,12 +193,15 @@ Leituras úteis (não exaustivo):
 
 ### Git endurecido (rede / RCE via config local)
 
-- Toda invocação via `SafeGitCli` aplica `-c` defensivo: hooks off, `protocol.ext` never, LFS filters off, **`core.sshCommand=`**, **`credential.helper=`** + helper confiável do SO (`manager` / `manager-core` / `osxkeychain`, preferindo o global allowlisted)
-- Timeout por classe (rede 15 min / local 2 min) com kill da árvore de processos
+- Toda invocação via `SafeGitCli` aplica `-c` defensivo: hooks off, `protocol.ext` never, LFS filters off, **`core.sshCommand=`**, **`credential.helper=`** + helper confiável do SO (`manager` / `manager-core` / `osxkeychain`, preferindo o global allowlisted), **`uploadpack.packObjectsHook=`**
+- Por remoto do repo: força `remote.<n>.uploadpack=git-upload-pack`, `receivepack=git-receive-pack` e `vcs=` (bloqueia helpers/VCS customizados no `.git/config`)
+- Timeout por classe (rede 15 min / local 2 min) com kill da árvore de processos — também em `run_unbound_git` (`ls-remote`) e `wait_child_status_with_timeout` (`git clone` com progresso)
 - `fetch_all_remote_branch_refs` usa `SafeGitCli` (não `Command::new("git")` cru)
 - Clone remoto também exige token A-02 (`preview_clone_remote` → `execute_clone_remote`)
-- Capabilities Tauri: `allow-repo-read` / `write-propose` / `write-execute` / `allow-secrets`
-- `save_worktree_file` rejeita symlink/junction no caminho (anti escape do worktree)
+- Token A-02 é **one-shot**: após `take` no execute, falha **não** restaura o token (evita retry sobre operação parcial); UI pede novo preview
+- Capabilities Tauri: `allow-repo-read` / `allow-repo-write-propose` / `allow-repo-write-execute` / `allow-secrets` (sem permissão monolítica `allow-repo-commands`)
+- `save_worktree_file` rejeita symlink/junction no caminho e conteúdo **> 2 MiB** (limite do editor interno)
+- Verificação contínua: `npm audit` + `cargo audit`, E2E RF-08, SBOM CycloneDX, `THREAT_MODEL.md`
 
 ---
 
@@ -351,9 +361,13 @@ Portas Vite: `1420` / `1421`. Se “address already in use”, encerrar `trilho.
 │ tags,stash  │                              │  / editor          │
 └─────────────┴──────────────────────────────┴────────────────────┘
          Sync / Connect / diálogos de operação (RF-08)
+                              ↓
+                    CommitForm (ResizableBottomSection)
 ```
 
 Centro-baixo: abas **Detalhes** | **Assistente**.
+
+Coluna direita em telas baixas (ex. 1024×768): seções **Staged / Unstaged / Untracked** recolhíveis no `StatusPanel`; formulário de commit abaixo com altura redimensionável (`ResizableBottomSection`); `OperationDialog` com rodapé fixo.
 
 ---
 
@@ -365,7 +379,8 @@ Centro-baixo: abas **Detalhes** | **Assistente**.
 - [ ] Types TS + commands + `lib.rs` sincronizados?
 - [ ] `npm run test` / `npm run test:rust` (ou o subset relevante) passando?
 - [ ] Mensagens de erro claras (sem JSON cru de provedor, quando houver mapeamento)?
+- [ ] Help embutido (`trilho_help.rs`) e este arquivo atualizados se mudar RF-08 / assistente / segurança?
 
 ---
 
-*Última atualização orientativa: A-02 (token RF-08 preview→execute), SafeGitCli, propose_fetch_remote, PAT no Credential Manager, Claude `--allowedTools` vazio.*
+*Última atualização orientativa: parecer Codex fechado (A-02, timeouts, capabilities, symlink/2 MiB, E2E RF-08, SBOM, THREAT_MODEL); preview RF-08 em uma linha; UI Alterações recolhível + commit redimensionável.*

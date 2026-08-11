@@ -29,6 +29,9 @@ pub fn defensive_config_args() -> Vec<String> {
         "core.sshCommand=".into(),
         "-c".into(),
         "credential.helper=".into(),
+        // Hook de pack-objects (só config protegida em Git recente; zerar por defesa).
+        "-c".into(),
+        "uploadpack.packObjectsHook=".into(),
     ];
     // Helper confiável do SO — não herdar `credential.helper=!evil` do repo.
     // No Windows o Git for Windows registra em geral `manager` (não `manager-core`);
@@ -36,6 +39,39 @@ pub fn defensive_config_args() -> Vec<String> {
     if let Some(helper) = safe_os_credential_helper() {
         args.push("-c".into());
         args.push(format!("credential.helper={helper}"));
+    }
+    args
+}
+
+/// Nome de remoto seguro para interpolar em `-c remote.<name>.*` (anti injeção de chave).
+fn is_safe_remote_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.contains("..")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+}
+
+/// Força upload-pack / receive-pack padrão e desliga `remote.*.vcs` (helpers externos).
+fn defensive_remote_transport_args(repo_path: &str) -> Vec<String> {
+    let Ok(repo) = git2::Repository::discover(repo_path) else {
+        return Vec::new();
+    };
+    let Ok(remotes) = repo.remotes() else {
+        return Vec::new();
+    };
+    let mut args = Vec::new();
+    for name in remotes.iter().flatten() {
+        if !is_safe_remote_name(name) {
+            continue;
+        }
+        args.push("-c".into());
+        args.push(format!("remote.{name}.uploadpack=git-upload-pack"));
+        args.push("-c".into());
+        args.push(format!("remote.{name}.receivepack=git-receive-pack"));
+        args.push("-c".into());
+        args.push(format!("remote.{name}.vcs="));
     }
     args
 }
@@ -91,6 +127,7 @@ fn read_global_credential_helper() -> Option<String> {
 /// Argumentos-base defensivos aplicados a TODA invocação do Git (PLANO §7.7/§11.5).
 pub fn defensive_base_args(repo_path: &str) -> Vec<String> {
     let mut args = defensive_config_args();
+    args.extend(defensive_remote_transport_args(repo_path));
     args.insert(0, repo_path.into());
     args.insert(0, "-C".into());
     args
@@ -484,6 +521,7 @@ mod tests {
         assert!(args.contains(&"core.sshCommand=".to_string()));
         assert!(args.contains(&"credential.helper=".to_string()));
         assert!(args.contains(&"protocol.ext.allow=never".to_string()));
+        assert!(args.contains(&"uploadpack.packObjectsHook=".to_string()));
         #[cfg(windows)]
         {
             let helper = args
@@ -580,5 +618,40 @@ mod tests {
         // Sem git real em C:/repo — run falha, mas não com erro de trait quebrado
         let err = cli.run(&cmd).expect_err("repo inexistente");
         assert!(!err.to_string().contains("use o método estático"));
+    }
+
+    #[test]
+    fn remote_transport_overrides_para_remotos_do_repo() {
+        let dir = std::env::temp_dir().join(format!("trilho-remote-def-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for args in [
+            vec!["init"],
+            vec!["remote", "add", "origin", "https://example.com/a.git"],
+            vec!["remote", "add", "upstream", "https://example.com/b.git"],
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&dir)
+                .status()
+                .unwrap()
+                .success());
+        }
+        let args = defensive_base_args(dir.to_str().unwrap());
+        let joined = args.join(" ");
+        assert!(joined.contains("remote.origin.uploadpack=git-upload-pack"), "{joined}");
+        assert!(joined.contains("remote.origin.receivepack=git-receive-pack"), "{joined}");
+        assert!(joined.contains("remote.origin.vcs="), "{joined}");
+        assert!(joined.contains("remote.upstream.uploadpack=git-upload-pack"), "{joined}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remote_name_unsafe_rejeitado() {
+        assert!(!is_safe_remote_name(""));
+        assert!(!is_safe_remote_name("evil;rm"));
+        assert!(!is_safe_remote_name("../x"));
+        assert!(is_safe_remote_name("origin"));
+        assert!(is_safe_remote_name("my-remote_1"));
     }
 }

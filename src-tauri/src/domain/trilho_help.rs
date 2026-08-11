@@ -455,20 +455,26 @@ const HELP_SAFETY: &str = r#"# Segurança
 - RF-08: preview do comando Git real antes de executar; a execução IPC exige
   o token de uso único emitido no preview (A-02) — o `WriteRequest` sozinho é
   rejeitado. Salvar na aba Arquivo faz preview interno + execute com o mesmo token
-  (sem modal, mas com vínculo backend).
+  (sem modal, mas com vínculo backend). Após falha na execução o token **não** é
+  restaurado (pode ter havido efeito parcial) — é preciso novo preview.
+- O «Comando Git» do diálogo é **uma linha por operação** (args juntados), não um
+  argumento por linha; Cancelar/Confirmar ficam fixos mesmo em telas baixas.
 - Spawn com lista de args (sem shell); paths confinados; validação de SHAs/refs.
+- Editor interno: recusa symlink/junction e arquivos **> 2 MiB**.
+- Timeouts Git (rede ~15 min / local ~2 min) com interrupção da árvore de processos.
 - Credenciais no Windows Credential Manager / GCM.
 - Assistente: allowlist + saída tratada como não confiável; prompt injection
-  em diffs/mensagens é ignorado; destrutivas default-deny via assistente.
+  em diffs/mensagens é ignorado; destrutivas default-deny via assistente;
+  fetch pelo assistente vira proposta RF-08 (não roda sozinho).
 
 ## Por que o «Comando Git» do diálogo parece longo? (RF-08)
 
-Não é uma sequência de vários comandos. É **um** `git` com:
+Não é uma sequência de vários comandos. É **um** `git` (uma linha) com:
 
 1. `-C <caminho-do-repo>` — roda no repositório aberto (sem depender do cwd do processo).
 2. Vários `-c chave=valor` — **overrides defensivos** aplicados a **toda** invocação Git
    do Trilho (leitura e escrita), para o resultado ser previsível e não depender da
-   config local do usuário (hooks, LFS, fsmonitor, etc.).
+   config local do usuário (hooks, LFS, fsmonitor, sshCommand, etc.).
 3. O verbo da operação — ex.: `add -A` (stage tudo), `commit …`, `push`, etc.
 
 No Git Bash você costuma digitar só o verbo (`git add .`). No Trilho o preview mostra
@@ -480,6 +486,12 @@ Estes são exatamente os aplicados pelo executor seguro (`defensive_config_args`
 
 - `core.fsmonitor=false` — evita fsmonitor externo interferindo.
 - `core.hooksPath=` — desativa hooks do repo/usuário nesta invocação.
+- `core.sshCommand=` — anula `core.sshCommand` hostil da config local.
+- `credential.helper=` + helper confiável do SO (`manager` / equivalente) —
+  não herda `credential.helper=!…` do repositório.
+- `uploadpack.packObjectsHook=` — desliga hook de pack-objects.
+- Por remoto do repo: `remote.<nome>.uploadpack=git-upload-pack`,
+  `receivepack=git-receive-pack` e `vcs=` (impede helpers/VCS externos).
 - `gc.auto=0` — não dispara garbage collection automática no meio da operação.
 - `protocol.ext.allow=never` — bloqueia protocolo `ext::` (risco de execução).
 - `filter.lfs.required=false` e `filter.lfs.process=` / `clean=` / `smudge=` vazios —
@@ -556,9 +568,10 @@ revisão determinística sem tools + tools de diff no chat geral. Default-deny e
 reset/force/reword/discard/shell; get_trilho_help topic=assistant.
 
 ## safety
-Preview RF-08; comando longo = `-C` + `-c` defensivos + verbo (`add -A` etc.);
-sem shell; cofre de credenciais; default-deny destrutivas no assistente; não inventar
-fora do catálogo.
+Preview RF-08 + token A-02 one-shot (falha não restaura token); comando = **uma linha**
+(`-C` + `-c` defensivos + uploadpack/receivepack/vcs + verbo); editor sem symlink e
+≤2 MiB; timeouts Git; cofre de credenciais; default-deny destrutivas no assistente;
+não inventar fora do catálogo.
 "#;
 
 #[cfg(test)]
@@ -615,8 +628,14 @@ mod tests {
         let t = help_for_topic("comando-git");
         assert!(t.contains("core.fsmonitor=false"));
         assert!(t.contains("core.hooksPath="));
+        assert!(t.contains("core.sshCommand="));
+        assert!(t.contains("uploadpack.packObjectsHook="));
+        assert!(t.contains("git-upload-pack"));
         assert!(t.contains("filter.lfs.required=false"));
         assert!(t.contains("add -A"));
+        assert!(t.contains("uma linha"));
+        assert!(t.contains("2 MiB"));
+        assert!(t.contains("não") && t.contains("restaurado"));
         assert!(t.to_lowercase().contains("não invente") || t.to_lowercase().contains("não inventar"));
     }
 

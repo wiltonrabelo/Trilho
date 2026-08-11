@@ -99,7 +99,10 @@ impl<T: Clone> OpAuthStore<T> {
         Ok(entry)
     }
 
-    /// Devolve o token após falha na execução (permite retry no mesmo diálogo).
+    /// Reinsere um token **apenas** se nenhum efeito colateral Git ocorreu.
+    /// Após `execute_*` (mesmo com erro), **não** restaurar — risco de retry
+    /// sobre operação parcial. O FE deve pedir novo preview.
+    #[allow(dead_code)]
     pub fn restore(&self, token: &str, entry: OpAuthEntry<T>) {
         let token = token.trim();
         if token.is_empty() {

@@ -482,10 +482,11 @@ pub async fn execute_write_operation(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // take() consome o token; não restaurar após falha — a escrita pode ter sido
+    // parcial (multi-step / rede). O FE pede novo preview (A-02 one-shot).
     let entry = state.write_auth().take(&authorization)?;
     let path = state.repo_path()?;
     if !crate::application::same_repo_path(&entry.repo_path, &path) {
-        state.write_auth().restore(&authorization, entry);
         return Err(
             "Repositório mudou desde o preview. Peça a confirmação novamente.".into(),
         );
@@ -525,10 +526,11 @@ pub async fn execute_write_operation(
         outcome
     });
     if let Err(e) = result {
-        // Mantém o mesmo token no diálogo para o usuário tentar de novo
-        // (ex.: credencial Git ainda não pronta).
-        state.write_auth().restore(&authorization, entry);
-        return Err(e.to_string());
+        let msg = e.to_string();
+        if msg.to_lowercase().contains("preview novamente") {
+            return Err(msg);
+        }
+        return Err(format!("{msg} Peça a confirmação novamente."));
     }
     let _ = app.emit("repo-changed", ());
     Ok(())
@@ -671,17 +673,19 @@ pub async fn execute_clone_remote(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CloneResult, String> {
+    // take() consome o token; clone parcial não pode reutilizar a mesma autorização.
     let entry = state.clone_auth().take(&authorization)?;
     let request = entry.request.clone();
     let app_clone = app.clone();
     let path = match tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
         .await
-        .map_err(|e| format!("Clone interrompido: {e}"))?
+        .map_err(|e| format!("Clone interrompido: {e}. Peça a confirmação novamente."))?
     {
         Ok(p) => p,
         Err(e) => {
-            state.clone_auth().restore(&authorization, entry);
-            return Err(e.to_string());
+            return Err(format!(
+                "{e} Peça a confirmação novamente."
+            ));
         }
     };
     let warning = validate_post_clone(&path).err().map(|e| e.to_string());

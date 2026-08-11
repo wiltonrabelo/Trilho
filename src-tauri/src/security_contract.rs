@@ -33,6 +33,7 @@ mod tests {
         let joined = args.join(" ");
         assert!(joined.contains("core.hooksPath="), "{joined}");
         assert!(joined.contains("core.sshCommand="), "{joined}");
+        assert!(joined.contains("uploadpack.packObjectsHook="), "{joined}");
         assert!(
             joined.contains("credential.helper=") || joined.contains("credential.helper"),
             "{joined}"
