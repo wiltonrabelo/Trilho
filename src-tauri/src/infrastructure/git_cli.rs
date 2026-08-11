@@ -53,7 +53,9 @@ fn is_safe_remote_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
-/// Força upload-pack / receive-pack padrão e desliga `remote.*.vcs` (helpers externos).
+/// Força upload-pack / receive-pack padrão (SSH/smart HTTP).
+/// Não usar `-c remote.*.vcs=`: string vazia faz o Git invocar `git-remote-` sem nome
+/// (`remote helper "" aborted session`) e quebra push/fetch HTTPS.
 fn defensive_remote_transport_args(repo_path: &str) -> Vec<String> {
     let Ok(repo) = git2::Repository::discover(repo_path) else {
         return Vec::new();
@@ -70,10 +72,40 @@ fn defensive_remote_transport_args(repo_path: &str) -> Vec<String> {
         args.push(format!("remote.{name}.uploadpack=git-upload-pack"));
         args.push("-c".into());
         args.push(format!("remote.{name}.receivepack=git-receive-pack"));
-        args.push("-c".into());
-        args.push(format!("remote.{name}.vcs="));
     }
     args
+}
+
+/// Recusa remotes com `vcs` customizado (não dá para “desligar” com `-c key=`).
+fn reject_foreign_vcs_remotes(repo_path: &str) -> Result<(), GitError> {
+    let repo = match git2::Repository::discover(repo_path) {
+        Ok(r) => r,
+        Err(_) => return Ok(()),
+    };
+    let remotes = match repo.remotes() {
+        Ok(r) => r,
+        Err(_) => return Ok(()),
+    };
+    let cfg = match repo.config() {
+        Ok(c) => c,
+        Err(_) => return Ok(()),
+    };
+    for name in remotes.iter().flatten() {
+        if !is_safe_remote_name(name) {
+            continue;
+        }
+        let key = format!("remote.{name}.vcs");
+        if let Ok(val) = cfg.get_string(&key) {
+            let v = val.trim();
+            if !v.is_empty() {
+                return Err(GitError::Git(format!(
+                    "Remoto «{name}» define remote.{name}.vcs={v} — bloqueado por segurança. \
+                     Remova essa chave no Git para usar o transporte nativo."
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Helper de credencial permitido (allowlist). Preferência: config global segura → default do SO.
@@ -142,9 +174,8 @@ fn local_operation_timeout() -> Duration {
     Duration::from_secs(2 * 60)
 }
 
-/// Timeout por classe de operação (M-02): rede pode demorar; local não.
-fn timeout_for_git_command(command: &GitCommand) -> Duration {
-    let network = command.args.iter().any(|a| {
+fn is_network_git_command(command: &GitCommand) -> bool {
+    command.args.iter().any(|a| {
         matches!(
             a.as_str(),
             "fetch"
@@ -156,8 +187,12 @@ fn timeout_for_git_command(command: &GitCommand) -> Duration {
                 | "approve"
                 | "reject"
         )
-    });
-    if network {
+    })
+}
+
+/// Timeout por classe de operação (M-02): rede pode demorar; local não.
+fn timeout_for_git_command(command: &GitCommand) -> Duration {
+    if is_network_git_command(command) {
         network_operation_timeout()
     } else {
         local_operation_timeout()
@@ -352,6 +387,10 @@ impl SafeGitCli {
         stdin: Option<&[u8]>,
         extra_env: &[(&str, &str)],
     ) -> Result<std::process::Output, GitError> {
+        // Só em ops de rede: VCS externo no remote.* é vetor de execução.
+        if is_network_git_command(command) {
+            reject_foreign_vcs_remotes(&self.repo_path)?;
+        }
         let args = self.full_args(command);
         let mut cmd = Command::new("git");
         cmd.args(&args)
@@ -641,8 +680,33 @@ mod tests {
         let joined = args.join(" ");
         assert!(joined.contains("remote.origin.uploadpack=git-upload-pack"), "{joined}");
         assert!(joined.contains("remote.origin.receivepack=git-receive-pack"), "{joined}");
-        assert!(joined.contains("remote.origin.vcs="), "{joined}");
+        assert!(
+            !joined.contains("remote.origin.vcs="),
+            "vcs= vazio quebra o remote helper HTTPS: {joined}"
+        );
         assert!(joined.contains("remote.upstream.uploadpack=git-upload-pack"), "{joined}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reject_foreign_vcs_bloqueia_remoto() {
+        let dir = std::env::temp_dir().join(format!("trilho-vcs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for args in [
+            vec!["init"],
+            vec!["remote", "add", "origin", "https://example.com/a.git"],
+            vec!["config", "remote.origin.vcs", "svn"],
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(&args)
+                .current_dir(&dir)
+                .status()
+                .unwrap()
+                .success());
+        }
+        let err = reject_foreign_vcs_remotes(dir.to_str().unwrap()).expect_err("vcs");
+        assert!(err.to_string().contains("vcs"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -194,7 +194,7 @@ Leituras úteis (não exaustivo):
 ### Git endurecido (rede / RCE via config local)
 
 - Toda invocação via `SafeGitCli` aplica `-c` defensivo: hooks off, `protocol.ext` never, LFS filters off, **`core.sshCommand=`**, **`credential.helper=`** + helper confiável do SO (`manager` / `manager-core` / `osxkeychain`, preferindo o global allowlisted), **`uploadpack.packObjectsHook=`**
-- Por remoto do repo: força `remote.<n>.uploadpack=git-upload-pack`, `receivepack=git-receive-pack` e `vcs=` (bloqueia helpers/VCS customizados no `.git/config`)
+- Por remoto do repo: força `remote.<n>.uploadpack=git-upload-pack` e `receivepack=git-receive-pack`; se `remote.<n>.vcs` estiver definido, a op de rede é **recusada** (não usar `-c vcs=` vazio — quebra o remote helper HTTPS)
 - Timeout por classe (rede 15 min / local 2 min) com kill da árvore de processos — também em `run_unbound_git` (`ls-remote`) e `wait_child_status_with_timeout` (`git clone` com progresso)
 - `fetch_all_remote_branch_refs` usa `SafeGitCli` (não `Command::new("git")` cru)
 - Clone remoto também exige token A-02 (`preview_clone_remote` → `execute_clone_remote`)

@@ -41,7 +41,7 @@ Tratar como **não confiáveis** por padrão:
 
 | Ameaça | Controle | ID Codex |
 |--------|----------|----------|
-| Hook/fsmonitor/sshCommand/uploadpack/vcs no clone/fetch | Config efêmera (`core.hooksPath=`, `core.sshCommand=`, `uploadpack.packObjectsHook=`, `remote.*.uploadpack/receivepack/vcs`, helper OS) | C-01 |
+| Hook/fsmonitor/sshCommand/uploadpack/vcs no clone/fetch | Config efêmera (`core.hooksPath=`, `core.sshCommand=`, `uploadpack.packObjectsHook=`, `remote.*.uploadpack/receivepack`, helper OS); `remote.*.vcs` customizado → recusa | C-01 |
 | Retry com token após execute parcial | Token A-02 consumido no `take`; falha **não** restaura — novo preview | A-02 |
 | LLM faz `git fetch` sozinho | Fetch vira proposta RF-08 | A-01 |
 | Execute sem preview / replay | Token one-shot preview→execute (write + clone) | A-02 |

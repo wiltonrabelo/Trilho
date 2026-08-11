@@ -490,8 +490,9 @@ Estes são exatamente os aplicados pelo executor seguro (`defensive_config_args`
 - `credential.helper=` + helper confiável do SO (`manager` / equivalente) —
   não herda `credential.helper=!…` do repositório.
 - `uploadpack.packObjectsHook=` — desliga hook de pack-objects.
-- Por remoto do repo: `remote.<nome>.uploadpack=git-upload-pack`,
-  `receivepack=git-receive-pack` e `vcs=` (impede helpers/VCS externos).
+- Por remoto do repo: `remote.<nome>.uploadpack=git-upload-pack` e
+  `receivepack=git-receive-pack`. Se existir `remote.<nome>.vcs=…`, a operação
+  de rede é **recusada** (não dá para anular com `-c vcs=` sem quebrar o HTTPS).
 - `gc.auto=0` — não dispara garbage collection automática no meio da operação.
 - `protocol.ext.allow=never` — bloqueia protocolo `ext::` (risco de execução).
 - `filter.lfs.required=false` e `filter.lfs.process=` / `clean=` / `smudge=` vazios —
@@ -569,7 +570,7 @@ reset/force/reword/discard/shell; get_trilho_help topic=assistant.
 
 ## safety
 Preview RF-08 + token A-02 one-shot (falha não restaura token); comando = **uma linha**
-(`-C` + `-c` defensivos + uploadpack/receivepack/vcs + verbo); editor sem symlink e
+(`-C` + `-c` defensivos + uploadpack/receivepack + verbo); editor sem symlink e
 ≤2 MiB; timeouts Git; cofre de credenciais; default-deny destrutivas no assistente;
 não inventar fora do catálogo.
 "#;
