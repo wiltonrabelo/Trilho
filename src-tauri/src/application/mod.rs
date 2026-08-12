@@ -1,12 +1,12 @@
 //! Camada de Aplicação — portas (traits) e estado compartilhado.
 
+mod app_error;
 mod assistant_service;
 mod backup_ref;
 mod clone_post_check;
 mod clone_service;
 mod app_state;
 mod audit_service;
-mod branch_origin;
 mod llm_provider;
 mod operations;
 mod repo_context;
@@ -14,12 +14,12 @@ mod write_auth;
 mod write_gates;
 mod write_service;
 
+pub use app_error::AppError;
 pub use assistant_service::{run_chat as run_assistant_chat, test_connection as test_llm_connection};
 pub use clone_post_check::validate_post_clone;
 pub use clone_service::{execute_clone, list_clone_remote_branches, preview_clone};
 pub use app_state::AppState;
 pub use audit_service::record_write_outcome;
-pub use branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};
 pub use llm_provider::{LlmChatRequest, LlmChatResponse, LlmMessage, LlmProvider, LlmToolCall, LlmToolDef};
 pub use operations::{
     CommitFileDiff, FileDiff, GitOperation, RevListAheadBehind, ShowCommit,
@@ -27,7 +27,7 @@ pub use operations::{
 };
 pub use repo_context::RepoContext;
 pub use write_auth::same_repo_path;
-pub use write_service::{execute_write, preview_write};
+pub use write_service::{execute_write_prevalidated, preview_write};
 
 use crate::domain::{
     BlameLine, BlameSource, BranchOrigin, Commit, FileChange, RepoStatus, SyncInfo, TrailEntry,

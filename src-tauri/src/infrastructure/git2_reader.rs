@@ -1,9 +1,10 @@
 //! Adaptador de leitura via libgit2 (RF-01, RF-04 parcial).
 
 use crate::application::{
-    apply_reflog_hint, infer_branch_origin, BlameProvider, GitCommand, GitError, GitOperation,
-    GitReader, RevListAheadBehind, StatusPorcelain, TrailReader,
+    BlameProvider, GitCommand, GitError, GitOperation, GitReader, RevListAheadBehind,
+    StatusPorcelain, TrailReader,
 };
+use crate::infrastructure::branch_origin::{apply_reflog_hint, branch_tip, infer_branch_origin};
 use crate::domain::{
     BlameLine, BlameSource, BranchOrigin, Commit, FileChange, FileChangeKind,
     InProgressKind, OperationInProgress, RepoStatus, SyncInfo, TrailEntry, TrailKind,
@@ -116,7 +117,7 @@ impl TrailReader for Git2Reader {
             .ok()
             .and_then(|h| h.target())
             .ok_or(GitError::NotARepository)?;
-        let base_tip = crate::application::branch_tip(&repo, base)
+        let base_tip = branch_tip(&repo, base)
             .ok_or_else(|| GitError::Git(format!("Branch base «{base}» não encontrada.")))?;
         let merge_base = repo
             .merge_base(head_oid, base_tip)
@@ -201,7 +202,7 @@ impl TrailReader for Git2Reader {
             .and_then(|h| h.target())
             .ok_or(GitError::NotARepository)?;
 
-        let branch_tip = crate::application::branch_tip(&repo, branch).ok_or_else(|| {
+        let tip = branch_tip(&repo, branch).ok_or_else(|| {
             GitError::Git(format!("Branch «{branch}» não encontrada neste repositório."))
         })?;
 
@@ -220,7 +221,7 @@ impl TrailReader for Git2Reader {
 
         let mut revwalk = repo.revwalk().map_err(|e| GitError::Io(e.to_string()))?;
         revwalk
-            .push(branch_tip)
+            .push(tip)
             .map_err(|e| GitError::Io(e.to_string()))?;
         revwalk
             .hide(head_oid)

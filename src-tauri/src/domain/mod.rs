@@ -14,7 +14,7 @@ pub use assistant::{
 pub use audit::{AuditAction, AuditEntry, AuditResult};
 pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
-pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetModeDto, WriteRequest};
+pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetModeDto, WriteOutcome, WriteRequest};
 pub use trilho_help::help_for_topic;
 
 use serde::{Deserialize, Serialize};

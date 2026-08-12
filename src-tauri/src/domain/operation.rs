@@ -41,6 +41,18 @@ pub struct CloneResult {
     pub warning: Option<String>,
 }
 
+/// Resultado estruturado da execução de escrita — o frontend decide o fluxo
+/// pós-operação (ex.: revert criou commit?) sem heurísticas sobre mensagens.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteOutcome {
+    /// HEAD apontava para outro commit após a execução.
+    pub head_moved: bool,
+    /// Id do HEAD após a execução (`None` em repositório vazio).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_head_id: Option<String>,
+}
+
 /// Pedido de operação de escrita — espelha o frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -458,5 +470,97 @@ mod tests {
     fn push_force_deserializa() {
         let req: WriteRequest = serde_json::from_str(r#"{"kind":"pushForce"}"#).unwrap();
         assert!(matches!(req, WriteRequest::PushForce));
+    }
+
+    /// Parity do contrato Rust ↔ TS: cada variant serializa para um `kind`
+    /// presente em `shared/write-request-kinds.json` — o mesmo arquivo é
+    /// validado no frontend (`src/lib/writeRequestKinds.test.ts`). Renomear
+    /// uma variant ou mudar atributos serde sem atualizar o JSON (e portanto
+    /// o TS) quebra este teste.
+    #[test]
+    fn kinds_serializados_batem_com_contrato_compartilhado() {
+        let contract: Vec<String> = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../shared/write-request-kinds.json"
+        )))
+        .expect("shared/write-request-kinds.json inválido");
+
+        let all_variants: Vec<WriteRequest> = vec![
+            WriteRequest::Stage { path: "f".into() },
+            WriteRequest::StageMany { paths: vec![] },
+            WriteRequest::StageAll,
+            WriteRequest::Unstage { path: "f".into() },
+            WriteRequest::UnstageMany { paths: vec![] },
+            WriteRequest::UnstageAll,
+            WriteRequest::Commit { summary: "s".into(), body: None, amend: false },
+            WriteRequest::Uncommit,
+            WriteRequest::Revert { commit_id: "a".into() },
+            WriteRequest::CherryPick { commit_id: None, commit_ids: vec![], record_origin: false },
+            WriteRequest::Push,
+            WriteRequest::PullFfOnly,
+            WriteRequest::FetchRemote,
+            WriteRequest::UnshallowHistory,
+            WriteRequest::SwitchBranch { branch: "b".into(), track_remote: None },
+            WriteRequest::DeleteLocalBranch { branch: "b".into() },
+            WriteRequest::DeleteRemoteBranch { remote: "origin".into(), branch: "b".into() },
+            WriteRequest::StashPush { message: None, include_untracked: false },
+            WriteRequest::StashApply { index: 0 },
+            WriteRequest::StashPop { index: 0 },
+            WriteRequest::StashDrop { index: 0 },
+            WriteRequest::CreateTag {
+                name: "v1".into(),
+                commit_id: "a".into(),
+                annotated: true,
+                message: None,
+                push_to_remote: false,
+            },
+            WriteRequest::DeleteTag { name: "v1".into() },
+            WriteRequest::DiscardWorktree { path: "f".into() },
+            WriteRequest::DiscardWorktreeMany { paths: vec![] },
+            WriteRequest::DiscardWorktreeAll,
+            WriteRequest::RemoveUntracked { path: "f".into() },
+            WriteRequest::RemoveUntrackedMany { paths: vec![] },
+            WriteRequest::DiscardHunk { path: "f".into(), patch: "p".into(), staged: false },
+            WriteRequest::ResolveConflictSide { path: "f".into(), side: "ours".into() },
+            WriteRequest::ResolveConflictContent { path: "f".into(), content: "c".into() },
+            WriteRequest::SaveWorktreeFile { path: "f".into(), content: "c".into() },
+            WriteRequest::AbortRevert,
+            WriteRequest::ContinueRevert,
+            WriteRequest::AbortMerge,
+            WriteRequest::ContinueMerge,
+            WriteRequest::AbortCherryPick,
+            WriteRequest::ContinueCherryPick,
+            WriteRequest::SkipRevert,
+            WriteRequest::SkipCherryPick,
+            WriteRequest::Reword {
+                commit_id: "a".into(),
+                summary: "s".into(),
+                body: None,
+                force_push: false,
+            },
+            WriteRequest::Reset {
+                commit_id: "a".into(),
+                mode: ResetModeDto::Mixed,
+                force_push: false,
+            },
+            WriteRequest::PushForce,
+            WriteRequest::Publish { url: None },
+        ];
+
+        let serialized: Vec<String> = all_variants
+            .iter()
+            .map(|req| {
+                serde_json::to_value(req).unwrap()["kind"]
+                    .as_str()
+                    .expect("kind ausente na serialização")
+                    .to_string()
+            })
+            .collect();
+
+        assert_eq!(
+            serialized, contract,
+            "variants do WriteRequest divergem de shared/write-request-kinds.json — \
+             atualize o JSON e o WriteRequestDto do frontend"
+        );
     }
 }

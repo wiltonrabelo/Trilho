@@ -6,6 +6,7 @@ mod blame;
 mod blame_parser;
 mod branch_diff;
 mod branch_order;
+mod branch_origin;
 mod branches;
 mod audit_log;
 mod conflict;
@@ -15,6 +16,7 @@ mod git2_reader;
 mod git_cli;
 pub mod llm;
 mod llm_credentials;
+mod repo_query;
 mod reword;
 mod repo_watcher;
 mod ssh_keys;
@@ -57,10 +59,13 @@ pub use llm_credentials::{
     clear_llm_api_key, get_llm_api_key, has_llm_api_key, store_llm_api_key,
 };
 pub use github_pr::{clear_branch_pr_cache, get_branch_pr_status, BranchPrStatus};
-pub use git2_reader::{repo_info, Git2Reader};
+pub use git2_reader::{is_git_repo, repo_info, Git2Reader};
 pub use git_cli::{
-    defensive_config_args, network_operation_timeout, run_unbound_git, wait_child_status_with_timeout,
+    defensive_config_args, network_operation_timeout, run_streaming_git, run_unbound_git,
     SafeGitCli,
+};
+pub use repo_query::{
+    commit_summary, head_commit_id, is_merge_commit, primary_remote, resolve_commit_id,
 };
 pub use reword::execute_reword;
 pub use repo_watcher::RepoWatcher;

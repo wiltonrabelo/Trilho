@@ -6,19 +6,8 @@ import {
   previewCloneRemote,
   runningInTauri,
 } from "@/lib/api";
+import { errorMessage, isPreviewRequiredError } from "@/lib/errors";
 import type { CloneFormValues, CloneRequestDto, OperationPreviewDto, RepoInfo } from "@/types";
-
-function isStaleAuthError(msg: string): boolean {
-  const m = msg.toLowerCase();
-  return (
-    m.includes("autorização") ||
-    m.includes("autorizacao") ||
-    m.includes("já usada") ||
-    m.includes("ja usada") ||
-    m.includes("expirada") ||
-    m.includes("preview novamente")
-  );
-}
 
 export function useClone(
   onSuccess: (info: RepoInfo, warning: string | null) => Promise<void>,
@@ -116,8 +105,8 @@ export function useClone(
       setProgress(null);
       await onSuccess(result.repo, result.warning ?? null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (pending && isStaleAuthError(msg)) {
+      const msg = errorMessage(e);
+      if (pending && isPreviewRequiredError(e)) {
         try {
           const p = await previewCloneRemote(pending);
           setPreview(p);

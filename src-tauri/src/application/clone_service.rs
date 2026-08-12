@@ -4,14 +4,12 @@ use crate::application::GitError;
 use crate::application::AppState;
 use crate::domain::{CloneRequest, OperationPreview};
 use crate::infrastructure::{
-    defensive_config_args, network_operation_timeout, run_unbound_git, validate_clone_branch,
-    validate_clone_depth, validate_clone_destination, validate_folder_name, validate_remote_url,
-    wait_child_status_with_timeout, repo_name_from_url,
+    defensive_config_args, network_operation_timeout, run_streaming_git, run_unbound_git,
+    validate_clone_branch, validate_clone_depth, validate_clone_destination, validate_folder_name,
+    validate_remote_url, repo_name_from_url,
 };
 use serde::Serialize;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Clone, Serialize)]
@@ -39,15 +37,6 @@ fn append_clone_flags(parts: &mut Vec<String>, branch: &Option<String>, depth: &
     if let Some(b) = branch {
         parts.push("--branch".into());
         parts.push(b.clone());
-    }
-}
-
-fn append_clone_flags_cmd(cmd: &mut Command, branch: &Option<String>, depth: &Option<u32>) {
-    if let Some(d) = depth {
-        cmd.arg("--depth").arg(d.to_string());
-    }
-    if let Some(b) = branch {
-        cmd.arg("--branch").arg(b);
     }
 }
 
@@ -144,42 +133,25 @@ pub fn execute_clone(req: &CloneRequest, app: &AppHandle) -> Result<String, GitE
     let dest = resolve_dest(parent, &folder);
     validate_clone_destination(&dest)?;
 
-    let mut cmd = Command::new("git");
-    cmd.args(defensive_config_args())
-        .arg("clone")
-        .arg("--progress");
-    append_clone_flags_cmd(&mut cmd, &branch, &depth);
-    cmd.arg(&url)
-        .arg(&folder)
-        .current_dir(parent)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GCM_INTERACTIVE", "always");
+    let mut args: Vec<String> = vec!["clone".into(), "--progress".into()];
+    append_clone_flags(&mut args, &branch, &depth);
+    args.push(url);
+    args.push(folder);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| GitError::Io(format!("Não foi possível executar git clone: {e}")))?;
-
-    if let Some(stderr) = child.stderr.take() {
-        let app = app.clone();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    let _ = app.emit(
-                        "clone-progress",
-                        CloneProgressEvent {
-                            line: trimmed.to_string(),
-                        },
-                    );
-                }
-            }
-        });
-    }
-
-    let status = wait_child_status_with_timeout(child, network_operation_timeout())?;
+    let app_progress = app.clone();
+    let status = run_streaming_git(
+        &args,
+        Path::new(parent),
+        network_operation_timeout(),
+        move |line| {
+            let _ = app_progress.emit(
+                "clone-progress",
+                CloneProgressEvent {
+                    line: line.to_string(),
+                },
+            );
+        },
+    )?;
 
     if !status.success() {
         return Err(GitError::Git(

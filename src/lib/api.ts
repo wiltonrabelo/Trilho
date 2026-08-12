@@ -37,9 +37,27 @@ import type {
   ChatAssistantResponseDto,
   ChatMessageDto,
   AssistantUiContextDto,
+  WriteOutcomeDto,
 } from "@/types";
 
+import { toAppError } from "@/lib/errors";
 import { MOCK_APP_INFO, MOCK_COMMITS, MOCK_REPO, MOCK_STATUS } from "@/lib/mock-data";
+
+/**
+ * Comandos preview/execute rejeitam com `AppError { code, message }` (Rust).
+ * Normaliza a rejeição crua para `AppIpcError` — o restante do app decide o
+ * fluxo pelo `code` (ver src/lib/errors.ts).
+ */
+async function invokeWithAppError<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (raw) {
+    throw toAppError(raw);
+  }
+}
 
 
 
@@ -470,16 +488,18 @@ export async function previewPublishOperation(
   }
   // Contrato com o backend: SÓ `url`. Mandar `url` + `remoteUrl` (aliases do
   // mesmo campo serde) causava `duplicate field 'url'` na deserialização.
-  return invoke<OperationPreviewDto>("preview_write_operation", {
+  return invokeWithAppError<OperationPreviewDto>("preview_write_operation", {
     request: { kind: "publish", url },
   });
 }
 
 export async function executePublishOperation(
   authorization: string,
-): Promise<void> {
-  if (!isTauri()) return;
-  return invoke("execute_write_operation", { authorization });
+): Promise<WriteOutcomeDto> {
+  if (!isTauri()) return { headMoved: false };
+  return invokeWithAppError<WriteOutcomeDto>("execute_write_operation", {
+    authorization,
+  });
 }
 
 export async function previewWriteOperation(
@@ -494,16 +514,18 @@ export async function previewWriteOperation(
       authorization: "mock-auth",
     };
   }
-  return invoke<OperationPreviewDto>("preview_write_operation", { request });
+  return invokeWithAppError<OperationPreviewDto>("preview_write_operation", {
+    request,
+  });
 }
 
 /** Executa escrita autorizada pelo token do preview (A-02). Sem token = rejeitado. */
 export async function executeWriteOperation(
   authorization: string,
   options?: { fromAssistant?: boolean },
-): Promise<void> {
-  if (!isTauri()) return;
-  return invoke("execute_write_operation", {
+): Promise<WriteOutcomeDto> {
+  if (!isTauri()) return { headMoved: true };
+  return invokeWithAppError<WriteOutcomeDto>("execute_write_operation", {
     authorization,
     fromAssistant: options?.fromAssistant ?? false,
   });
@@ -689,7 +711,9 @@ export async function previewCloneRemote(
       authorization: "mock-auth",
     };
   }
-  return invoke<OperationPreviewDto>("preview_clone_remote", { request });
+  return invokeWithAppError<OperationPreviewDto>("preview_clone_remote", {
+    request,
+  });
 }
 
 export async function executeCloneRemote(
@@ -698,6 +722,8 @@ export async function executeCloneRemote(
   if (!isTauri()) {
     return { repo: MOCK_REPO, warning: null };
   }
-  return invoke<CloneResultDto>("execute_clone_remote", { authorization });
+  return invokeWithAppError<CloneResultDto>("execute_clone_remote", {
+    authorization,
+  });
 }
 

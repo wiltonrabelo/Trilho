@@ -1,8 +1,7 @@
 //! Gates de segurança para operações de escrita (RF-06, RF-07, RF-15).
 
 use crate::application::{GitCommand, GitError, GitReader};
-use crate::infrastructure::SafeGitCli;
-use git2::Repository;
+use crate::infrastructure::{head_commit_id, resolve_commit_id, SafeGitCli};
 
 /// `true` se `sha` já está no remote-tracking ref (commit enviado).
 pub fn is_commit_on_remote(
@@ -31,19 +30,9 @@ pub fn head_is_local_only(reader: &dyn GitReader, cli: &SafeGitCli) -> Result<bo
         return Ok(true);
     };
     let repo_path = cli.repo_path();
-    let repo = Repository::discover(repo_path).map_err(|e| GitError::Io(e.to_string()))?;
-    let head = repo
-        .head()
-        .ok()
-        .and_then(|h| h.target())
-        .ok_or(GitError::Git("Repositório sem HEAD.".into()))?;
-    let upstream_oid = repo
-        .revparse_single(&upstream)
-        .ok()
-        .and_then(|o| o.peel_to_commit().ok())
-        .map(|c| c.id());
-    if upstream_oid == Some(head) {
+    let head = head_commit_id(repo_path)?;
+    if resolve_commit_id(repo_path, &upstream)? == Some(head.clone()) {
         return Ok(false);
     }
-    is_commit_on_remote(cli, &upstream, &head.to_string()).map(|on| !on)
+    is_commit_on_remote(cli, &upstream, &head).map(|on| !on)
 }

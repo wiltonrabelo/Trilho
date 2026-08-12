@@ -210,14 +210,10 @@ fn validate_git_repo(path: &str) -> Result<(), String> {
     if !p.is_dir() {
         return Err("O caminho informado não é uma pasta.".into());
     }
-    if p.join(".git").is_dir() || p.join(".git").is_file() {
+    if crate::infrastructure::is_git_repo(path) {
         return Ok(());
     }
-    // tentativa via git2 discover
-    git2::Repository::discover(&p).map_err(|_| {
-        "Esta pasta não é um repositório Git. Escolha uma pasta que contenha .git.".to_string()
-    })?;
-    Ok(())
+    Err("Esta pasta não é um repositório Git. Escolha uma pasta que contenha .git.".into())
 }
 
 #[cfg(test)]

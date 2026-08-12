@@ -385,6 +385,13 @@ export type WriteRequestDto =
   | { kind: "pushForce" }
   | { kind: "publish"; url: string | null };
 
+/** Resultado estruturado da execução de escrita — espelha `WriteOutcome` (Rust). */
+export interface WriteOutcomeDto {
+  /** HEAD apontava para outro commit após a execução (ex.: revert criou commit). */
+  headMoved: boolean;
+  newHeadId?: string | null;
+}
+
 export interface CloneRequestDto {
   url: string;
   parentDir: string;

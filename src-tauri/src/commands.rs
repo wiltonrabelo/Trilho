@@ -1,11 +1,12 @@
 //! Comandos IPC expostos ao frontend — fachada fina sobre casos de uso.
 
 use crate::application::{
-    execute_clone, execute_write, list_clone_remote_branches as fetch_clone_remote_branches,
-    preview_clone, preview_write, validate_post_clone, AppState, CommitFileDiff, FileDiff,
-    GitError, RepoContext, ShowCommit, TrailReader,
+    execute_clone, execute_write_prevalidated,
+    list_clone_remote_branches as fetch_clone_remote_branches, preview_clone, preview_write,
+    validate_post_clone, AppError, AppState, CommitFileDiff, FileDiff, GitError, RepoContext,
+    ShowCommit, TrailReader,
 };
-use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteRequest};
+use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteOutcome, WriteRequest};
 use crate::infrastructure::{
     detect_credential_status, ensure_gcm_configured, fetch_all_remote_branch_refs,
     get_branch_file_diff, list_branch_diff, list_local_branches as fetch_local_branches,
@@ -461,18 +462,28 @@ fn parse_blame_source(raw: &str) -> Result<crate::domain::BlameSource, GitError>
 pub async fn preview_write_operation(
     request: WriteRequest,
     state: State<'_, AppState>,
-) -> Result<OperationPreview, String> {
-    let path = state.repo_path()?;
-    let ctx = repo_context(&state)?;
-    let mut preview = preview_write(&ctx, &path, &request).map_err(|e| e.to_string())?;
+) -> Result<OperationPreview, AppError> {
+    let path = state.repo_path().map_err(AppError::operation_failed)?;
+    let ctx = repo_context(&state).map_err(AppError::operation_failed)?;
+    let mut preview = preview_write(&ctx, &path, &request)?;
     // A-02: só opera se o gate não bloqueou — token amarra preview → execute.
     if preview.blocked.is_none() {
         let token = state
             .write_auth()
-            .issue(&path, &request, &preview.commands)?;
+            .issue(&path, &request, &preview.commands)
+            .map_err(AppError::operation_failed)?;
         preview.authorization = Some(token);
     }
     Ok(preview)
+}
+
+/// Id do commit em HEAD via porta de leitura — `None` em repositório vazio.
+fn current_head_id(ctx: &RepoContext) -> Option<String> {
+    ctx.reader()
+        .list_commits(1, None, true)
+        .ok()
+        .and_then(|commits| commits.into_iter().next())
+        .map(|c| c.id)
 }
 
 #[tauri::command]
@@ -481,26 +492,29 @@ pub async fn execute_write_operation(
     from_assistant: Option<bool>,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<WriteOutcome, AppError> {
     // take() consome o token; não restaurar após falha — a escrita pode ter sido
     // parcial (multi-step / rede). O FE pede novo preview (A-02 one-shot).
-    let entry = state.write_auth().take(&authorization)?;
-    let path = state.repo_path()?;
+    let entry = state
+        .write_auth()
+        .take(&authorization)
+        .map_err(AppError::preview_required)?;
+    let path = state.repo_path().map_err(AppError::operation_failed)?;
     if !crate::application::same_repo_path(&entry.repo_path, &path) {
-        return Err(
-            "Repositório mudou desde o preview. Peça a confirmação novamente.".into(),
-        );
+        return Err(AppError::preview_required(
+            "Repositório mudou desde o preview. Peça a confirmação novamente.",
+        ));
     }
-    let ctx = repo_context(&state)?;
+    let ctx = repo_context(&state).map_err(AppError::operation_failed)?;
     let data_dir = state.data_dir().clone();
     let from_assistant = from_assistant.unwrap_or(false);
     let request = entry.request.clone();
     let expected_commands = entry.commands.clone();
+    let head_before = current_head_id(&ctx);
     let result = state.with_watch_suppressed(&app, || {
-        let preview = match preview_write(&ctx, ctx.repo_path(), &request) {
-            Ok(p) => p,
-            Err(e) => return Err(e),
-        };
+        // Revalidação única no momento da execução (TOCTOU): o preview aqui
+        // recalcula gates e argv; `execute_write_prevalidated` NÃO repete.
+        let preview = preview_write(&ctx, ctx.repo_path(), &request)?;
         if let Some(msg) = preview.blocked.clone() {
             return Err(GitError::Git(msg));
         }
@@ -511,7 +525,7 @@ pub async fn execute_write_operation(
                     .into(),
             ));
         }
-        let outcome = execute_write(&ctx, request.clone());
+        let outcome = execute_write_prevalidated(&ctx, request.clone());
         crate::application::record_write_outcome(
             &data_dir,
             &ctx,
@@ -526,14 +540,21 @@ pub async fn execute_write_operation(
         outcome
     });
     if let Err(e) = result {
+        // Token já consumido: qualquer falha exige novo preview (A-02 one-shot).
         let msg = e.to_string();
-        if msg.to_lowercase().contains("preview novamente") {
-            return Err(msg);
-        }
-        return Err(format!("{msg} Peça a confirmação novamente."));
+        let msg = if msg.to_lowercase().contains("preview novamente") {
+            msg
+        } else {
+            format!("{msg} Peça a confirmação novamente.")
+        };
+        return Err(AppError::preview_required(msg));
     }
     let _ = app.emit("repo-changed", ());
-    Ok(())
+    let new_head_id = current_head_id(&ctx);
+    Ok(WriteOutcome {
+        head_moved: new_head_id != head_before,
+        new_head_id,
+    })
 }
 
 #[tauri::command]
@@ -655,13 +676,14 @@ pub async fn list_clone_remote_branches(url: String) -> Result<Vec<String>, Stri
 pub async fn preview_clone_remote(
     request: CloneRequest,
     state: State<'_, AppState>,
-) -> Result<OperationPreview, String> {
-    let mut preview = preview_clone(&request).map_err(|e| e.to_string())?;
+) -> Result<OperationPreview, AppError> {
+    let mut preview = preview_clone(&request)?;
     // A-02: só opera se o gate não bloqueou — token amarra preview → execute.
     if preview.blocked.is_none() {
         let token = state
             .clone_auth()
-            .issue(&preview.repo_path, &request, &preview.commands)?;
+            .issue(&preview.repo_path, &request, &preview.commands)
+            .map_err(AppError::operation_failed)?;
         preview.authorization = Some(token);
     }
     Ok(preview)
@@ -672,26 +694,34 @@ pub async fn execute_clone_remote(
     authorization: String,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<CloneResult, String> {
+) -> Result<CloneResult, AppError> {
     // take() consome o token; clone parcial não pode reutilizar a mesma autorização.
-    let entry = state.clone_auth().take(&authorization)?;
+    let entry = state
+        .clone_auth()
+        .take(&authorization)
+        .map_err(AppError::preview_required)?;
     let request = entry.request.clone();
     let app_clone = app.clone();
     let path = match tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
         .await
-        .map_err(|e| format!("Clone interrompido: {e}. Peça a confirmação novamente."))?
-    {
+        .map_err(|e| {
+            AppError::preview_required(format!(
+                "Clone interrompido: {e}. Peça a confirmação novamente."
+            ))
+        })? {
         Ok(p) => p,
         Err(e) => {
-            return Err(format!(
+            return Err(AppError::preview_required(format!(
                 "{e} Peça a confirmação novamente."
-            ));
+            )));
         }
     };
     let warning = validate_post_clone(&path).err().map(|e| e.to_string());
-    state.set_repo(path.clone(), &app)?;
+    state
+        .set_repo(path.clone(), &app)
+        .map_err(AppError::operation_failed)?;
     let _ = app.emit("repo-changed", ());
-    let repo = repo_info(&path).map_err(|e| e.to_string())?;
+    let repo = repo_info(&path).map_err(AppError::from)?;
     Ok(CloneResult { repo, warning })
 }
 

@@ -300,6 +300,39 @@ pub fn run_unbound_git(args: &[&str], network: bool) -> Result<String, GitError>
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Git com stderr transmitido linha a linha (ex.: `clone --progress`), com
+/// timeout e configs defensivas. Mantém spawn/pipes fora da camada de aplicação.
+pub fn run_streaming_git(
+    args: &[String],
+    current_dir: &std::path::Path,
+    timeout: Duration,
+    mut on_stderr_line: impl FnMut(&str) + Send + 'static,
+) -> Result<std::process::ExitStatus, GitError> {
+    let mut cmd = Command::new("git");
+    cmd.args(defensive_config_args())
+        .args(args)
+        .current_dir(current_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "always");
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| GitError::Io(format!("Não foi possível executar git: {e}")))?;
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stderr);
+            for line in std::io::BufRead::lines(reader).map_while(Result::ok) {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    on_stderr_line(trimmed);
+                }
+            }
+        });
+    }
+    wait_child_status_with_timeout(child, timeout)
+}
+
 /// Adaptador Git CLI vinculado a um repositório — honra `GitWriter` (LSP).
 #[derive(Clone)]
 pub struct SafeGitCli {

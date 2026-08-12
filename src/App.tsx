@@ -6,17 +6,15 @@ import { BranchCompareDialog } from "@/components/BranchCompareDialog";
 import { BranchOriginBadge } from "@/components/BranchOriginBadge";
 import { PrStatusBadge } from "@/components/PrStatusBadge";
 import { CommitCenterPanel } from "@/components/CommitCenterPanel";
-import {
-  CommitContextMenu,
-  type CommitContextMenuItem,
-} from "@/components/CommitContextMenu";
+import { CommitContextMenu } from "@/components/CommitContextMenu";
 import { ConnectDialog } from "@/components/ConnectDialog";
 import { CloneDialog } from "@/components/CloneDialog";
 import { CherryPickDialog } from "@/components/CherryPickDialog";
 import { CommitForm } from "@/components/CommitForm";
 import { CommitGraph } from "@/components/CommitGraph";
-import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
+import { ContextMenu } from "@/components/ContextMenu";
 import { loadStoredTrailBase } from "@/lib/trailBaseStorage";
+import { operationDialogTitle } from "@/lib/operationLabels";
 import { DetailPanel } from "@/components/DetailPanel";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PublishDialog } from "@/components/PublishDialog";
@@ -26,11 +24,7 @@ import { ResizableBottomSection } from "@/components/ResizableBottomSection";
 import { ResizableColumns } from "@/components/ResizableColumns";
 import { ResizableRows } from "@/components/ResizableRows";
 import { StashDialog } from "@/components/StashDialog";
-import {
-  StatusPanel,
-  type CommitFileContext,
-  type WorktreeFileContext,
-} from "@/components/StatusPanel";
+import { StatusPanel } from "@/components/StatusPanel";
 import { ResetDialog } from "@/components/ResetDialog";
 import { RewordDialog } from "@/components/RewordDialog";
 import { TagDialog } from "@/components/TagDialog";
@@ -39,6 +33,8 @@ import { SyncIndicator } from "@/components/SyncIndicator";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
 import { useBranchOrigin } from "@/hooks/useBranchOrigin";
+import { useConfirmOperationFlow } from "@/hooks/useConfirmOperationFlow";
+import { useContextMenus } from "@/hooks/useContextMenus";
 import { useConnect } from "@/hooks/useConnect";
 import { useClone } from "@/hooks/useClone";
 import { useCommits } from "@/hooks/useCommits";
@@ -54,14 +50,9 @@ import { useSync } from "@/hooks/useSync";
 import {
   getAppInfo,
   getRepoInfo,
-  getRepoStatus,
   executeWriteOperation,
-  listCommits,
   openGitBash,
-  openWorktreePath,
   previewWriteOperation,
-  resolveWorktreePath,
-  revealWorktreePath,
   runningInTauri,
 } from "@/lib/api";
 import type {
@@ -69,6 +60,7 @@ import type {
   AssistantWriteCompletedDto,
   CommitDto,
   RepoInfo,
+  WriteRequestDto,
 } from "@/types";
 
 function App() {
@@ -82,17 +74,6 @@ function App() {
   const [rewordOpen, setRewordOpen] = useState(false);
   const [cherryPickOpen, setCherryPickOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [commitMenu, setCommitMenu] = useState<{
-    commit: CommitDto;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [fileMenu, setFileMenu] = useState<{
-    title: string;
-    x: number;
-    y: number;
-    items: ContextMenuItem[];
-  } | null>(null);
   const [openBlameRequest, setOpenBlameRequest] = useState(0);
   const [branchCompareOpen, setBranchCompareOpen] = useState(false);
   const [auditLogOpen, setAuditLogOpen] = useState(false);
@@ -342,103 +323,21 @@ function App() {
 
   const activePreview = clone.preview ?? ops.preview;
   const activeLoading = ops.loading || clone.loading;
-  const confirmOperation = useCallback(async () => {
-    const pendingKind = ops.pending?.kind;
-    const pendingReq = ops.pending;
-    const wasFromAssistant = ops.fromAssistant;
-    const revertBefore = status?.operationInProgress?.kind === "revert";
-    const headBefore =
-      checkoutHeadCommit?.id ?? commits[0]?.id ?? null;
+  const onAssistantWriteDone = useCallback((req: WriteRequestDto) => {
+    setAssistantWriteDone({ key: Date.now(), req });
+  }, []);
 
-    if (clone.pending) {
-      await clone.confirmClone();
-      return;
-    }
-
-    const ok = await ops.confirm();
-    if (!ok) return;
-
-    if (
-      wasFromAssistant &&
-      pendingReq &&
-      pendingReq.kind !== "publish"
-    ) {
-      setAssistantWriteDone({ key: Date.now(), req: pendingReq });
-    }
-
-    if (pendingKind === "push") {
-      ops.setInfo(
-        `Push concluído para ${sync?.upstream ?? repo?.branch ?? "remoto"}.`,
-      );
-      return;
-    }
-    if (pendingKind === "pushForce") {
-      ops.setInfo(
-        `Force push concluído para ${sync?.upstream ?? repo?.branch ?? "remoto"}.`,
-      );
-      return;
-    }
-
-    const resolvingConflict =
-      pendingKind === "resolveConflictSide" ||
-      pendingKind === "resolveConflictContent";
-    if (!resolvingConflict || !revertBefore) return;
-
-    await refreshStatus();
-    const fresh = await getRepoStatus();
-    const op = fresh.operationInProgress;
-    if (op?.kind !== "revert" || !op.canContinue) return;
-
-    try {
-      const preview = await previewWriteOperation({ kind: "continueRevert" });
-      if (preview.blocked) {
-        throw new Error(preview.blocked);
-      }
-      const auth = preview.authorization?.trim();
-      if (!auth) {
-        throw new Error("Confirmação inválida: falta autorização do preview.");
-      }
-      await executeWriteOperation(auth);
-      await refreshAll();
-      try {
-        setRepo(await getRepoInfo());
-      } catch {
-        /* repo pode ter fechado */
-      }
-      const latest = await listCommits(1);
-      const newHead = latest[0];
-      const createdRevert =
-        newHead &&
-        headBefore &&
-        newHead.id !== headBefore &&
-        newHead.summary.toLowerCase().includes("revert");
-      if (createdRevert) {
-        ops.setInfo(`Revert concluído: «${newHead.summary}». Use Push para enviar ao remoto.`);
-      } else {
-        ops.setInfo(
-          "Revert encerrado sem novo commit — «Aceitar atual» manteve o arquivo igual ao HEAD. Para desfazer o commit revertido, resolva o conflito com «Aceitar entrando».",
-        );
-      }
-    } catch (e) {
-      ops.setInfo(null);
-      ops.setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [
-    clone,
+  const { confirmOperation, cancelOperation } = useConfirmOperationFlow({
     ops,
-    status?.operationInProgress?.kind,
-    checkoutHeadCommit?.id,
-    commits,
+    clone,
+    status,
+    syncUpstream: sync?.upstream,
+    repoBranch: repo?.branch,
     refreshStatus,
     refreshAll,
     setRepo,
-    sync?.upstream,
-    repo?.branch,
-  ]);
-  const cancelOperation = useCallback(() => {
-    if (clone.pending) clone.cancelPreview();
-    else ops.cancel();
-  }, [clone, ops]);
+    onAssistantWriteDone,
+  });
 
   useEffect(() => {
     if (ops.preview && ops.pending?.kind === "stashPush") {
@@ -610,252 +509,53 @@ function App() {
     if (canReword) setRewordOpen(true);
   }, [canAmend, canReword, isSelectedHead, selectedCommit, writeDisabled]);
 
-  const handleCommitContextMenu = useCallback(
-    (commit: CommitDto, clientX: number, clientY: number) => {
+  const focusCommitForMenu = useCallback(
+    (commit: CommitDto) => {
       setWorkingCopySelected(false);
       clearFileSelection();
       void selectCommit(commit);
-      setFileMenu(null);
-      setCommitMenu({ commit, x: clientX, y: clientY });
     },
     [clearFileSelection, selectCommit],
   );
 
-  const copyPath = useCallback(async (path: string) => {
-    try {
-      const abs = runningInTauri()
-        ? await resolveWorktreePath(path)
-        : path;
-      await navigator.clipboard.writeText(abs);
-    } catch {
-      /* clipboard pode falhar sem permissão */
-    }
+  const openBlameOnCommitFile = useCallback(() => {
+    setBlameSource("commit");
+    setOpenBlameRequest((n) => n + 1);
+  }, [setBlameSource]);
+
+  const startAmendFromMenu = useCallback(() => {
+    setWorkingCopySelected(true);
+    setAmendIntent((n) => n + 1);
   }, []);
 
-  const handleWorktreeFileContextMenu = useCallback(
-    (ctx: WorktreeFileContext) => {
-      setCommitMenu(null);
-      const canOpen = ctx.kind !== "deleted";
-      const items: ContextMenuItem[] = [
-        {
-          id: "view",
-          label: "Ver diff / detalhes",
-          onSelect: () =>
-            void selectFile(ctx.path, ctx.section === "staged"),
-        },
-        {
-          id: "open",
-          label: "Abrir",
-          disabled: !canOpen || !runningInTauri(),
-          onSelect: () => void openWorktreePath(ctx.path).catch(() => undefined),
-        },
-        {
-          id: "reveal",
-          label: "Mostrar no Explorer",
-          disabled: !runningInTauri(),
-          onSelect: () =>
-            void revealWorktreePath(ctx.path).catch(() => undefined),
-        },
-        {
-          id: "copy",
-          label: "Copiar caminho",
-          onSelect: () => void copyPath(ctx.path),
-        },
-      ];
-
-      if (ctx.section === "staged" && !writeDisabled && ctx.kind !== "conflicted") {
-        items.push({
-          id: "unstage",
-          label: "Unstage",
-          separatorBefore: true,
-          onSelect: () =>
-            void ops.request({ kind: "unstage", path: ctx.path }),
-        });
-      }
-      if (
-        (ctx.section === "unstaged" || ctx.section === "untracked") &&
-        !writeDisabled &&
-        ctx.kind !== "conflicted"
-      ) {
-        items.push({
-          id: "stage",
-          label: ctx.section === "untracked" ? "Adicionar (stage)" : "Stage",
-          separatorBefore: true,
-          primary: true,
-          onSelect: () => void ops.request({ kind: "stage", path: ctx.path }),
-        });
-      }
-      if (
-        ctx.section === "unstaged" &&
-        !writeDisabled &&
-        ctx.kind !== "conflicted"
-      ) {
-        items.push({
-          id: "discard",
-          label: "Descartar alterações",
-          onSelect: () =>
-            void ops.request({ kind: "discardWorktree", path: ctx.path }),
-        });
-      }
-      if (ctx.section === "untracked" && !writeDisabled) {
-        items.push({
-          id: "remove",
-          label: "Remover",
-          onSelect: () =>
-            void ops.request({ kind: "removeUntracked", path: ctx.path }),
-        });
-      }
-      if (ctx.kind === "conflicted" && !writeDisabled) {
-        items.push({
-          id: "conflict",
-          label: "Resolver conflito…",
-          separatorBefore: true,
-          primary: true,
-          onSelect: () => void selectFile(ctx.path, ctx.section === "staged"),
-        });
-      }
-
-      setFileMenu({
-        title: ctx.path,
-        x: ctx.clientX,
-        y: ctx.clientY,
-        items,
-      });
-    },
-    [copyPath, ops, selectFile, writeDisabled],
-  );
-
-  const handleCommitFileContextMenu = useCallback(
-    (ctx: CommitFileContext) => {
-      setCommitMenu(null);
-      const openCommitFile = async () => {
-        clearFileSelection();
-        await selectCommitFile(ctx.path);
-      };
-      // Arquivo já commitado: sem Abrir / Explorer (só working tree / stage).
-      const items: ContextMenuItem[] = [
-        {
-          id: "view",
-          label: "Ver diff",
-          onSelect: () => void openCommitFile(),
-        },
-        {
-          id: "blame",
-          label: "Blame",
-          disabled: ctx.kind === "deleted" || ctx.kind === "added",
-          onSelect: () => {
-            void openCommitFile().then(() => {
-              setBlameSource("commit");
-              setOpenBlameRequest((n) => n + 1);
-            });
-          },
-        },
-        {
-          id: "copy",
-          label: "Copiar caminho",
-          separatorBefore: true,
-          onSelect: () => void copyPath(ctx.path),
-        },
-      ];
-      setFileMenu({
-        title: ctx.path,
-        x: ctx.clientX,
-        y: ctx.clientY,
-        items,
-      });
-    },
-    [clearFileSelection, copyPath, selectCommitFile, setBlameSource],
-  );
-
-  const commitMenuItems = useMemo((): CommitContextMenuItem[] => {
-    if (!commitMenu) return [];
-    const c = commitMenu.commit;
-    const isHead = Boolean(headCommit && c.id === headCommit.id);
-    const items: CommitContextMenuItem[] = [];
-
-    const showRevert =
-      c.parentIds.length <= 1 && !writeDisabled && !focusedBranch;
-    if (showRevert) {
-      items.push({
-        id: "revert",
-        label: "Reverter commit",
-        onSelect: () =>
-          void ops.request({ kind: "revert", commitId: c.id }),
-      });
-    }
-
-    const showReset =
-      headCommit && !isHead && !writeDisabled && !focusedBranch;
-    if (showReset) {
-      items.push({
-        id: "reset",
-        label: "Resetar para aqui…",
-        onSelect: () => setResetOpen(true),
-      });
-    }
-
-    const showCherryPick =
-      headCommit &&
-      !isHead &&
-      !writeDisabled &&
-      c.parentIds.length <= 1;
-    if (showCherryPick) {
-      items.push({
-        id: "cherryPick",
-        label: "Cherry-pick",
-        onSelect: () => setCherryPickOpen(true),
-      });
-    }
-
-    items.push({
-      id: "tag",
-      label: "Criar tag…",
-      onSelect: () => setTagOpen(true),
-    });
-
-    const showEditHead = isHead && canAmend && !writeDisabled;
-    const showReword =
-      !writeDisabled &&
-      !focusedBranch &&
-      (c.isLocalOnly || upstreamConfigured) &&
-      (!isHead || !c.isLocalOnly);
-    if (showEditHead || showReword) {
-      items.push({
-        id: "editMessage",
-        label: "Editar mensagem",
-        primary: true,
-        onSelect: () => {
-          if (showEditHead) {
-            setWorkingCopySelected(true);
-            setAmendIntent((n) => n + 1);
-          } else {
-            setRewordOpen(true);
-          }
-        },
-      });
-    }
-
-    const showUncommit =
-      isHead && Boolean(headCommit?.isLocalOnly) && !writeDisabled && !repo?.isDetached;
-    if (showUncommit) {
-      items.push({
-        id: "uncommit",
-        label: "Uncommit (soft)",
-        onSelect: () => void ops.request({ kind: "uncommit" }),
-      });
-    }
-
-    return items;
-  }, [
+  const {
     commitMenu,
-    headCommit,
+    fileMenu,
+    commitMenuItems,
+    closeCommitMenu,
+    closeFileMenu,
+    handleCommitContextMenu,
+    handleWorktreeFileContextMenu,
+    handleCommitFileContextMenu,
+  } = useContextMenus({
     writeDisabled,
     focusedBranch,
+    headCommit,
     canAmend,
     upstreamConfigured,
-    repo?.isDetached,
-    ops,
-  ]);
+    isDetached: Boolean(repo?.isDetached),
+    requestWrite: (req) => void ops.request(req),
+    focusCommit: focusCommitForMenu,
+    selectFile: (path, staged) => void selectFile(path, staged),
+    selectCommitFile,
+    clearFileSelection,
+    openBlameOnCommitFile,
+    openReset: () => setResetOpen(true),
+    openCherryPick: () => setCherryPickOpen(true),
+    openTag: () => setTagOpen(true),
+    openReword: () => setRewordOpen(true),
+    startAmend: startAmendFromMenu,
+  });
 
   const changeCount =
     (status?.staged.length ?? 0) +
@@ -952,7 +652,7 @@ function App() {
           x={commitMenu.x}
           y={commitMenu.y}
           items={commitMenuItems}
-          onClose={() => setCommitMenu(null)}
+          onClose={closeCommitMenu}
         />
       )}
       {fileMenu && (
@@ -962,7 +662,7 @@ function App() {
           title={fileMenu.title}
           ariaLabel={`Ações do arquivo ${fileMenu.title}`}
           items={fileMenu.items}
-          onClose={() => setFileMenu(null)}
+          onClose={closeFileMenu}
         />
       )}
       <OperationDialog
@@ -972,68 +672,7 @@ function App() {
         onConfirm={confirmOperation}
         onCancel={cancelOperation}
         progressLine={clone.progress}
-        title={
-          clone.pending
-            ? "Confirmar clone"
-            : ops.pending?.kind === "publish"
-              ? "Confirmar publicação"
-              : ops.pending?.kind === "unshallowHistory"
-                ? "Completar histórico"
-                : ops.pending?.kind === "switchBranch"
-                  ? "Trocar de branch"
-                  : ops.pending?.kind === "deleteLocalBranch"
-                    ? "Remover branch local"
-                    : ops.pending?.kind === "deleteRemoteBranch"
-                      ? "Remover branch no remoto"
-                      : ops.pending?.kind === "stashPush"
-                        ? "Guardar no stash"
-                        : ops.pending?.kind === "stashApply"
-                          ? "Aplicar stash"
-                          : ops.pending?.kind === "stashPop"
-                            ? "Aplicar e remover stash"
-                            : ops.pending?.kind === "stashDrop"
-                              ? "Excluir stash"
-                              : ops.pending?.kind === "createTag"
-                                ? "Criar tag"
-                                : ops.pending?.kind === "deleteTag"
-                                  ? "Excluir tag"
-                                  : ops.pending?.kind === "reword"
-                                    ? ops.pending.forcePush
-                                      ? "Reescrever e enviar ao remoto"
-                                      : "Reescrever mensagem"
-                                    : ops.pending?.kind === "cherryPick"
-                                      ? "Cherry-pick"
-                                      : ops.pending?.kind === "revert"
-                                        ? "Reverter commit"
-                                        : ops.pending?.kind === "push"
-                                          ? "Enviar ao remoto"
-                                          : ops.pending?.kind === "pushForce"
-                                            ? "Push forçado"
-                                            : ops.pending?.kind === "discardWorktree" ||
-                                          ops.pending?.kind === "discardWorktreeMany" ||
-                                          ops.pending?.kind === "discardWorktreeAll" ||
-                                          ops.pending?.kind === "discardHunk"
-                                        ? "Descartar alterações"
-                                        : ops.pending?.kind === "removeUntracked" ||
-                                            ops.pending?.kind === "removeUntrackedMany"
-                                          ? "Remover não rastreado"
-                                          : ops.pending?.kind === "continueRevert"
-                                            ? "Finalizar revert"
-                                            : ops.pending?.kind === "skipRevert"
-                                              ? "Pular revert"
-                                            : ops.pending?.kind === "continueMerge"
-                                              ? "Finalizar merge"
-                                              : ops.pending?.kind === "continueCherryPick"
-                                                ? "Finalizar cherry-pick"
-                                                : ops.pending?.kind === "skipCherryPick"
-                                                  ? "Pular cherry-pick"
-                                                : ops.pending?.kind ===
-                                                      "resolveConflictSide" ||
-                                                    ops.pending?.kind ===
-                                                      "resolveConflictContent"
-                                                  ? "Resolver conflito"
-                                                  : undefined
-        }
+        title={operationDialogTitle(Boolean(clone.pending), ops.pending)}
       />
       <CloneDialog
         open={clone.cloneOpen}
