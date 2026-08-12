@@ -3,7 +3,7 @@
 
 use super::branch::resolve_switch_track;
 use super::commit_history::{
-    format_reword_message, reset_mode_from_dto, reset_needs_force_push, resolve_cherry_pick_shas,
+    format_reword_message, reset_needs_force_push, resolve_cherry_pick_shas,
     reword_target_on_remote, RESET_HARD_STASH_MSG,
 };
 use super::conflict_sequencer::normalize_conflict_side;
@@ -14,13 +14,14 @@ use super::gates::{
 use super::sync_remote::{
     execute_force_push_with_lease, execute_publish, push_upstream_op, sync_local_upstream_ref,
 };
-use super::{git_path_from_display, validate_paths};
+use super::validate_paths_obrigatorios;
+use crate::domain::{caminho_git_do_rotulo, ResetMode};
 use crate::application::backup_ref::create_backup_ref;
 use crate::application::operations::{
     AbortCherryPick, AbortMerge, AbortRevert, ApplyReversePatch, CherryPickCommit, CreateCommit,
     CreateTag, DeleteLocalBranch, DeleteRemoteBranch, DeleteTag, DiscardWorktree,
     DiscardWorktreeAll, DiscardWorktreeMany, PullFfOnly, PushTag, RemoveUntracked,
-    RemoveUntrackedMany, ResetCommit, ResetMode, RevertCommit, SkipCherryPick, SkipRevert, Stage,
+    RemoveUntrackedMany, ResetCommit, RevertCommit, SkipCherryPick, SkipRevert, Stage,
     StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush, SwitchBranch, UncommitSoft,
     UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
@@ -37,24 +38,24 @@ use crate::infrastructure::{
 pub fn execute_write_prevalidated(ctx: &RepoContext, req: WriteRequest) -> Result<(), GitError> {
     match req {
         WriteRequest::Stage { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&Stage { path })?;
         }
         WriteRequest::StageMany { paths } => {
-            let paths = validate_paths(&paths)?;
+            let paths = validate_paths_obrigatorios(&paths)?;
             ctx.execute_op(&StageMany { paths })?;
         }
         WriteRequest::StageAll => {
             ctx.execute_op(&StageAll)?;
         }
         WriteRequest::Unstage { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&Unstage { path })?;
         }
         WriteRequest::UnstageMany { paths } => {
-            let paths = validate_paths(&paths)?;
+            let paths = validate_paths_obrigatorios(&paths)?;
             ctx.execute_op(&UnstageMany { paths })?;
         }
         WriteRequest::UnstageAll => {
@@ -191,28 +192,28 @@ pub fn execute_write_prevalidated(ctx: &RepoContext, req: WriteRequest) -> Resul
             ctx.execute_op(&DeleteTag { name })?;
         }
         WriteRequest::DiscardWorktree { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&DiscardWorktree { path })?;
         }
         WriteRequest::DiscardWorktreeMany { paths } => {
-            let paths = validate_paths(&paths)?;
+            let paths = validate_paths_obrigatorios(&paths)?;
             ctx.execute_op(&DiscardWorktreeMany { paths })?;
         }
         WriteRequest::DiscardWorktreeAll => {
             ctx.execute_op(&DiscardWorktreeAll)?;
         }
         WriteRequest::RemoveUntracked { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&RemoveUntracked { path })?;
         }
         WriteRequest::RemoveUntrackedMany { paths } => {
-            let paths = validate_paths(&paths)?;
+            let paths = validate_paths_obrigatorios(&paths)?;
             ctx.execute_op(&RemoveUntrackedMany { paths })?;
         }
         WriteRequest::DiscardHunk { path, patch, staged } => {
-            let _path = validate_repo_relative_path(git_path_from_display(&path))
+            let _path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             ctx.execute_op(&ApplyReversePatch {
                 patch,
@@ -220,18 +221,18 @@ pub fn execute_write_prevalidated(ctx: &RepoContext, req: WriteRequest) -> Resul
             })?;
         }
         WriteRequest::ResolveConflictSide { path, side } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let side = normalize_conflict_side(&side)?;
             let choice = if side == "ours" {
-                crate::infrastructure::ConflictSideChoice::Ours
+                crate::domain::ConflictSideChoice::Ours
             } else {
-                crate::infrastructure::ConflictSideChoice::Theirs
+                crate::domain::ConflictSideChoice::Theirs
             };
             crate::infrastructure::resolve_conflict_side(ctx.writer(), &path, choice)?;
         }
         WriteRequest::ResolveConflictContent { path, content } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             if content.contains("<<<<<<<") || content.contains(">>>>>>>") {
                 return Err(GitError::Git(
@@ -246,7 +247,7 @@ pub fn execute_write_prevalidated(ctx: &RepoContext, req: WriteRequest) -> Resul
             )?;
         }
         WriteRequest::SaveWorktreeFile { path, content } => {
-            let path = validate_repo_relative_path(git_path_from_display(&path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             crate::infrastructure::save_worktree_file(ctx.repo_path(), &path, &content)?;
         }
@@ -295,7 +296,7 @@ pub fn execute_write_prevalidated(ctx: &RepoContext, req: WriteRequest) -> Resul
         } => {
             let sha =
                 validate_git_object_id(&commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            let reset_mode = reset_mode_from_dto(mode);
+            let reset_mode = mode;
             if reset_mode == ResetMode::Hard {
                 let branch = branch_name_for_backup(ctx.repo_path())?;
                 create_backup_ref(ctx.writer(), &branch)?;

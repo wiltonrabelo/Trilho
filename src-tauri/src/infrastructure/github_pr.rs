@@ -1,6 +1,7 @@
 //! RF-12 — status de Pull Request da branch no GitHub.
 
-use serde::{Deserialize, Serialize};
+use crate::domain::{BranchPrStatus, PrSummary};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -11,29 +12,6 @@ use crate::infrastructure::validation::{parse_github_slug_from_remote, GithubSlu
 const CACHE_TTL: Duration = Duration::from_secs(60);
 const USER_AGENT: &str = "Trilho/0.1";
 const GITHUB_API_VERSION: &str = "2022-11-28";
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct PrSummary {
-    pub number: u64,
-    pub title: String,
-    pub url: String,
-    /// Branch de destino do PR (base) — ex.: feature-SPF-1112.
-    pub base_branch: String,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct BranchPrStatus {
-    /// `false` = não exibir (não é GitHub, sem credencial, etc.).
-    pub visible: bool,
-    pub open: Vec<PrSummary>,
-    pub merged: Vec<PrSummary>,
-    /// Fechado sem merge.
-    pub closed: Vec<PrSummary>,
-    /// Aviso curto quando a consulta falhou (rede, rate limit).
-    pub notice: Option<String>,
-}
 
 #[derive(Debug, Deserialize)]
 struct GithubPullHead {

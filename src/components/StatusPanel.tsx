@@ -1,31 +1,24 @@
-import { ChevronDown, ChevronRight, Plus, Trash2, Undo2 } from "lucide-react";
-import { useState, type MouseEvent } from "react";
+import { Plus, Trash2, Undo2 } from "lucide-react";
+
+import { CommitFileList } from "@/components/StatusCommitFileList";
+import { FileList } from "@/components/StatusFileList";
+import type {
+  CommitFileContext,
+  WorktreeFileContext,
+} from "@/components/statusPanelTypes";
 import {
   countChecked,
   fileCheckKey,
   pathsFromChecked,
   type FileCheckSection,
 } from "@/lib/fileCheck";
-import type { CommitDto, FileChangeDto, FileChangeKind, OperationInProgressDto } from "@/types";
+import type { CommitDto, FileChangeDto, OperationInProgressDto } from "@/types";
 
-/** Contexto do clique direito em arquivo da working tree. */
-export type WorktreeFileSection = "staged" | "unstaged" | "untracked";
-
-export interface WorktreeFileContext {
-  path: string;
-  section: WorktreeFileSection;
-  kind: FileChangeKind;
-  clientX: number;
-  clientY: number;
-}
-
-/** Contexto do clique direito em arquivo de um commit. */
-export interface CommitFileContext {
-  path: string;
-  kind: FileChangeKind;
-  clientX: number;
-  clientY: number;
-}
+export type {
+  CommitFileContext,
+  WorktreeFileContext,
+  WorktreeFileSection,
+} from "@/components/statusPanelTypes";
 
 interface StatusPanelProps {
   staged: FileChangeDto[];
@@ -41,7 +34,7 @@ interface StatusPanelProps {
   onSelectFile: (
     path: string,
     staged: boolean,
-    meta?: { ctrlKey?: boolean; shiftKey?: boolean },
+    meta?: { ctrlKey?: boolean; shiftKey?: boolean }
   ) => void;
   onToggleCheck: (path: string, section: FileCheckSection) => void;
   commit: CommitDto | null;
@@ -62,278 +55,6 @@ interface StatusPanelProps {
   onDiscardAll?: () => void;
   onRemoveUntracked?: (path: string) => void;
   onRemoveUntrackedMany?: (paths: string[]) => void;
-}
-
-const KIND_BADGE: Record<
-  FileChangeKind,
-  { label: string; className: string }
-> = {
-  modified: {
-    label: "M",
-    className:
-      "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  },
-  added: {
-    label: "A",
-    className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  },
-  deleted: {
-    label: "D",
-    className: "bg-red-500/15 text-red-600 dark:text-red-400",
-  },
-  renamed: {
-    label: "R",
-    className: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
-  },
-  untracked: {
-    label: "U",
-    className: "bg-muted/25 text-muted",
-  },
-  conflicted: {
-    label: "!",
-    className: "bg-orange-500/20 text-orange-700 dark:text-orange-300",
-  },
-};
-
-function KindBadge({ kind }: { kind: FileChangeKind }) {
-  const b = KIND_BADGE[kind];
-  return (
-    <span
-      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${b.className}`}
-    >
-      {b.label}
-    </span>
-  );
-}
-
-function FileList({
-  title,
-  files,
-  staged,
-  checkSection,
-  menuSection,
-  selectedPath,
-  selectedStaged,
-  checkedPaths,
-  onSelect,
-  onToggleCheck,
-  onContextMenu,
-  onStage,
-  onUnstage,
-  onDiscard,
-  onRemoveUntracked,
-}: {
-  title: string;
-  files: FileChangeDto[];
-  staged: boolean;
-  checkSection: FileCheckSection;
-  menuSection: WorktreeFileSection;
-  selectedPath: string | null;
-  selectedStaged: boolean | null;
-  checkedPaths: ReadonlySet<string>;
-  onSelect: (
-    path: string,
-    staged: boolean,
-    meta?: { ctrlKey?: boolean; shiftKey?: boolean },
-  ) => void;
-  onToggleCheck: (path: string, section: FileCheckSection) => void;
-  onContextMenu?: (ctx: WorktreeFileContext) => void;
-  onStage?: (path: string) => void;
-  onUnstage?: (path: string) => void;
-  onDiscard?: (path: string) => void;
-  onRemoveUntracked?: (path: string) => void;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  function handleContextMenu(e: MouseEvent, f: FileChangeDto) {
-    e.preventDefault();
-    e.stopPropagation();
-    onSelect(f.path, staged);
-    onContextMenu?.({
-      path: f.path,
-      section: menuSection,
-      kind: f.kind,
-      clientX: e.clientX,
-      clientY: e.clientY,
-    });
-  }
-
-  return (
-    <section className="mb-4 border-b border-border/60 pb-3 last:mb-0 last:border-0">
-      <button
-        type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        className="mb-1.5 flex w-full items-center justify-between px-1 py-0.5 text-left hover:bg-surface/60"
-        aria-expanded={!collapsed}
-        title={collapsed ? "Expandir" : "Recolher"}
-      >
-        <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-          {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-          {title}
-        </span>
-        <span className="text-[10px] tabular-nums text-muted">{files.length}</span>
-      </button>
-      {collapsed ? null : files.length === 0 ? (
-        <p className="px-2 py-1 text-xs text-muted/70">—</p>
-      ) : (
-        <ul className="space-y-0.5" onContextMenu={(e) => e.preventDefault()}>
-          {files.map((f) => {
-            const isSelected =
-              selectedPath === f.path && selectedStaged === staged;
-            const isChecked = checkedPaths.has(
-              fileCheckKey(checkSection, f.path),
-            );
-            const showStage = !staged && onStage && f.kind !== "conflicted";
-            const showUnstage = staged && onUnstage && f.kind !== "conflicted";
-            const showDiscard = !staged && onDiscard && f.kind !== "conflicted";
-            const showRemove = !staged && onRemoveUntracked;
-            return (
-              <li
-                key={`${staged}-${f.kind}-${f.path}`}
-                className="group flex items-center gap-0.5"
-              >
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  onChange={() => onToggleCheck(f.path, checkSection)}
-                  title="Selecionar para stage/unstage em lote"
-                  className="ml-1 shrink-0 rounded border-border"
-                />
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    onSelect(f.path, staged, {
-                      ctrlKey: e.ctrlKey || e.metaKey,
-                      shiftKey: e.shiftKey,
-                    })
-                  }
-                  onContextMenu={(e) => handleContextMenu(e, f)}
-                  className={`flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
-                    isSelected || isChecked
-                      ? "bg-surface ring-1 ring-border"
-                      : "hover:bg-surface/60"
-                  }`}
-                  title={f.path}
-                >
-                  <KindBadge kind={f.kind} />
-                  <span className="min-w-0 flex-1 break-all font-mono text-xs text-text">
-                    {f.path}
-                  </span>
-                  {f.kind === "conflicted" &&
-                    typeof f.conflictBlocks === "number" &&
-                    f.conflictBlocks > 0 && (
-                      <span
-                        className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-orange-800 dark:text-orange-200"
-                        title={`${f.conflictBlocks} bloco(s) em conflito`}
-                      >
-                        {f.conflictBlocks} bloco{f.conflictBlocks === 1 ? "" : "s"}
-                      </span>
-                    )}
-                </button>
-                {showStage && (
-                  <button
-                    type="button"
-                    onClick={() => onStage(f.path)}
-                    title="Stage"
-                    className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-accent group-hover:opacity-100 focus:opacity-100"
-                  >
-                    <Plus size={14} />
-                  </button>
-                )}
-                {showUnstage && (
-                  <button
-                    type="button"
-                    onClick={() => onUnstage(f.path)}
-                    title="Unstage"
-                    className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-accent group-hover:opacity-100 focus:opacity-100"
-                  >
-                    <Undo2 size={14} />
-                  </button>
-                )}
-                {showDiscard && (
-                  <button
-                    type="button"
-                    onClick={() => onDiscard(f.path)}
-                    title="Descartar alterações"
-                    className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-red-600 group-hover:opacity-100 focus:opacity-100 dark:hover:text-red-400"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-                {showRemove && (
-                  <button
-                    type="button"
-                    onClick={() => onRemoveUntracked(f.path)}
-                    title="Remover arquivo não rastreado"
-                    className="shrink-0 rounded p-1 text-muted opacity-0 hover:bg-surface hover:text-red-600 group-hover:opacity-100 focus:opacity-100 dark:hover:text-red-400"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function CommitFileList({
-  files,
-  selectedPath,
-  onSelect,
-  onContextMenu,
-}: {
-  files: FileChangeDto[];
-  selectedPath: string | null;
-  onSelect: (path: string) => void;
-  onContextMenu?: (ctx: CommitFileContext) => void;
-}) {
-  if (files.length === 0) {
-    return (
-      <p className="px-2 py-4 text-center text-xs text-muted">
-        Nenhum arquivo alterado neste commit
-      </p>
-    );
-  }
-  return (
-    <ul className="space-y-0.5" onContextMenu={(e) => e.preventDefault()}>
-      {files.map((f) => {
-        const isSelected = selectedPath === f.path;
-        return (
-          <li key={`${f.kind}-${f.path}`}>
-            <button
-              type="button"
-              onClick={() => onSelect(f.path)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onSelect(f.path);
-                onContextMenu?.({
-                  path: f.path,
-                  kind: f.kind,
-                  clientX: e.clientX,
-                  clientY: e.clientY,
-                });
-              }}
-              className={`flex w-full items-start gap-2 rounded-md px-2 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${
-                isSelected
-                  ? "bg-surface ring-1 ring-border"
-                  : "hover:bg-surface/60"
-              }`}
-              title={f.path}
-            >
-              <KindBadge kind={f.kind} />
-              <span className="min-w-0 flex-1 break-all font-mono text-xs text-text">
-                {f.path}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
 
 export function StatusPanel({
@@ -370,10 +91,7 @@ export function StatusPanel({
 }: StatusPanelProps) {
   if (commit) {
     return (
-      <div
-        className="flex h-full flex-col"
-        onContextMenu={(e) => e.preventDefault()}
-      >
+      <div className="flex h-full flex-col" onContextMenu={(e) => e.preventDefault()}>
         <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted">
           Arquivos do commit{" "}
           <span className="font-mono text-[10px]">{commit.shortId}</span>
@@ -393,17 +111,16 @@ export function StatusPanel({
 
   const total = staged.length + unstaged.length + untracked.length;
   const stageablePaths = pathsFromChecked(checkedPaths, "working").filter(
-    (p) =>
-      unstaged.some((f) => f.path === p) || untracked.some((f) => f.path === p),
+    (p) => unstaged.some((f) => f.path === p) || untracked.some((f) => f.path === p)
   );
   const unstagedPaths = pathsFromChecked(checkedPaths, "staged").filter((p) =>
-    staged.some((f) => f.path === p),
+    staged.some((f) => f.path === p)
   );
   const discardablePaths = pathsFromChecked(checkedPaths, "working").filter((p) =>
-    unstaged.some((f) => f.path === p && f.kind !== "conflicted"),
+    unstaged.some((f) => f.path === p && f.kind !== "conflicted")
   );
   const untrackedPaths = pathsFromChecked(checkedPaths, "working").filter((p) =>
-    untracked.some((f) => f.path === p),
+    untracked.some((f) => f.path === p)
   );
   const checkedWorkingCount = countChecked(checkedPaths, "working");
   const checkedStagedCount = countChecked(checkedPaths, "staged");
@@ -452,81 +169,84 @@ export function StatusPanel({
       <div className="panel-section-title shrink-0 border-b border-border">
         <span>Alterações {total > 0 ? `(${total})` : ""}</span>
         <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
-            {canStageMany && (
-              <button
-                type="button"
-                onClick={() => onStageMany!(stageablePaths)}
-                className="text-[10px] text-accent hover:underline"
-              >
-                Stage selecionados ({stageablePaths.length})
-              </button>
-            )}
-            {canUnstageMany && (
-              <button
-                type="button"
-                onClick={() => onUnstageMany!(unstagedPaths)}
-                className="text-[10px] text-accent hover:underline"
-              >
-                Unstage selecionados ({unstagedPaths.length})
-              </button>
-            )}
-            {canDiscardMany && (
-              <button
-                type="button"
-                onClick={() => onDiscardMany!(discardablePaths)}
-                className="text-[10px] text-red-600 hover:underline dark:text-red-400"
-              >
-                Descartar selecionados ({discardablePaths.length})
-              </button>
-            )}
-            {canRemoveMany && (
-              <button
-                type="button"
-                onClick={() => onRemoveUntrackedMany!(untrackedPaths)}
-                className="text-[10px] text-red-600 hover:underline dark:text-red-400"
-              >
-                Remover não rastreados ({untrackedPaths.length})
-              </button>
-            )}
-            {canStageAll && (
-              <button
-                type="button"
-                onClick={onStageAll}
-                className="text-[10px] text-accent hover:underline"
-              >
-                Stage tudo
-              </button>
-            )}
-            {staged.length > 0 && onUnstageAll && (
-              <button
-                type="button"
-                onClick={onUnstageAll}
-                className="text-[10px] text-accent hover:underline"
-              >
-                Unstage tudo
-              </button>
-            )}
-            {hasDiscardableUnstaged && !operationInProgress && onDiscardAll && (
-              <button
-                type="button"
-                onClick={onDiscardAll}
-                title="Descarta todas as alterações fora do stage"
-                className="text-[10px] text-red-600 hover:underline dark:text-red-400"
-              >
-                Descartar tudo
-              </button>
-            )}
-            {total > 0 && onStash && (
-              <button
-                type="button"
-                onClick={onStash}
-                className="text-[10px] text-accent hover:underline"
-              >
-                Guardar (stash)
-              </button>
-            )}
+          {canStageMany && (
+            <button
+              type="button"
+              onClick={() => onStageMany!(stageablePaths)}
+              className="text-[10px] text-accent hover:underline"
+            >
+              Stage selecionados ({stageablePaths.length})
+            </button>
+          )}
+          {canUnstageMany && (
+            <button
+              type="button"
+              onClick={() => onUnstageMany!(unstagedPaths)}
+              className="text-[10px] text-accent hover:underline"
+            >
+              Unstage selecionados ({unstagedPaths.length})
+            </button>
+          )}
+          {canDiscardMany && (
+            <button
+              type="button"
+              onClick={() => onDiscardMany!(discardablePaths)}
+              className="text-[10px] text-red-600 hover:underline dark:text-red-400"
+            >
+              Descartar selecionados ({discardablePaths.length})
+            </button>
+          )}
+          {canRemoveMany && (
+            <button
+              type="button"
+              onClick={() => onRemoveUntrackedMany!(untrackedPaths)}
+              className="text-[10px] text-red-600 hover:underline dark:text-red-400"
+            >
+              Remover não rastreados ({untrackedPaths.length})
+            </button>
+          )}
+          {canStageAll && (
+            <button
+              type="button"
+              onClick={onStageAll}
+              className="text-[10px] text-accent hover:underline"
+            >
+              Stage tudo
+            </button>
+          )}
+          {staged.length > 0 && onUnstageAll && (
+            <button
+              type="button"
+              onClick={onUnstageAll}
+              className="text-[10px] text-accent hover:underline"
+            >
+              Unstage tudo
+            </button>
+          )}
+          {hasDiscardableUnstaged && !operationInProgress && onDiscardAll && (
+            <button
+              type="button"
+              onClick={onDiscardAll}
+              title="Descarta todas as alterações fora do stage"
+              className="text-[10px] text-red-600 hover:underline dark:text-red-400"
+            >
+              Descartar tudo
+            </button>
+          )}
+          {total > 0 && onStash && (
+            <button
+              type="button"
+              onClick={onStash}
+              className="text-[10px] text-accent hover:underline"
+            >
+              Guardar (stash)
+            </button>
+          )}
         </div>
-        {(canStageSelected || canUnstageSelected || canDiscardSelected || canRemoveSelected) && (
+        {(canStageSelected ||
+          canUnstageSelected ||
+          canDiscardSelected ||
+          canRemoveSelected) && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="min-w-0 truncate font-mono text-[10px] text-text">
               {selectedPath}
@@ -575,8 +295,7 @@ export function StatusPanel({
         )}
         {(checkedWorkingCount > 0 || checkedStagedCount > 0) && (
           <p className="mt-1.5 text-[10px] text-muted">
-            {checkedWorkingCount > 0 &&
-              `${checkedWorkingCount} unstaged/untracked`}
+            {checkedWorkingCount > 0 && `${checkedWorkingCount} unstaged/untracked`}
             {checkedWorkingCount > 0 && checkedStagedCount > 0 && " · "}
             {checkedStagedCount > 0 && `${checkedStagedCount} staged`}
             {" · Ctrl+clique alterna"}

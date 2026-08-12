@@ -1,24 +1,8 @@
 //! Detecção de chaves SSH e teste de autenticação GitHub (RF-10 recorte 2).
 
 use crate::application::GitError;
-use serde::Serialize;
+use crate::domain::{SshKeyInfo, SshTestResult};
 use std::path::PathBuf;
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct SshKeyInfo {
-    /// Nome base da chave (ex.: `id_ed25519`).
-    pub name: String,
-    pub has_public: bool,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct SshTestResult {
-    pub success: bool,
-    pub username: Option<String>,
-    pub message: String,
-}
 
 const SKIP_SSH_FILES: &[&str] = &[
     "known_hosts",

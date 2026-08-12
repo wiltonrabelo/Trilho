@@ -226,7 +226,7 @@ pub enum WriteRequest {
         #[serde(rename = "commitId")]
         commit_id: String,
         #[serde(default = "default_reset_mode")]
-        mode: ResetModeDto,
+        mode: ResetMode,
         #[serde(default, rename = "forcePush")]
         force_push: bool,
     },
@@ -246,17 +246,17 @@ fn default_true() -> bool {
     true
 }
 
-/// Modo de `git reset` exposto ao frontend (RF-07).
+/// Modo de `git reset` (RF-07).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum ResetModeDto {
+pub enum ResetMode {
     Soft,
     Mixed,
     Hard,
 }
 
-fn default_reset_mode() -> ResetModeDto {
-    ResetModeDto::Mixed
+fn default_reset_mode() -> ResetMode {
+    ResetMode::Mixed
 }
 
 #[cfg(test)]
@@ -323,7 +323,7 @@ mod tests {
                 force_push,
             } => {
                 assert_eq!(commit_id.len(), 40);
-                assert_eq!(mode, ResetModeDto::Hard);
+                assert_eq!(mode, ResetMode::Hard);
                 assert!(force_push);
             }
             _ => panic!("variant errada"),
@@ -540,7 +540,7 @@ mod tests {
             },
             WriteRequest::Reset {
                 commit_id: "a".into(),
-                mode: ResetModeDto::Mixed,
+                mode: ResetMode::Mixed,
                 force_push: false,
             },
             WriteRequest::PushForce,

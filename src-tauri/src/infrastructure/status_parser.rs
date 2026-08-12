@@ -5,7 +5,7 @@
 //! path origem no segmento NUL seguinte (`-z`).
 
 use crate::application::GitError;
-use crate::domain::{FileChange, FileChangeKind, RepoStatus};
+use crate::domain::{rotulo_renomeacao, FileChange, FileChangeKind, RepoStatus};
 
 pub fn parse_porcelain_v2(raw: &str) -> Result<RepoStatus, GitError> {
     let mut staged = Vec::new();
@@ -123,7 +123,7 @@ fn parse_v2_rename_entry(
 
     let new_path = parts[9];
     let display = match orig_path {
-        Some(old) => format!("{old} → {new_path}"),
+        Some(old) => rotulo_renomeacao(old, new_path),
         None => new_path.to_string(),
     };
     push_xy_changes(parts[1], &display, staged, unstaged);

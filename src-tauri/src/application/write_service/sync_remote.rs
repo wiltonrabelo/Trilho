@@ -8,6 +8,14 @@ use crate::application::operations::{
 use crate::application::{GitCommand, GitError, RepoContext};
 use crate::infrastructure::{primary_remote, repo_info, validate_remote_url};
 
+/// Saída de `plan_publish`. Condições que impedem publicar mas não são falha
+/// (falta a URL, branch já publicada) viram `Bloqueado` — o preview mostra o
+/// motivo em vez de erro, e a execução recusa.
+pub(super) enum PlanoPublicacao {
+    Pronto(PublishPlan),
+    Bloqueado(String),
+}
+
 pub(super) struct PublishPlan {
     /// Passo de remoto: `remote add` (1ª publicação) ou `remote set-url`
     /// (corrigir URL errada) — ambos são `GitOperation`.
@@ -23,7 +31,7 @@ fn resolve_primary_remote(ctx: &RepoContext) -> Result<String, GitError> {
 pub(super) fn plan_publish(
     ctx: &RepoContext,
     remote_url: Option<&str>,
-) -> Result<PublishPlan, GitError> {
+) -> Result<PlanoPublicacao, GitError> {
     let info = repo_info(ctx.repo_path())?;
     if info.is_detached {
         return Err(GitError::Git(
@@ -31,7 +39,7 @@ pub(super) fn plan_publish(
         ));
     }
     if info.upstream.is_some() {
-        return Err(GitError::Git(
+        return Ok(PlanoPublicacao::Bloqueado(
             "Esta branch já está publicada. Use Push para enviar novos commits.".into(),
         ));
     }
@@ -78,7 +86,7 @@ pub(super) fn plan_publish(
             let url = match remote_url {
                 Some(url) => validate_remote_url(url)?,
                 None => {
-                    return Err(GitError::Git(
+                    return Ok(PlanoPublicacao::Bloqueado(
                         "Informe a URL do repositório remoto para publicar.".into(),
                     ));
                 }
@@ -94,22 +102,22 @@ pub(super) fn plan_publish(
             )
         };
 
-    Ok(PublishPlan {
+    Ok(PlanoPublicacao::Pronto(PublishPlan {
         remote_step,
         push: PushSetUpstream {
             remote: remote_name,
             branch,
         },
         description,
-    })
+    }))
 }
 
 pub(super) fn preview_publish(
     ctx: &RepoContext,
     remote_url: Option<&str>,
 ) -> Result<(Vec<String>, String, Option<String>), GitError> {
-    match plan_publish(ctx, remote_url) {
-        Ok(plan) => {
+    match plan_publish(ctx, remote_url)? {
+        PlanoPublicacao::Pronto(plan) => {
             let mut commands = Vec::new();
             if let Some(ref op) = plan.remote_step {
                 commands.extend(ctx.preview_op(op.as_ref()));
@@ -117,17 +125,15 @@ pub(super) fn preview_publish(
             commands.extend(ctx.preview_op(&plan.push));
             Ok((commands, plan.description, None))
         }
-        Err(GitError::Git(msg))
-            if msg.contains("Informe a URL") || msg.contains("já está publicada") =>
-        {
-            Ok((vec![], String::new(), Some(msg)))
-        }
-        Err(e) => Err(e),
+        PlanoPublicacao::Bloqueado(motivo) => Ok((vec![], String::new(), Some(motivo))),
     }
 }
 
 pub(super) fn execute_publish(ctx: &RepoContext, remote_url: Option<&str>) -> Result<(), GitError> {
-    let plan = plan_publish(ctx, remote_url)?;
+    let plan = match plan_publish(ctx, remote_url)? {
+        PlanoPublicacao::Pronto(plan) => plan,
+        PlanoPublicacao::Bloqueado(motivo) => return Err(GitError::Git(motivo)),
+    };
     if let Some(op) = plan.remote_step {
         ctx.execute_op(op.as_ref())?;
     }

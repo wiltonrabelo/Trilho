@@ -4,37 +4,10 @@ use crate::infrastructure::ssh_keys::list_ssh_keys;
 use crate::infrastructure::github_pat_store::{
     load_pat_file, save_pat_file, session_pat_token,
 };
-use serde::Serialize;
+use crate::domain::{CredentialStatus, GithubAccount};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct GithubAccount {
-    pub username: String,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CredentialStatus {
-    pub helper_configured: bool,
-    pub gcm_available: bool,
-    pub helper_summary: Option<String>,
-    /// Mensagem acionável quando fetch remoto pode falhar por credencial.
-    pub hint: Option<String>,
-    /// Credencial GitHub já armazenada no helper (sem abrir GUI).
-    pub github_connected: bool,
-    /// Usuário retornado pelo helper, quando disponível.
-    pub github_username: Option<String>,
-    /// Contas HTTPS salvas no GCM (`git credential-manager github list`).
-    pub github_accounts: Vec<GithubAccount>,
-    /// `credential.https://github.com.useHttpPath` — separa credenciais por repositório.
-    pub use_http_path: bool,
-    /// Chaves privadas detectadas em `~/.ssh`.
-    pub ssh_keys: Vec<crate::infrastructure::SshKeyInfo>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GithubCredentialProbe {

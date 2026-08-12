@@ -8,6 +8,7 @@ import {
   openRepo,
   removeRecentRepo,
 } from "@/lib/api";
+import { sameRepoPath } from "@/lib/repoPath";
 import type { RepoInfo, RepoStatusDto } from "@/types";
 
 function reconcileStagedFlag(
@@ -24,12 +25,6 @@ function reconcileStagedFlag(
   if (inStaged) return true;
   if (inUnstaged || inUntracked) return false;
   return null;
-}
-
-function sameRepoPath(a: string, b: string): boolean {
-  const norm = (p: string) =>
-    p.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-  return norm(a) === norm(b);
 }
 
 export function useRepo() {

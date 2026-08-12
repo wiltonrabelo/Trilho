@@ -4,9 +4,13 @@ use crate::application::{
     execute_clone, execute_write_prevalidated,
     list_clone_remote_branches as fetch_clone_remote_branches, preview_clone, preview_write,
     validate_post_clone, AppError, AppState, CommitFileDiff, FileDiff, GitError, RepoContext,
-    ShowCommit, TrailReader,
+    ShowCommit,
 };
-use crate::domain::{CloneRequest, CloneResult, Commit, OperationPreview, RepoInfo, RepoStatus, SyncInfo, WriteOutcome, WriteRequest};
+use crate::domain::{
+    caminho_git_do_rotulo, BranchDiffMode, BranchDiffSummary, BranchPrStatus, CloneRequest,
+    CloneResult, Commit, ConflictFileView, CredentialStatus, OperationPreview, RemoteBranchRef,
+    RepoInfo, RepoStatus, StashEntry, SyncInfo, TagEntry, WriteOutcome, WriteRequest,
+};
 use crate::infrastructure::{
     detect_credential_status, ensure_gcm_configured, fetch_all_remote_branch_refs,
     get_branch_file_diff, list_branch_diff, list_local_branches as fetch_local_branches,
@@ -14,13 +18,11 @@ use crate::infrastructure::{
     list_tags as fetch_tags, order_refs_by_recent_checkout, repo_info,
     get_branch_pr_status as fetch_branch_pr_status, get_conflict_file as fetch_conflict_file,
     validate_compare_ref,
-    validate_git_object_id, validate_repo_relative_path, BranchDiffMode, BranchDiffSummary,
-    BranchPrStatus, ConflictFileView, CredentialStatus, MockGitReader, RemoteBranchRef, StashEntry,
-    TagEntry,
+    validate_git_object_id, validate_repo_relative_path,
 };
 use chrono::Utc;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,11 +31,40 @@ pub struct AppInfo {
     pub version: String,
 }
 
-fn repo_context(state: &State<'_, AppState>) -> Result<RepoContext, String> {
-    let path = state
+fn caminho_do_repo(state: &State<'_, AppState>) -> Result<String, String> {
+    state
         .repo_path()
-        .map_err(|_| GitError::NoRepositoryOpen.to_string())?;
-    RepoContext::open(&path).map_err(|e| e.to_string())
+        .map_err(|_| GitError::NoRepositoryOpen.to_string())
+}
+
+/// Abre o contexto já dentro da thread bloqueante: abrir toca o disco e não
+/// deve rodar no runtime assíncrono.
+fn abrir_contexto(repo_path: &str) -> Result<RepoContext, String> {
+    RepoContext::open(repo_path).map_err(|e| e.to_string())
+}
+
+/// Trabalho pesado (Git em disco, rede, I/O) sai do runtime assíncrono: um
+/// comando síncrono congelaria a UI e um `await` bloqueante prenderia o
+/// runtime. Todo comando que toca o repositório passa por aqui.
+async fn em_thread_bloqueante<T, F>(tarefa: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(tarefa)
+        .await
+        .map_err(|e| format!("Operação interrompida: {e}"))?
+}
+
+/// Igual a `em_thread_bloqueante`, para os comandos com erro tipado.
+async fn em_thread_bloqueante_tipada<T, F>(tarefa: F) -> Result<T, AppError>
+where
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(tarefa)
+        .await
+        .map_err(|e| AppError::operation_failed(format!("Operação interrompida: {e}")))?
 }
 
 #[tauri::command]
@@ -42,13 +73,6 @@ pub fn get_app_info() -> AppInfo {
         name: "Trilho".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
     }
-}
-
-#[tauri::command]
-pub fn list_commits_mock() -> Result<Vec<Commit>, String> {
-    MockGitReader::new()
-        .list_commits(50, None, false)
-        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -69,7 +93,7 @@ pub async fn open_repo(
         let _ = state.remove_recent(&path);
         return Err(e);
     }
-    repo_info(&path).map_err(|e| e.to_string())
+    em_thread_bloqueante(move || repo_info(&path).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
@@ -101,22 +125,26 @@ pub async fn list_commits(
     first_parent: bool,
     state: State<'_, AppState>,
 ) -> Result<Vec<Commit>, String> {
-    let ctx = repo_context(&state)?;
-    ctx.reader()
-        .list_commits(
-            limit.min(500),
-            after.as_deref(),
-            first_parent,
-        )
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .list_commits(limit.min(500), after.as_deref(), first_parent)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn get_repo_status(state: State<'_, AppState>) -> Result<RepoStatus, String> {
-    repo_context(&state)?
-        .reader()
-        .get_status()
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .get_status()
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -126,24 +154,28 @@ pub async fn get_file_diff(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
-    let ctx = repo_context(&state)?;
-    let git_path = diff_file_path(&path);
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        let ctx = abrir_contexto(&repo_path)?;
+        let git_path = caminho_git_do_rotulo(&path).to_string();
 
-    if is_conflicted_path(ctx.reader(), &path) {
-        return conflict_file_diff(ctx.writer(), &git_path).map_err(|e| e.to_string());
-    }
-
-    let op = FileDiff {
-        path: git_path.clone(),
-        staged,
-    };
-    match ctx.execute(&op) {
-        Ok(out) => Ok(out),
-        Err(e) if is_unmerged_diff_error(&e) => {
-            conflict_file_diff(ctx.writer(), &git_path).map_err(|e| e.to_string())
+        if is_conflicted_path(ctx.reader(), &path) {
+            return conflict_file_diff(ctx.writer(), &git_path).map_err(|e| e.to_string());
         }
-        Err(e) => Err(e.to_string()),
-    }
+
+        let op = FileDiff {
+            path: git_path.clone(),
+            staged,
+        };
+        match ctx.execute(&op) {
+            Ok(out) => Ok(out),
+            Err(e) if is_unmerged_diff_error(&e) => {
+                conflict_file_diff(ctx.writer(), &git_path).map_err(|e| e.to_string())
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    })
+    .await
 }
 
 /// Conteúdo atual do arquivo no working tree (para o editor interno).
@@ -152,47 +184,47 @@ pub async fn read_worktree_file(path: String, state: State<'_, AppState>) -> Res
     use std::path::Path;
 
     let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
-    let ctx = repo_context(&state)?;
-    let full = Path::new(ctx.repo_path()).join(&path);
-    std::fs::read_to_string(&full).map_err(|e| {
-        format!(
-            "Não foi possível ler «{path}»: {e} (arquivos binários não são suportados no editor)."
-        )
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        let full = Path::new(&repo_path).join(&path);
+        std::fs::read_to_string(&full).map_err(|e| {
+            format!(
+                "Não foi possível ler «{path}»: {e} \
+                 (arquivos binários não são suportados no editor)."
+            )
+        })
     })
+    .await
 }
 
 /// Abre o arquivo do working tree com o app padrão do SO.
 #[tauri::command]
 pub async fn open_worktree_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
     let repo_path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::infrastructure::open_worktree_path(&repo_path, &path)
+    em_thread_bloqueante(move || {
+        crate::infrastructure::open_worktree_path(&repo_path, &path).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Abertura interrompida: {e}"))?
-    .map_err(|e| e.to_string())
 }
 
 /// Revela o arquivo no Explorer (Windows).
 #[tauri::command]
 pub async fn reveal_worktree_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
     let repo_path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::infrastructure::reveal_worktree_path(&repo_path, &path)
+    em_thread_bloqueante(move || {
+        crate::infrastructure::reveal_worktree_path(&repo_path, &path).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Revelar interrompido: {e}"))?
-    .map_err(|e| e.to_string())
 }
 
 /// Abre o Git Bash com cwd no repositório aberto.
 #[tauri::command]
 pub async fn open_git_bash(state: State<'_, AppState>) -> Result<(), String> {
     let repo_path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || crate::infrastructure::open_git_bash(&repo_path))
-        .await
-        .map_err(|e| format!("Abertura do terminal interrompida: {e}"))?
-        .map_err(|e| e.to_string())
+    em_thread_bloqueante(move || {
+        crate::infrastructure::open_git_bash(&repo_path).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Caminho absoluto do arquivo no working tree (clipboard).
@@ -202,22 +234,11 @@ pub async fn resolve_worktree_path(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let repo_path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
+    em_thread_bloqueante(move || {
         crate::infrastructure::absolute_worktree_path(&repo_path, &path)
+            .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Resolução interrompida: {e}"))?
-    .map_err(|e| e.to_string())
-}
-
-/// Path exibido no status (rename `a → b`) → path real no Git.
-fn diff_file_path(display_path: &str) -> String {
-    display_path
-        .rsplit(" → ")
-        .next()
-        .unwrap_or(display_path)
-        .trim()
-        .to_string()
 }
 
 fn is_conflicted_path(reader: &dyn crate::application::GitReader, display_path: &str) -> bool {
@@ -270,9 +291,13 @@ pub async fn get_commit_diff(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let sha = validate_git_object_id(&commit_id).map_err(|e| e.to_string())?;
-    let ctx = repo_context(&state)?;
-    let op = ShowCommit { sha };
-    ctx.execute(&op).map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .execute(&ShowCommit { sha })
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -281,10 +306,14 @@ pub async fn list_commit_files(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::domain::FileChange>, String> {
     let sha = validate_git_object_id(&commit_id).map_err(|e| e.to_string())?;
-    repo_context(&state)?
-        .reader()
-        .list_commit_files(&sha)
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .list_commit_files(&sha)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -295,17 +324,25 @@ pub async fn get_commit_file_diff(
 ) -> Result<String, String> {
     let sha = validate_git_object_id(&commit_id).map_err(|e| e.to_string())?;
     let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
-    let ctx = repo_context(&state)?;
-    let op = CommitFileDiff { sha, path };
-    ctx.execute(&op).map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .execute(&CommitFileDiff { sha, path })
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn get_sync_info(state: State<'_, AppState>) -> Result<SyncInfo, String> {
-    let mut info = repo_context(&state)?
-        .reader()
-        .get_sync_info()
-        .map_err(|e| e.to_string())?;
+    let repo_path = caminho_do_repo(&state)?;
+    let mut info = em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .get_sync_info()
+            .map_err(|e| e.to_string())
+    })
+    .await?;
     info.last_fetch_at = state.last_fetch_at();
     Ok(info)
 }
@@ -351,7 +388,7 @@ pub fn enable_github_use_http_path() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn test_github_ssh() -> crate::infrastructure::SshTestResult {
+pub fn test_github_ssh() -> crate::domain::SshTestResult {
     crate::infrastructure::test_github_ssh()
 }
 
@@ -362,23 +399,25 @@ pub fn get_ssh_public_key(name: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn fetch_remote(app: AppHandle, state: State<'_, AppState>) -> Result<SyncInfo, String> {
-    let ctx = repo_context(&state)?;
-    state
-        .with_watch_suppressed(&app, || {
-            fetch_all_remote_branch_refs(ctx.repo_path())?;
-            Ok(String::new())
-        })
-        .map_err(|e: GitError| e.to_string())?;
+    let repo_path = caminho_do_repo(&state)?;
+    let app_bloqueante = app.clone();
+    // Fetch é rede: roda fora do runtime, e o estado é acessado pelo handle.
+    let mut info = em_thread_bloqueante(move || {
+        let state = app_bloqueante.state::<AppState>();
+        let ctx = abrir_contexto(&repo_path)?;
+        state
+            .with_watch_suppressed(&app_bloqueante, || {
+                fetch_all_remote_branch_refs(ctx.repo_path())?;
+                Ok(String::new())
+            })
+            .map_err(|e: GitError| e.to_string())?;
+        ctx.reader().get_sync_info().map_err(|e| e.to_string())
+    })
+    .await?;
 
     let now = Utc::now().to_rfc3339();
     state.set_last_fetch_at(now.clone());
-
     let _ = app.emit("repo-changed", ());
-
-    let mut info = repo_context(&state)?
-        .reader()
-        .get_sync_info()
-        .map_err(|e| e.to_string())?;
     info.last_fetch_at = Some(now);
     Ok(info)
 }
@@ -387,10 +426,14 @@ pub async fn fetch_remote(app: AppHandle, state: State<'_, AppState>) -> Result<
 pub async fn get_branch_origin(
     state: State<'_, AppState>,
 ) -> Result<crate::domain::BranchOrigin, String> {
-    repo_context(&state)?
-        .reader()
-        .get_branch_origin()
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .get_branch_origin()
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -402,10 +445,14 @@ pub async fn get_dual_trail(
     // Mesmas regras de saneamento de path servem para nome de ref (sem '-'
     // inicial, sem NUL, sem '..').
     let base = validate_repo_relative_path(&base).map_err(|e| e.to_string())?;
-    repo_context(&state)?
-        .reader()
-        .get_dual_trail(&base, limit.min(600))
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .get_dual_trail(&base, limit.min(600))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -421,10 +468,14 @@ pub async fn list_branch_exclusive_commits(
         .map(validate_git_object_id)
         .transpose()
         .map_err(|e| e.to_string())?;
-    repo_context(&state)?
-        .reader()
-        .list_branch_exclusive_commits(&branch, limit.min(600), after_ref.as_deref())
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .list_branch_exclusive_commits(&branch, limit.min(600), after_ref.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -443,10 +494,14 @@ pub async fn get_file_blame(
         .map(validate_git_object_id)
         .transpose()
         .map_err(|e| e.to_string())?;
-    repo_context(&state)?
-        .reader()
-        .get_file_blame(&path, source, commit_ref.as_deref(), start_line, end_line)
-        .map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        abrir_contexto(&repo_path)?
+            .reader()
+            .get_file_blame(&path, source, commit_ref.as_deref(), start_line, end_line)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 fn parse_blame_source(raw: &str) -> Result<crate::domain::BlameSource, GitError> {
@@ -461,20 +516,25 @@ fn parse_blame_source(raw: &str) -> Result<crate::domain::BlameSource, GitError>
 #[tauri::command]
 pub async fn preview_write_operation(
     request: WriteRequest,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<OperationPreview, AppError> {
     let path = state.repo_path().map_err(AppError::operation_failed)?;
-    let ctx = repo_context(&state).map_err(AppError::operation_failed)?;
-    let mut preview = preview_write(&ctx, &path, &request)?;
-    // A-02: só opera se o gate não bloqueou — token amarra preview → execute.
-    if preview.blocked.is_none() {
-        let token = state
-            .write_auth()
-            .issue(&path, &request, &preview.commands)
-            .map_err(AppError::operation_failed)?;
-        preview.authorization = Some(token);
-    }
-    Ok(preview)
+    em_thread_bloqueante_tipada(move || {
+        let state = app.state::<AppState>();
+        let ctx = abrir_contexto(&path).map_err(AppError::operation_failed)?;
+        let mut preview = preview_write(&ctx, &path, &request)?;
+        // A-02: só opera se o gate não bloqueou — token amarra preview → execute.
+        if preview.blocked.is_none() {
+            let token = state
+                .write_auth()
+                .issue(&path, &request, &preview.commands)
+                .map_err(AppError::operation_failed)?;
+            preview.authorization = Some(token);
+        }
+        Ok(preview)
+    })
+    .await
 }
 
 /// Id do commit em HEAD via porta de leitura — `None` em repositório vazio.
@@ -505,56 +565,63 @@ pub async fn execute_write_operation(
             "Repositório mudou desde o preview. Peça a confirmação novamente.",
         ));
     }
-    let ctx = repo_context(&state).map_err(AppError::operation_failed)?;
     let data_dir = state.data_dir().clone();
     let from_assistant = from_assistant.unwrap_or(false);
     let request = entry.request.clone();
     let expected_commands = entry.commands.clone();
-    let head_before = current_head_id(&ctx);
-    let result = state.with_watch_suppressed(&app, || {
-        // Revalidação única no momento da execução (TOCTOU): o preview aqui
-        // recalcula gates e argv; `execute_write_prevalidated` NÃO repete.
-        let preview = preview_write(&ctx, ctx.repo_path(), &request)?;
-        if let Some(msg) = preview.blocked.clone() {
-            return Err(GitError::Git(msg));
+    let app_bloqueante = app.clone();
+    // Escrita pode ir à rede (push/pull): sai do runtime assíncrono.
+    let outcome = em_thread_bloqueante_tipada(move || {
+        let state = app_bloqueante.state::<AppState>();
+        let ctx = abrir_contexto(&path).map_err(AppError::operation_failed)?;
+        let head_before = current_head_id(&ctx);
+        let result = state.with_watch_suppressed(&app_bloqueante, || {
+            // Revalidação única no momento da execução (TOCTOU): o preview aqui
+            // recalcula gates e argv; `execute_write_prevalidated` NÃO repete.
+            let preview = preview_write(&ctx, ctx.repo_path(), &request)?;
+            if let Some(msg) = preview.blocked.clone() {
+                return Err(GitError::Git(msg));
+            }
+            if preview.commands != expected_commands {
+                return Err(GitError::Git(
+                    "O comando mudou desde o preview (estado do repo alterado). \
+                     Peça a confirmação novamente."
+                        .into(),
+                ));
+            }
+            let outcome = execute_write_prevalidated(&ctx, request.clone());
+            crate::application::record_write_outcome(
+                &data_dir,
+                &ctx,
+                &request,
+                &preview,
+                match &outcome {
+                    Ok(()) => Ok(()),
+                    Err(e) => Err(e),
+                },
+                from_assistant,
+            );
+            outcome
+        });
+        if let Err(e) = result {
+            // Token já consumido: qualquer falha exige novo preview (A-02 one-shot).
+            let msg = e.to_string();
+            let msg = if msg.to_lowercase().contains("preview novamente") {
+                msg
+            } else {
+                format!("{msg} Peça a confirmação novamente.")
+            };
+            return Err(AppError::preview_required(msg));
         }
-        if preview.commands != expected_commands {
-            return Err(GitError::Git(
-                "O comando mudou desde o preview (estado do repo alterado). \
-                 Peça a confirmação novamente."
-                    .into(),
-            ));
-        }
-        let outcome = execute_write_prevalidated(&ctx, request.clone());
-        crate::application::record_write_outcome(
-            &data_dir,
-            &ctx,
-            &request,
-            &preview,
-            match &outcome {
-                Ok(()) => Ok(()),
-                Err(e) => Err(e),
-            },
-            from_assistant,
-        );
-        outcome
-    });
-    if let Err(e) = result {
-        // Token já consumido: qualquer falha exige novo preview (A-02 one-shot).
-        let msg = e.to_string();
-        let msg = if msg.to_lowercase().contains("preview novamente") {
-            msg
-        } else {
-            format!("{msg} Peça a confirmação novamente.")
-        };
-        return Err(AppError::preview_required(msg));
-    }
-    let _ = app.emit("repo-changed", ());
-    let new_head_id = current_head_id(&ctx);
-    Ok(WriteOutcome {
-        head_moved: new_head_id != head_before,
-        new_head_id,
+        let new_head_id = current_head_id(&ctx);
+        Ok(WriteOutcome {
+            head_moved: new_head_id != head_before,
+            new_head_id,
+        })
     })
+    .await?;
+    let _ = app.emit("repo-changed", ());
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -564,51 +631,34 @@ pub async fn list_audit_log(
 ) -> Result<Vec<crate::domain::AuditEntry>, String> {
     let data_dir = state.data_dir().clone();
     let days = days.unwrap_or(7);
-    tauri::async_runtime::spawn_blocking(move || {
+    em_thread_bloqueante(move || {
         crate::infrastructure::list_audit_entries(&data_dir, days).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Leitura do log interrompida: {e}"))?
 }
 
 #[tauri::command]
 pub async fn list_local_branches(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        fetch_local_branches(&path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Listagem de branches interrompida: {e}"))?
+    em_thread_bloqueante(move || fetch_local_branches(&path).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
 pub async fn list_remote_branches(state: State<'_, AppState>) -> Result<Vec<RemoteBranchRef>, String> {
     let path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        fetch_remote_branches(&path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Listagem de branches remotas interrompida: {e}"))?
+    em_thread_bloqueante(move || fetch_remote_branches(&path).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
 pub async fn list_stashes(state: State<'_, AppState>) -> Result<Vec<StashEntry>, String> {
     let path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        fetch_stashes(&path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Listagem de stashes interrompida: {e}"))?
+    em_thread_bloqueante(move || fetch_stashes(&path).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
 pub async fn list_tags(state: State<'_, AppState>) -> Result<Vec<TagEntry>, String> {
     let path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        fetch_tags(&path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Listagem de tags interrompida: {e}"))?
+    em_thread_bloqueante(move || fetch_tags(&path).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
@@ -620,8 +670,12 @@ pub async fn list_ordered_compare_refs(
     for r in refs {
         known.push(validate_compare_ref(&r).map_err(|e| e.to_string())?);
     }
-    let ctx = repo_context(&state)?;
-    order_refs_by_recent_checkout(ctx.writer(), &known).map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        order_refs_by_recent_checkout(abrir_contexto(&repo_path)?.writer(), &known)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -640,8 +694,12 @@ pub async fn list_branch_diff_files(
         Some("tips") | Some("Tips") => BranchDiffMode::Tips,
         _ => BranchDiffMode::MergeBase,
     };
-    let ctx = repo_context(&state)?;
-    list_branch_diff(ctx.writer(), &left, &right, mode).map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        list_branch_diff(abrir_contexto(&repo_path)?.writer(), &left, &right, mode)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -659,17 +717,23 @@ pub async fn get_branch_file_diff_cmd(
         Some("tips") | Some("Tips") => BranchDiffMode::Tips,
         _ => BranchDiffMode::MergeBase,
     };
-    let ctx = repo_context(&state)?;
-    get_branch_file_diff(ctx.writer(), &left, &right, mode, &path).map_err(|e| e.to_string())
+    let repo_path = caminho_do_repo(&state)?;
+    em_thread_bloqueante(move || {
+        get_branch_file_diff(
+            abrir_contexto(&repo_path)?.writer(),
+            &left,
+            &right,
+            mode,
+            &path,
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn list_clone_remote_branches(url: String) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        fetch_clone_remote_branches(&url).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("Listagem de branches interrompida: {e}"))?
+    em_thread_bloqueante(move || fetch_clone_remote_branches(&url).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
@@ -732,19 +796,18 @@ pub async fn get_branch_pr_status(state: State<'_, AppState>) -> Result<BranchPr
         Ok(p) => p,
         Err(_) => return Ok(fetch_branch_pr_status("", "", None)),
     };
-    let info = repo_info(&path).map_err(|e| e.to_string())?;
-    let Some(branch) = info.branch.filter(|b| !b.is_empty()) else {
-        return Ok(fetch_branch_pr_status("", "", None));
-    };
-    let Some(remote_url) = info.remote_url.filter(|u| !u.is_empty()) else {
-        return Ok(fetch_branch_pr_status("", "", None));
-    };
     let data_dir = state.data_dir().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        fetch_branch_pr_status(&remote_url, &branch, Some(&data_dir))
+    em_thread_bloqueante(move || {
+        let info = repo_info(&path).map_err(|e| e.to_string())?;
+        let Some(branch) = info.branch.filter(|b| !b.is_empty()) else {
+            return Ok(fetch_branch_pr_status("", "", None));
+        };
+        let Some(remote_url) = info.remote_url.filter(|u| !u.is_empty()) else {
+            return Ok(fetch_branch_pr_status("", "", None));
+        };
+        Ok(fetch_branch_pr_status(&remote_url, &branch, Some(&data_dir)))
     })
-        .await
-        .map_err(|e| format!("Consulta de PR interrompida: {e}"))
+    .await
 }
 
 /// RF-20 — conteúdo 3-vias + regiões de conflito do arquivo.
@@ -755,10 +818,10 @@ pub async fn get_conflict_file(
 ) -> Result<ConflictFileView, String> {
     let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
     let repo_path = state.repo_path()?;
-    tauri::async_runtime::spawn_blocking(move || fetch_conflict_file(&repo_path, &path))
-        .await
-        .map_err(|e| format!("Leitura de conflito interrompida: {e}"))?
-        .map_err(|e| e.to_string())
+    em_thread_bloqueante(move || {
+        fetch_conflict_file(&repo_path, &path).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// RF-21 — preferências do assistente (sem API keys).
@@ -767,16 +830,15 @@ pub async fn get_assistant_settings(
     state: State<'_, AppState>,
 ) -> Result<crate::domain::AssistantSettingsView, String> {
     let data_dir = state.data_dir().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    em_thread_bloqueante(move || {
         let settings = crate::infrastructure::load_assistant_settings(&data_dir);
-        Ok::<_, String>(crate::domain::AssistantSettingsView {
+        Ok(crate::domain::AssistantSettingsView {
             settings,
             has_openai_key: crate::infrastructure::has_llm_api_key("openai"),
             has_anthropic_key: crate::infrastructure::has_llm_api_key("anthropic"),
         })
     })
     .await
-    .map_err(|e| format!("Leitura de settings interrompida: {e}"))?
 }
 
 #[tauri::command]
@@ -785,17 +847,16 @@ pub async fn set_assistant_settings(
     state: State<'_, AppState>,
 ) -> Result<crate::domain::AssistantSettingsView, String> {
     let data_dir = state.data_dir().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    em_thread_bloqueante(move || {
         crate::infrastructure::save_assistant_settings(&data_dir, &settings)
             .map_err(|e| e.to_string())?;
-        Ok::<_, String>(crate::domain::AssistantSettingsView {
+        Ok(crate::domain::AssistantSettingsView {
             settings,
             has_openai_key: crate::infrastructure::has_llm_api_key("openai"),
             has_anthropic_key: crate::infrastructure::has_llm_api_key("anthropic"),
         })
     })
     .await
-    .map_err(|e| format!("Gravação de settings interrompida: {e}"))?
 }
 
 #[tauri::command]
@@ -804,11 +865,7 @@ pub async fn set_llm_api_key(provider: String, key: String) -> Result<(), String
     if provider != "openai" && provider != "anthropic" {
         return Err("Provedor inválido (use openai ou anthropic).".into());
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::infrastructure::store_llm_api_key(&provider, &key)
-    })
-    .await
-    .map_err(|e| format!("Salvar chave interrompido: {e}"))?
+    em_thread_bloqueante(move || crate::infrastructure::store_llm_api_key(&provider, &key)).await
 }
 
 #[tauri::command]
@@ -817,22 +874,17 @@ pub async fn clear_llm_api_key(provider: String) -> Result<(), String> {
     if provider != "openai" && provider != "anthropic" {
         return Err("Provedor inválido (use openai ou anthropic).".into());
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::infrastructure::clear_llm_api_key(&provider)
-    })
-    .await
-    .map_err(|e| format!("Remover chave interrompido: {e}"))?
+    em_thread_bloqueante(move || crate::infrastructure::clear_llm_api_key(&provider)).await
 }
 
 #[tauri::command]
 pub async fn test_llm_connection(state: State<'_, AppState>) -> Result<String, String> {
     let data_dir = state.data_dir().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    em_thread_bloqueante(move || {
         let settings = crate::infrastructure::load_assistant_settings(&data_dir);
         crate::application::test_llm_connection(&settings).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Teste LLM interrompido: {e}"))?
 }
 
 #[tauri::command]
@@ -840,9 +892,10 @@ pub async fn chat_assistant(
     request: crate::domain::ChatAssistantRequest,
     state: State<'_, AppState>,
 ) -> Result<crate::domain::ChatAssistantResponse, String> {
-    let ctx = repo_context(&state)?;
+    let repo_path = caminho_do_repo(&state)?;
     let data_dir = state.data_dir().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    em_thread_bloqueante(move || {
+        let ctx = abrir_contexto(&repo_path)?;
         let settings = crate::infrastructure::load_assistant_settings(&data_dir);
         crate::application::run_assistant_chat(
             &ctx,
@@ -850,8 +903,7 @@ pub async fn chat_assistant(
             &request.messages,
             request.ui_context.as_ref(),
         )
-            .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Chat interrompido: {e}"))?
 }

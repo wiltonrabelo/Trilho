@@ -1,48 +1,8 @@
 //! RF-14 — diff entre duas refs (branches locais ou remotas).
 
-use serde::Serialize;
-
 use crate::application::{GitCommand, GitError};
-use crate::domain::FileChangeKind;
+use crate::domain::{BranchDiffFile, BranchDiffMode, BranchDiffSummary, FileChangeKind};
 use crate::infrastructure::SafeGitCli;
-
-/// Modo de comparação entre pontas (`A..B`) ou a partir do merge-base (`A...B`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum BranchDiffMode {
-    /// Diferença direta entre as pontas (`A..B`).
-    Tips,
-    /// O que B tem desde que divergiu de A (`A...B`) — padrão RF-14.
-    MergeBase,
-}
-
-impl BranchDiffMode {
-    pub fn range_spec(self, left: &str, right: &str) -> String {
-        match self {
-            BranchDiffMode::Tips => format!("{left}..{right}"),
-            BranchDiffMode::MergeBase => format!("{left}...{right}"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BranchDiffFile {
-    pub path: String,
-    pub kind: FileChangeKind,
-    pub additions: u32,
-    pub deletions: u32,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BranchDiffSummary {
-    pub left: String,
-    pub right: String,
-    pub mode: BranchDiffMode,
-    pub range: String,
-    pub files: Vec<BranchDiffFile>,
-}
 
 /// Lista arquivos alterados entre `left` e `right` no modo escolhido.
 pub fn list_branch_diff(

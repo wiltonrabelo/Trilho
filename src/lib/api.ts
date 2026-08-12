@@ -79,16 +79,6 @@ export async function getAppInfo(): Promise<AppInfo> {
 
 
 
-export async function listCommitsMock(): Promise<CommitDto[]> {
-
-  if (!isTauri()) return MOCK_COMMITS;
-
-  return invoke<CommitDto[]>("list_commits_mock");
-
-}
-
-
-
 export async function validateRepoPath(path: string): Promise<void> {
 
   if (!isTauri()) return;

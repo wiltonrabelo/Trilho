@@ -99,7 +99,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
-            commands::list_commits_mock,
             commands::validate_repo_path,
             commands::open_repo,
             commands::close_repo,

@@ -69,7 +69,7 @@ impl Default for AssistantSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatMessageDto {
+pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
@@ -93,7 +93,7 @@ pub struct AssistantUiContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatAssistantRequest {
-    pub messages: Vec<ChatMessageDto>,
+    pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub ui_context: Option<AssistantUiContext>,
 }

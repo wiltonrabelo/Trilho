@@ -5,10 +5,9 @@ use super::gates::{
     gate_clean_worktree, gate_force_push_upstream, gate_not_head_commit, gate_sequencer_idle,
     is_ancestor_of_head, is_head_commit,
 };
-use crate::application::operations::ResetMode;
 use crate::application::write_gates::{head_is_local_only, is_commit_on_remote};
 use crate::application::{GitCommand, GitError, GitWriter, RepoContext};
-use crate::domain::ResetModeDto;
+use crate::domain::ResetMode;
 use crate::infrastructure::{
     commit_summary, is_merge_commit, repo_info, validate_git_object_id,
 };
@@ -225,14 +224,6 @@ fn range_has_merge_commits(cli: &dyn GitWriter, sha: &str) -> Result<bool, GitEr
     })?;
     let count: u64 = out.trim().parse().unwrap_or(0);
     Ok(count > 0)
-}
-
-pub(super) fn reset_mode_from_dto(mode: ResetModeDto) -> ResetMode {
-    match mode {
-        ResetModeDto::Soft => ResetMode::Soft,
-        ResetModeDto::Mixed => ResetMode::Mixed,
-        ResetModeDto::Hard => ResetMode::Hard,
-    }
 }
 
 pub(super) const RESET_HARD_STASH_MSG: &str = "trilho: backup antes de reset --hard";

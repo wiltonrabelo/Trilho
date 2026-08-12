@@ -1,47 +1,14 @@
 //! RF-20 — leitura e resolução de arquivos em conflito (3 vias).
 
-use serde::Serialize;
+use crate::domain::{
+    ConflictFileView, ConflictRegion, ConflictSide, ConflictSideChoice,
+};
 use std::path::Path;
 
 use crate::application::{GitCommand, GitError};
 use crate::infrastructure::git_cli::SafeGitCli;
 use crate::infrastructure::validation::validate_repo_relative_path;
 use git2::{Index, Repository};
-
-/// Um lado do conflito (conteúdo do blob no índice / working tree).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ConflictSide {
-    pub available: bool,
-    pub content: String,
-}
-
-/// Região de conflito (ou trecho comum) no working tree.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ConflictRegion {
-    /// `context` | `conflict`
-    pub kind: String,
-    pub ours: String,
-    pub theirs: String,
-    /// Só em `context`: texto comum.
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ConflictFileView {
-    pub path: String,
-    pub base: ConflictSide,
-    pub ours: ConflictSide,
-    pub theirs: ConflictSide,
-    /// Conteúdo atual do working tree (pode conter marcadores).
-    pub worktree: String,
-    pub regions: Vec<ConflictRegion>,
-    pub conflict_count: u32,
-    /// true se o WT ainda tem marcadores `<<<<<<<`.
-    pub has_markers: bool,
-}
 
 /// Lê stages 1/2/3 + working tree e parseia marcadores.
 pub fn get_conflict_file(repo_path: &str, display_path: &str) -> Result<ConflictFileView, GitError> {
@@ -246,13 +213,6 @@ pub enum ConflictChoice {
     Both,
     BothTheirsFirst,
     Custom(String),
-}
-
-#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum ConflictSideChoice {
-    Ours,
-    Theirs,
 }
 
 /// `git checkout --ours|--theirs -- <path>` + `git add`.

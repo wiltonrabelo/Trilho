@@ -7,6 +7,7 @@ import {
   type ContextMenuItem,
 } from "@/components/ContextMenu";
 import { runningInTauri } from "@/lib/api";
+import { sameRepoPath } from "@/lib/repoPath";
 
 interface RepoPickerProps {
   recentRepos: string[];
@@ -15,10 +16,6 @@ interface RepoPickerProps {
   onClone?: () => void;
   loading?: boolean;
   currentPath?: string | null;
-}
-
-function pathsMatch(a: string, b: string) {
-  return a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
 }
 
 export function RepoPicker({
@@ -57,7 +54,7 @@ export function RepoPicker({
       e.preventDefault();
       e.stopPropagation();
       const name = path.split(/[/\\]/).pop() ?? path;
-      const active = !!currentPath && pathsMatch(path, currentPath);
+      const active = !!currentPath && sameRepoPath(path, currentPath);
       setMenu({ path, name, x: e.clientX, y: e.clientY, active });
     },
     [currentPath],
@@ -121,7 +118,7 @@ export function RepoPicker({
           <ul className="space-y-1">
             {recentRepos.map((path) => {
               const name = path.split(/[/\\]/).pop() ?? path;
-              const active = !!currentPath && pathsMatch(path, currentPath);
+              const active = !!currentPath && sameRepoPath(path, currentPath);
               return (
                 <li key={path} className="group flex items-center gap-0.5">
                   <button

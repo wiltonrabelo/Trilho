@@ -1,12 +1,12 @@
 //! Gates de working tree — descartar alterações, remover não rastreados,
 //! descartar hunks e salvar arquivos.
 
-use super::git_path_from_display;
+use crate::domain::caminho_git_do_rotulo;
 use crate::application::{GitError, RepoContext};
 use crate::domain::{FileChange, FileChangeKind, InProgressKind};
 
 fn status_path_matches(display: &str, path: &str) -> bool {
-    git_path_from_display(display) == path
+    caminho_git_do_rotulo(display) == path
 }
 
 pub(super) fn gate_save_worktree_file(

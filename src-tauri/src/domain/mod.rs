@@ -5,17 +5,21 @@ mod audit;
 mod blame;
 mod branch_origin;
 mod operation;
-mod trilho_help;
+mod view;
 
 pub use assistant::{
     AssistantSettings, AssistantSettingsView, AssistantUiContext, ChatAssistantRequest,
-    ChatAssistantResponse, ChatMessageDto, LlmProviderKind,
+    ChatAssistantResponse, ChatMessage, LlmProviderKind,
 };
 pub use audit::{AuditAction, AuditEntry, AuditResult};
 pub use blame::{BlameLine, BlameSource};
 pub use branch_origin::{BranchOrigin, OriginConfidence};
-pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetModeDto, WriteOutcome, WriteRequest};
-pub use trilho_help::help_for_topic;
+pub use operation::{CloneRequest, CloneResult, OperationPreview, ResetMode, WriteOutcome, WriteRequest};
+pub use view::{
+    BranchDiffFile, BranchDiffMode, BranchDiffSummary, BranchPrStatus, ConflictFileView,
+    ConflictRegion, ConflictSide, ConflictSideChoice, CredentialStatus, GithubAccount, PrSummary,
+    RemoteBranchRef, SshKeyInfo, SshTestResult, StashEntry, TagEntry,
+};
 
 use serde::{Deserialize, Serialize};
 /// Um commit da trilha (RF-01). Serializa em camelCase para o frontend.
@@ -98,6 +102,24 @@ pub struct FileChange {
     /// RF-20 — blocos `<<<<<<<` no working tree (só em `conflicted`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conflict_blocks: Option<u32>,
+}
+
+/// Separador do rótulo de renomeação em `FileChange::path`.
+const SEPARADOR_RENOMEACAO: &str = " → ";
+
+/// Monta o rótulo de um arquivo renomeado (`origem → destino`). Único lugar
+/// que decide o formato — o parse correspondente é `caminho_git_do_rotulo`.
+pub fn rotulo_renomeacao(origem: &str, destino: &str) -> String {
+    format!("{origem}{SEPARADOR_RENOMEACAO}{destino}")
+}
+
+/// Extrai de um rótulo de `FileChange::path` o caminho que o Git entende: no
+/// rename é sempre o destino. Paths sem rótulo passam intactos.
+pub fn caminho_git_do_rotulo(rotulo: &str) -> &str {
+    rotulo
+        .split_once(SEPARADOR_RENOMEACAO)
+        .map(|(_, destino)| destino)
+        .unwrap_or(rotulo)
 }
 
 /// Operação Git interrompida (revert/merge/cherry-pick).

@@ -1,12 +1,13 @@
-use super::sync_remote::plan_publish;
-use super::{execute_write, git_path_from_display, preview_write};
+use super::sync_remote::{plan_publish, PlanoPublicacao, PublishPlan};
+use super::{execute_write, preview_write};
+use crate::domain::caminho_git_do_rotulo;
 use crate::application::RepoContext;
 use crate::domain::WriteRequest;
 
 #[test]
 fn git_path_from_rename_display() {
-    assert_eq!(git_path_from_display("a.ts → b.ts"), "b.ts");
-    assert_eq!(git_path_from_display("plain.ts"), "plain.ts");
+    assert_eq!(caminho_git_do_rotulo("a.ts → b.ts"), "b.ts");
+    assert_eq!(caminho_git_do_rotulo("plain.ts"), "plain.ts");
 }
 
 fn init_repo_with_commit(dir: &std::path::Path) {
@@ -55,7 +56,7 @@ fn reset_para_head_e_bloqueado() {
         ctx.repo_path(),
         &WriteRequest::Reset {
             commit_id: sha,
-            mode: crate::domain::ResetModeDto::Mixed,
+            mode: crate::domain::ResetMode::Mixed,
             force_push: false,
         },
     )
@@ -434,6 +435,13 @@ fn switch_remoto_preview_usa_track() {
 /// Regressão: publicação com remoto já configurado e URL NOVA deve
 /// corrigir a URL (`remote set-url`) antes do push — sem isso, quem
 /// publicou apontando para a conta errada ficava preso no terminal.
+fn plano_pronto(ctx: &RepoContext, url: &str) -> PublishPlan {
+    match plan_publish(ctx, Some(url)).expect("plan") {
+        PlanoPublicacao::Pronto(plan) => plan,
+        PlanoPublicacao::Bloqueado(motivo) => panic!("publicação bloqueada: {motivo}"),
+    }
+}
+
 #[test]
 fn publish_com_url_nova_gera_set_url() {
     let dir = std::env::temp_dir().join(format!("trilho-pub-{}", std::process::id()));
@@ -446,14 +454,14 @@ fn publish_com_url_nova_gera_set_url() {
         .unwrap();
 
     let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
-    let plan = plan_publish(&ctx, Some("git@github.com:certa/repo.git")).expect("plan");
+    let plan = plano_pronto(&ctx, "git@github.com:certa/repo.git");
     let step = plan.remote_step.expect("deve ter passo de remoto");
     let args = step.command().args;
     assert!(args.contains(&"set-url".to_string()), "args: {args:?}");
     assert!(args.contains(&"git@github.com:certa/repo.git".to_string()));
 
     // Mesma URL → sem passo de remoto (só push).
-    let plan = plan_publish(&ctx, Some("git@github.com:errada/repo.git")).expect("plan");
+    let plan = plano_pronto(&ctx, "git@github.com:errada/repo.git");
     assert!(plan.remote_step.is_none());
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -712,7 +720,7 @@ fn reset_hard_com_wt_suja_nao_bloqueia_e_inclui_stash() {
         ctx.repo_path(),
         &WriteRequest::Reset {
             commit_id: parent,
-            mode: crate::domain::ResetModeDto::Hard,
+            mode: crate::domain::ResetMode::Hard,
             force_push: false,
         },
     )

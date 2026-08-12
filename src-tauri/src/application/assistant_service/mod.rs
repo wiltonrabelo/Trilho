@@ -7,8 +7,8 @@ use crate::application::{
     LlmToolCall, LlmToolDef, RepoContext,
 };
 use crate::domain::{
-    AssistantSettings, AssistantUiContext, BlameSource, ChatAssistantResponse, ChatMessageDto,
-    LlmProviderKind, WriteRequest,
+    AssistantSettings, AssistantUiContext, BlameSource, BranchDiffMode, ChatAssistantResponse,
+    ChatMessage, LlmProviderKind, WriteRequest,
 };
 use crate::infrastructure::llm::{
     ping_ollama, AnthropicProvider, ClaudeCodeProvider, CodexCliProvider, OllamaProvider,
@@ -18,7 +18,7 @@ use crate::infrastructure::{
     get_branch_file_diff, get_branch_pr_status, get_conflict_file, get_llm_api_key, list_branch_diff,
     list_local_branches as fetch_local_branches, list_remote_branches, list_stashes, list_tags,
     validate_clone_branch, validate_compare_ref, validate_git_object_id, validate_remote_url,
-    validate_repo_relative_path, validate_tag_name, BranchDiffMode,
+    validate_repo_relative_path, validate_tag_name,
 };
 
 const MAX_TOOL_ROUNDS: usize = 6;
@@ -87,7 +87,7 @@ pub fn build_provider(settings: &AssistantSettings) -> Result<Box<dyn LlmProvide
 pub fn run_chat(
     ctx: &RepoContext,
     settings: &AssistantSettings,
-    messages: &[ChatMessageDto],
+    messages: &[ChatMessage],
     ui: Option<&AssistantUiContext>,
 ) -> Result<ChatAssistantResponse, GitError> {
     if !settings.enabled {

@@ -10,6 +10,7 @@ mod audit_service;
 mod llm_provider;
 mod operations;
 mod repo_context;
+mod trilho_help;
 mod write_auth;
 mod write_gates;
 mod write_service;
@@ -26,6 +27,7 @@ pub use operations::{
     StatusPorcelain,
 };
 pub use repo_context::RepoContext;
+pub use trilho_help::help_for_topic;
 pub use write_auth::same_repo_path;
 pub use write_service::{execute_write_prevalidated, preview_write};
 

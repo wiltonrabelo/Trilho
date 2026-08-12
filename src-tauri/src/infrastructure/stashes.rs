@@ -1,19 +1,9 @@
 //! Listagem de stashes (`git stash list`).
 
-use serde::Serialize;
+use crate::domain::StashEntry;
 
 use crate::application::{GitCommand, GitError};
 use crate::infrastructure::SafeGitCli;
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct StashEntry {
-    pub index: usize,
-    /// Ref Git (`stash@{0}`).
-    pub reference: String,
-    /// Texto após `stash@{n}:`.
-    pub message: String,
-}
 
 pub fn list_stashes(repo_path: &str) -> Result<Vec<StashEntry>, GitError> {
     let cli = SafeGitCli::new(repo_path);

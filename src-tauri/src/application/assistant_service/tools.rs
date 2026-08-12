@@ -798,7 +798,7 @@ pub(super) fn run_tool(
                 .get("topic")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            ToolOutcome::Read(crate::domain::help_for_topic(topic))
+            ToolOutcome::Read(crate::application::help_for_topic(topic))
         }
         "get_commit_summary" => {
             let id = match commit_id_arg(&args, "commitId") {

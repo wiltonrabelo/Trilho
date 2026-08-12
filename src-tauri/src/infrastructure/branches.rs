@@ -1,7 +1,7 @@
 //! Listagem de branches locais e remotas.
 
 use git2::{BranchType, Repository};
-use serde::Serialize;
+use crate::domain::RemoteBranchRef;
 
 use crate::application::GitError;
 
@@ -11,14 +11,6 @@ fn branch_sort_key(name: &str) -> (u8, &str) {
         "master" => (1, name),
         _ => (2, name),
     }
-}
-
-/// Referência a branch remota (`origin/feature` → remote=`origin`, branch=`feature`).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteBranchRef {
-    pub remote: String,
-    pub branch: String,
 }
 
 /// Branches locais (`refs/heads/*`), ordenadas (main/master primeiro).

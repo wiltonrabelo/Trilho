@@ -1,25 +1,15 @@
-import {
-  Archive,
-  ChevronDown,
-  ChevronRight,
-  Cloud,
-  GitBranch,
-  GitCompare,
-  Search,
-  Tag,
-} from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type MouseEvent,
-} from "react";
+import { Archive, Cloud, GitBranch, GitCompare, Search, Tag } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 
+import { ContextMenu } from "@/components/ContextMenu";
+import { CollapsibleSection } from "@/components/RefsCollapsibleSection";
+import { refsMenuItems, type RefsMenuState } from "@/lib/refsMenu";
 import {
-  ContextMenu,
-  type ContextMenuItem,
-} from "@/components/ContextMenu";
+  loadSectionState,
+  persistSectionState,
+  type SectionKey,
+  type SectionState,
+} from "@/lib/refsSections";
 import {
   filterBranches,
   filterRemoteBranches,
@@ -28,40 +18,6 @@ import {
   groupByRemote,
 } from "@/lib/refs-filter";
 import type { RemoteBranchRefDto, StashEntryDto, TagEntryDto } from "@/types";
-
-const SECTION_STORAGE_KEY = "trilho.refs.sections.v3";
-
-type SectionKey = "locals" | "remotes" | "tags" | "stashes";
-
-interface SectionState {
-  locals: boolean;
-  remotes: boolean;
-  tags: boolean;
-  stashes: boolean;
-}
-
-function loadSectionState(): SectionState {
-  try {
-    const raw =
-      localStorage.getItem(SECTION_STORAGE_KEY) ??
-      localStorage.getItem("trilho.refs.sections.v2") ??
-      localStorage.getItem("trilho.refs.sections.v1");
-    if (!raw) return { locals: true, remotes: true, tags: true, stashes: true };
-    const parsed = JSON.parse(raw) as Partial<SectionState>;
-    return {
-      locals: parsed.locals !== false,
-      remotes: parsed.remotes !== false,
-      tags: parsed.tags !== false,
-      stashes: parsed.stashes !== false,
-    };
-  } catch {
-    return { locals: true, remotes: true, tags: true, stashes: true };
-  }
-}
-
-function persistSectionState(state: SectionState) {
-  localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(state));
-}
 
 interface RefsPanelProps {
   branches: string[];
@@ -85,74 +41,6 @@ interface RefsPanelProps {
   onTagSelect: (commitId: string) => void;
   onTagDelete: (name: string) => void;
   onCompareBranches?: () => void;
-}
-
-type RefsMenuState =
-  | {
-      kind: "local";
-      branch: string;
-      x: number;
-      y: number;
-      active: boolean;
-    }
-  | {
-      kind: "remote";
-      remote: string;
-      branch: string;
-      x: number;
-      y: number;
-      active: boolean;
-      hasLocal: boolean;
-    }
-  | {
-      kind: "tag";
-      name: string;
-      commitId: string;
-      x: number;
-      y: number;
-    }
-  | {
-      kind: "stash";
-      index: number;
-      reference: string;
-      message: string;
-      x: number;
-      y: number;
-    };
-
-function CollapsibleSection({
-  title,
-  icon,
-  count,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  count: number;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex min-h-0 flex-col">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex shrink-0 items-center gap-1.5 rounded-md px-1 py-1 text-[11px] font-medium uppercase tracking-wide text-muted hover:bg-surface hover:text-text"
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        {icon}
-        {title}
-        <span className="ml-auto text-[10px] font-normal normal-case tracking-normal">
-          {count}
-        </span>
-      </button>
-      {open ? <div className="py-0.5">{children}</div> : null}
-    </section>
-  );
 }
 
 export function RefsPanel({
@@ -202,7 +90,7 @@ export function RefsPanel({
         active: branch === currentBranch,
       });
     },
-    [currentBranch],
+    [currentBranch]
   );
 
   const openRemoteMenu = useCallback(
@@ -219,7 +107,7 @@ export function RefsPanel({
         hasLocal: branches.includes(branch),
       });
     },
-    [branches, currentBranch],
+    [branches, currentBranch]
   );
 
   const openTagMenu = useCallback((e: MouseEvent, name: string, commitId: string) => {
@@ -241,181 +129,55 @@ export function RefsPanel({
         y: e.clientY,
       });
     },
-    [],
+    []
   );
 
-  const menuItems: ContextMenuItem[] = useMemo(() => {
-    if (!menu) return [];
-    const busy = Boolean(writeDisabled || loading);
-
-    if (menu.kind === "tag") {
-      return [
-        {
-          id: "goto",
-          label: "Ir para o commit",
-          primary: true,
-          onSelect: () => onTagSelect(menu.commitId),
-        },
-        {
-          id: "delete-tag",
-          label: "Excluir tag",
-          separatorBefore: true,
-          disabled: busy,
-          onSelect: () => onTagDelete(menu.name),
-        },
-      ];
-    }
-
-    if (menu.kind === "stash") {
-      return [
-        {
-          id: "apply",
-          label: "Aplicar",
-          primary: true,
-          disabled: busy,
-          onSelect: () => onStashApply(menu.index),
-        },
-        {
-          id: "pop",
-          label: "Pop (aplicar e remover)",
-          disabled: busy,
-          onSelect: () => onStashPop(menu.index),
-        },
-        {
-          id: "drop",
-          label: "Excluir",
-          separatorBefore: true,
-          disabled: busy,
-          onSelect: () => onStashDrop(menu.index),
-        },
-      ];
-    }
-
-    if (menu.kind === "local") {
-      const remotesForBranch = [
-        ...new Set(
-          remoteBranches
-            .filter((r) => r.branch === menu.branch)
-            .map((r) => r.remote),
-        ),
-      ];
-      const allRemotes = [...new Set(remoteBranches.map((r) => r.remote))];
-      const remotesToShow =
-        remotesForBranch.length > 0
-          ? remotesForBranch
-          : allRemotes.includes("origin")
-            ? ["origin"]
-            : allRemotes.length > 0
-              ? [allRemotes[0]!]
-              : ["origin"];
-
-      const items: ContextMenuItem[] = [
-        {
-          id: "checkout",
-          label: "Checkout",
-          disabled: menu.active || busy,
-          primary: !menu.active,
-          onSelect: () => onSwitchLocal(menu.branch),
-        },
-      ];
-
-      if (onDeleteLocal) {
-        items.push({
-          id: "delete-local",
-          label: "Remover localmente",
-          separatorBefore: true,
-          disabled: menu.active || busy,
-          onSelect: () => onDeleteLocal(menu.branch),
-        });
-      }
-
-      if (onDeleteRemote) {
-        for (const remote of remotesToShow) {
-          items.push({
-            id: `delete-remote-${remote}`,
-            label: `Remover no repositório remoto (${remote})`,
-            separatorBefore: !onDeleteLocal && remote === remotesToShow[0],
-            disabled: menu.active || busy,
-            onSelect: () => onDeleteRemote(remote, menu.branch),
-          });
-        }
-      }
-
-      return items;
-    }
-
-    const items: ContextMenuItem[] = [
-      {
-        id: "checkout",
-        label: "Checkout",
-        disabled: menu.active || busy,
-        primary: !menu.active,
-        onSelect: () => {
-          if (menu.hasLocal) {
-            onSwitchLocal(menu.branch);
-          } else {
-            onSwitchRemote(menu.remote, menu.branch);
-          }
-        },
-      },
-    ];
-
-    if (onDeleteRemote) {
-      items.push({
-        id: "delete-remote",
-        label: `Remover no repositório remoto (${menu.remote})`,
-        separatorBefore: true,
-        disabled: menu.active || busy,
-        onSelect: () => onDeleteRemote(menu.remote, menu.branch),
-      });
-    }
-
-    if (onDeleteLocal && menu.hasLocal) {
-      items.push({
-        id: "delete-local",
-        label: "Remover localmente",
-        disabled: menu.active || busy,
-        onSelect: () => onDeleteLocal(menu.branch),
-      });
-    }
-
-    return items;
-  }, [
-    loading,
-    menu,
-    onDeleteLocal,
-    onDeleteRemote,
-    onStashApply,
-    onStashDrop,
-    onStashPop,
-    onSwitchLocal,
-    onSwitchRemote,
-    onTagDelete,
-    onTagSelect,
-    remoteBranches,
-    writeDisabled,
-  ]);
+  const menuItems = useMemo(
+    () =>
+      refsMenuItems(menu, {
+        busy: Boolean(writeDisabled || loading),
+        remoteBranches,
+        onSwitchLocal,
+        onSwitchRemote,
+        onDeleteLocal,
+        onDeleteRemote,
+        onStashApply,
+        onStashPop,
+        onStashDrop,
+        onTagSelect,
+        onTagDelete,
+      }),
+    [
+      loading,
+      menu,
+      onDeleteLocal,
+      onDeleteRemote,
+      onStashApply,
+      onStashDrop,
+      onStashPop,
+      onSwitchLocal,
+      onSwitchRemote,
+      onTagDelete,
+      onTagSelect,
+      remoteBranches,
+      writeDisabled,
+    ]
+  );
 
   const filteredLocals = useMemo(
     () => filterBranches(branches, query),
-    [branches, query],
+    [branches, query]
   );
   const filteredRemotes = useMemo(
     () => filterRemoteBranches(remoteBranches, query),
-    [remoteBranches, query],
+    [remoteBranches, query]
   );
   const filteredStashes = useMemo(
     () => filterStashes(stashes, query),
-    [stashes, query],
+    [stashes, query]
   );
-  const filteredTags = useMemo(
-    () => filterTags(tags, query),
-    [tags, query],
-  );
-  const remoteGroups = useMemo(
-    () => groupByRemote(filteredRemotes),
-    [filteredRemotes],
-  );
+  const filteredTags = useMemo(() => filterTags(tags, query), [tags, query]);
+  const remoteGroups = useMemo(() => groupByRemote(filteredRemotes), [filteredRemotes]);
 
   const hasAny =
     branches.length > 0 ||
@@ -611,9 +373,7 @@ export function RefsPanel({
                         <button
                           type="button"
                           onClick={() => onTagSelect(tag.commitId)}
-                          onContextMenu={(e) =>
-                            openTagMenu(e, tag.name, tag.commitId)
-                          }
+                          onContextMenu={(e) => openTagMenu(e, tag.name, tag.commitId)}
                           title={`Ir para o commit ${tag.shortId} · Botão direito: ações`}
                           className="w-full truncate rounded-md px-2 py-1 text-left text-xs hover:bg-surface"
                         >
@@ -642,9 +402,7 @@ export function RefsPanel({
                 {stashesLoading && stashes.length === 0 ? (
                   <p className="px-2 text-xs text-muted">Carregando…</p>
                 ) : filteredStashes.length === 0 ? (
-                  <p className="px-2 text-xs text-muted">
-                    Nenhum stash guardado.
-                  </p>
+                  <p className="px-2 text-xs text-muted">Nenhum stash guardado.</p>
                 ) : (
                   <ul className="flex flex-col gap-0.5">
                     {filteredStashes.map((stash) => (
@@ -656,7 +414,7 @@ export function RefsPanel({
                               e,
                               stash.index,
                               stash.reference,
-                              stash.message,
+                              stash.message
                             )
                           }
                           title={`${stash.message} · Botão direito: ações`}

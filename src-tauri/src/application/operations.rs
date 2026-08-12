@@ -3,6 +3,7 @@
 //! Cada operação define o `GitCommand` executado; preview e run usam o mesmo objeto.
 
 use crate::application::GitCommand;
+use crate::domain::ResetMode;
 
 /// Operação Git de repositório — `preview()` e `run()` derivam de `command()`.
 pub trait GitOperation: Send + Sync {
@@ -376,13 +377,7 @@ pub struct ResetCommit {
     pub mode: ResetMode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResetMode {
-    Soft,
-    Mixed,
-    Hard,
-}
-
+/// Tradução do modo de reset para o argv — o tipo em si é do domínio.
 impl ResetMode {
     pub fn flag(self) -> &'static str {
         match self {

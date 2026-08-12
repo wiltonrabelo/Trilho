@@ -2,6 +2,15 @@ import { Bot, Check, Copy, Send, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  defaultModelFor,
+  providerLabel,
+  providerReady,
+  readinessHint,
+  readinessLabel,
+} from "@/lib/assistantProviders";
+import { writeLabel, writeSuccessMessage } from "@/lib/operationLabels";
+import { writesMatch } from "@/lib/writeRequestMatch";
+import {
   chatAssistant,
   clearLlmApiKey,
   getAssistantSettings,
@@ -63,112 +72,6 @@ function roleLabel(role: ChatMessageRole): string {
   }
 }
 
-function writeLabel(req: WriteRequestDto): string {
-  switch (req.kind) {
-    case "stage":
-      return `Stage ${req.path}`;
-    case "stageMany":
-      return `Stage ${req.paths.length} arquivos`;
-    case "stageAll":
-      return "Stage all";
-    case "unstage":
-      return `Unstage ${req.path}`;
-    case "unstageMany":
-      return `Unstage ${req.paths.length} arquivos`;
-    case "unstageAll":
-      return "Unstage all";
-    case "commit":
-      return `Commit: ${req.summary}`;
-    case "push":
-      return "Push";
-    case "pullFfOnly":
-      return "Pull (--ff-only)";
-    case "fetchRemote":
-      return "Fetch (refs remotas)";
-    case "revert":
-      return `Revert ${req.commitId.slice(0, 7)}`;
-    case "cherryPick": {
-      const ids =
-        req.commitIds && req.commitIds.length > 0
-          ? req.commitIds
-          : req.commitId
-            ? [req.commitId]
-            : [];
-      return `Cherry-pick ${ids.map((id) => id.slice(0, 7)).join(", ") || "…"}`;
-    }
-    default:
-      return req.kind;
-  }
-}
-
-function writeSuccessMessage(req: WriteRequestDto): string {
-  switch (req.kind) {
-    case "stage":
-      return `Executado: «${req.path}» está em stage.`;
-    case "stageMany":
-      return `Executado: ${req.paths.length} arquivo(s) em stage.`;
-    case "stageAll":
-      return "Executado: todos os arquivos alterados estão em stage.";
-    case "unstage":
-      return `Executado: «${req.path}» voltou para working tree (unstaged).`;
-    case "unstageMany":
-      return `Executado: ${req.paths.length} arquivo(s) voltaram para working tree.`;
-    case "unstageAll":
-      return "Executado: todos os arquivos voltaram para working tree (unstaged).";
-    case "commit":
-      return `Executado: commit «${req.summary}».`;
-    case "push":
-      return "Executado: push concluído.";
-    case "pullFfOnly":
-      return "Executado: pull (--ff-only) concluído.";
-    case "fetchRemote":
-      return "Executado: fetch das refs remotas concluído.";
-    case "revert":
-      return `Executado: revert do commit ${req.commitId.slice(0, 7)}.`;
-    case "cherryPick": {
-      const ids =
-        req.commitIds && req.commitIds.length > 0
-          ? req.commitIds
-          : req.commitId
-            ? [req.commitId]
-            : [];
-      return `Executado: cherry-pick ${ids.map((id) => id.slice(0, 7)).join(", ") || "…"}.`;
-    }
-    default:
-      return `Executado: ${writeLabel(req)}.`;
-  }
-}
-
-function writesMatch(a: WriteRequestDto, b: WriteRequestDto): boolean {
-  if (a.kind !== b.kind) return false;
-  switch (a.kind) {
-    case "stage":
-    case "unstage":
-    case "discardWorktree":
-    case "removeUntracked":
-    case "saveWorktreeFile":
-      return b.kind === a.kind && a.path === b.path;
-    case "stageMany":
-    case "unstageMany":
-    case "discardWorktreeMany":
-    case "removeUntrackedMany":
-      return (
-        b.kind === a.kind &&
-        a.paths.length === b.paths.length &&
-        a.paths.every((p, i) => p === b.paths[i])
-      );
-    case "commit":
-      return b.kind === a.kind && a.summary === b.summary;
-    case "revert":
-    case "reword":
-      return b.kind === a.kind && a.commitId === b.commitId;
-    case "cherryPick":
-      return b.kind === a.kind && JSON.stringify(a) === JSON.stringify(b);
-    default:
-      return JSON.stringify(a) === JSON.stringify(b);
-  }
-}
-
 export function AssistantChat({
   onProposeWrite,
   writeDisabled,
@@ -176,9 +79,7 @@ export function AssistantChat({
   writeCompleted,
   onWriteCompletedAck,
 }: AssistantChatProps) {
-  const [settings, setSettings] = useState<AssistantSettingsViewDto | null>(
-    null,
-  );
+  const [settings, setSettings] = useState<AssistantSettingsViewDto | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState<ChatMessageView[]>([]);
   const [input, setInput] = useState("");
@@ -217,21 +118,6 @@ export function AssistantChat({
     settingsRef.current = settings;
   }, [settings]);
 
-  const defaultModelFor = (provider: LlmProviderKindDto): string => {
-    switch (provider) {
-      case "ollama":
-        return "llama3.2";
-      case "openAi":
-        return "gpt-4o-mini";
-      case "anthropic":
-        return "claude-3-5-haiku-latest";
-      case "claudeCode":
-        return "sonnet";
-      case "codexCli":
-        return "gpt-5.4-mini";
-    }
-  };
-
   const toSettingsDto = (view: AssistantSettingsViewDto): AssistantSettingsDto => ({
     enabled: view.enabled,
     provider: view.provider,
@@ -269,9 +155,7 @@ export function AssistantChat({
         at,
       },
     ]);
-    setPendingWrites((prev) =>
-      prev.filter((w) => !writesMatch(w, writeCompleted.req)),
-    );
+    setPendingWrites((prev) => prev.filter((w) => !writesMatch(w, writeCompleted.req)));
     onWriteCompletedAck?.();
   }, [writeCompleted, onWriteCompletedAck]);
 
@@ -512,9 +396,7 @@ export function AssistantChat({
                   setSettings(next);
                   settingsRef.current = next;
                 }}
-                onBlur={(e) =>
-                  void saveSettings({ model: e.target.value.trim() })
-                }
+                onBlur={(e) => void saveSettings({ model: e.target.value.trim() })}
               />
             </label>
           </div>
@@ -537,19 +419,18 @@ export function AssistantChat({
                 />
               </label>
               <p className="text-[10px] text-muted">
-                Ollama via app local (URL abaixo). Modelos “:cloud” (ex.
-                glm-5.2:cloud) usam a conta Ollama Cloud — exigem assinatura, não
-                só login.
+                Ollama via app local (URL abaixo). Modelos “:cloud” (ex. glm-5.2:cloud)
+                usam a conta Ollama Cloud — exigem assinatura, não só login.
               </p>
             </div>
           )}
           {settings.provider === "claudeCode" && (
             <p className="text-[10px] leading-snug text-muted">
-              Usa o Claude Code (CLI ou extensão VS Code/Cursor) já autenticado
-              neste PC — não o app Desktop/chat. Tools do Trilho (leitura /
-              propostas) usam o mesmo loop dos outros provedores. Cada mensagem
-              sobe o CLI de novo (pode levar vários segundos a mais). Se só
-              usa a extensão, o Trilho procura o binário em{" "}
+              Usa o Claude Code (CLI ou extensão VS Code/Cursor) já autenticado neste PC
+              — não o app Desktop/chat. Tools do Trilho (leitura / propostas) usam o
+              mesmo loop dos outros provedores. Cada mensagem sobe o CLI de novo (pode
+              levar vários segundos a mais). Se só usa a extensão, o Trilho procura o
+              binário em{" "}
               <span className="font-mono">
                 .vscode/extensions/anthropic.claude-code-*
               </span>
@@ -558,24 +439,24 @@ export function AssistantChat({
           )}
           {settings.provider === "codexCli" && (
             <p className="text-[10px] leading-snug text-muted">
-              Usa o Codex CLI (`codex exec`) com login ChatGPT neste PC — não a
-              API key OpenAI. Rode{" "}
-              <span className="font-mono">codex login</span> uma vez. Tools do
-              Trilho usam o mesmo loop; o agent do Codex fica em sandbox
-              read-only e cwd neutro (não edita o repo). Modelo típico:
-              gpt-5.4-mini (ou o que o catálogo Codex listar).
+              Usa o Codex CLI (`codex exec`) com login ChatGPT neste PC — não a API key
+              OpenAI. Rode <span className="font-mono">codex login</span> uma vez. Tools
+              do Trilho usam o mesmo loop; o agent do Codex fica em sandbox read-only e
+              cwd neutro (não edita o repo). Modelo típico: gpt-5.4-mini (ou o que o
+              catálogo Codex listar).
             </p>
           )}
-          {(settings.provider === "openAi" ||
-            settings.provider === "anthropic") && (
+          {(settings.provider === "openAi" || settings.provider === "anthropic") && (
             <div className="space-y-1">
               <p className="text-muted">
                 Chave:{" "}
                 <span
                   className={
-                    (settings.provider === "openAi"
-                      ? settings.hasOpenaiKey
-                      : settings.hasAnthropicKey)
+                    (
+                      settings.provider === "openAi"
+                        ? settings.hasOpenaiKey
+                        : settings.hasAnthropicKey
+                    )
                       ? "text-accent"
                       : "font-medium text-amber-700 dark:text-amber-300"
                   }
@@ -621,9 +502,7 @@ export function AssistantChat({
               type="checkbox"
               checked={settings.sendMetadata}
               disabled={settingsSaving}
-              onChange={(e) =>
-                void saveSettings({ sendMetadata: e.target.checked })
-              }
+              onChange={(e) => void saveSettings({ sendMetadata: e.target.checked })}
             />
             Enviar metadados (branch/status)
           </label>
@@ -633,17 +512,14 @@ export function AssistantChat({
                 type="checkbox"
                 checked={settings.sendDiffs}
                 disabled={settingsSaving}
-                onChange={(e) =>
-                  void saveSettings({ sendDiffs: e.target.checked })
-                }
+                onChange={(e) => void saveSettings({ sendDiffs: e.target.checked })}
               />
               Enviar diffs ao provedor (revisão de código)
             </span>
             <span className="pl-6 text-[10px] leading-snug text-muted">
-              Permite diffs e leitura de arquivos em refs. A revisão só cobre o
-              que as tools buscarem (pode truncar); não varre o repo inteiro e
-              não substitui testes/CI. O assistente deve avisar isso antes de
-              revisar.
+              Permite diffs e leitura de arquivos em refs. A revisão só cobre o que as
+              tools buscarem (pode truncar); não varre o repo inteiro e não substitui
+              testes/CI. O assistente deve avisar isso antes de revisar.
             </span>
           </label>
           <div className="flex gap-2">
@@ -659,9 +535,9 @@ export function AssistantChat({
             {testHint && <span className="text-muted">{testHint}</span>}
           </div>
           <p className="text-[10px] leading-snug text-muted">
-            Allowlist: leitura, stage/unstage/commit, push, pull, revert,
-            cherry-pick, blame/grafo e ajuda do Trilho. Toda escrita passa pelo
-            preview (RF-08). Reset e force push ficam bloqueados via assistente.
+            Allowlist: leitura, stage/unstage/commit, push, pull, revert, cherry-pick,
+            blame/grafo e ajuda do Trilho. Toda escrita passa pelo preview (RF-08).
+            Reset e force push ficam bloqueados via assistente.
           </p>
         </div>
       )}
@@ -670,8 +546,8 @@ export function AssistantChat({
         {messages.length === 0 && (
           <p className="text-[11px] text-muted">
             Peça em português, por exemplo: «como funciona o stash?», «faz push»,
-            «reverte este commit», «quem alterou esta linha?» ou «revise esta
-            branch contra master» (com «Enviar diffs» ligado — revisão parcial).
+            «reverte este commit», «quem alterou esta linha?» ou «revise esta branch
+            contra master» (com «Enviar diffs» ligado — revisão parcial).
           </p>
         )}
         {messages.map((m, i) => {
@@ -703,16 +579,8 @@ export function AssistantChat({
                     <button
                       type="button"
                       className="rounded p-0.5 text-muted opacity-50 transition-opacity hover:bg-surface hover:text-text hover:opacity-100"
-                      title={
-                        copiedKey === msgKey
-                          ? "Copiado"
-                          : "Copiar resposta"
-                      }
-                      aria-label={
-                        copiedKey === msgKey
-                          ? "Copiado"
-                          : "Copiar resposta"
-                      }
+                      title={copiedKey === msgKey ? "Copiado" : "Copiar resposta"}
+                      aria-label={copiedKey === msgKey ? "Copiado" : "Copiar resposta"}
                       onClick={() => void copyMessage(msgKey, m.content)}
                     >
                       {copiedKey === msgKey ? (
@@ -767,13 +635,9 @@ export function AssistantChat({
           </div>
         )}
         {notice && (
-          <p className="text-[10px] text-amber-700 dark:text-amber-300">
-            {notice}
-          </p>
+          <p className="text-[10px] text-amber-700 dark:text-amber-300">{notice}</p>
         )}
-        {error && (
-          <p className="text-[10px] text-red-600 dark:text-red-400">{error}</p>
-        )}
+        {error && <p className="text-[10px] text-red-600 dark:text-red-400">{error}</p>}
         <div ref={bottomRef} />
       </div>
 
@@ -805,64 +669,4 @@ export function AssistantChat({
       </div>
     </div>
   );
-}
-
-function providerLabel(p: LlmProviderKindDto): string {
-  switch (p) {
-    case "ollama":
-      return "Ollama";
-    case "openAi":
-      return "OpenAI";
-    case "anthropic":
-      return "Anthropic";
-    case "claudeCode":
-      return "Claude Code";
-    case "codexCli":
-      return "Codex CLI";
-  }
-}
-
-/** Opt-in ligado E credenciais/modelo mínimos do provedor atual. */
-function providerReady(s: AssistantSettingsViewDto): boolean {
-  if (!s.enabled) return false;
-  if (!s.model.trim()) return false;
-  switch (s.provider) {
-    case "ollama":
-      return Boolean(s.ollamaBaseUrl.trim());
-    case "openAi":
-      return s.hasOpenaiKey;
-    case "anthropic":
-      return s.hasAnthropicKey;
-    case "claudeCode":
-    case "codexCli":
-      // Auth fica no CLI do usuário; o Trilho só precisa do modelo.
-      return true;
-  }
-}
-
-function readinessLabel(s: AssistantSettingsViewDto): string {
-  if (!s.enabled) return "Desligado";
-  if (providerReady(s)) return "Ativo";
-  if (
-    (s.provider === "openAi" && !s.hasOpenaiKey) ||
-    (s.provider === "anthropic" && !s.hasAnthropicKey)
-  ) {
-    return "Sem chave";
-  }
-  return "Incompleto";
-}
-
-function readinessHint(s: AssistantSettingsViewDto): string | null {
-  if (!s.enabled || providerReady(s)) return null;
-  if (!s.model.trim()) return "Informe o modelo.";
-  if (s.provider === "openAi" && !s.hasOpenaiKey) {
-    return "Salve a API key da OpenAI para usar o assistente.";
-  }
-  if (s.provider === "anthropic" && !s.hasAnthropicKey) {
-    return "Salve a API key da Anthropic para usar o assistente.";
-  }
-  if (s.provider === "ollama" && !s.ollamaBaseUrl.trim()) {
-    return "Informe a URL do Ollama.";
-  }
-  return "Complete a configuração do provedor.";
 }

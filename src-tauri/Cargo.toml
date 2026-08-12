@@ -22,6 +22,7 @@ git2 = "0.19"
 notify = "7"
 chrono = { version = "0.4", features = ["serde"] }
 ureq = { version = "2", features = ["json"] }
+getrandom = "0.3"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

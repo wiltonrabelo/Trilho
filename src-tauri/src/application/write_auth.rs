@@ -1,7 +1,6 @@
 //! A-02 — autorização de uso único ligando preview RF-08 → execute.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -11,8 +10,6 @@ use crate::domain::{CloneRequest, WriteRequest};
 const TTL: Duration = Duration::from_secs(5 * 60);
 /// Limite de autorizações pendentes (evita crescimento ilimitado).
 const MAX_PENDING: usize = 64;
-
-static TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct OpAuthEntry<T: Clone> {
@@ -49,7 +46,7 @@ impl<T: Clone> OpAuthStore<T> {
         request: &T,
         commands: &[String],
     ) -> Result<String, String> {
-        let token = mint_token();
+        let token = mint_token()?;
         let entry = OpAuthEntry {
             repo_path: repo_path.to_string(),
             request: request.clone(),
@@ -130,79 +127,13 @@ fn purge_expired<T: Clone>(map: &mut HashMap<String, OpAuthEntry<T>>) {
     map.retain(|_, e| e.expires_at > now);
 }
 
-fn mint_token() -> String {
-    // 128 bits de entropia via CSPRNG do SO + contador.
+/// 128 bits do CSPRNG do sistema. Sem fallback: se o SO não fornecer
+/// entropia, é melhor não emitir autorização do que emitir uma previsível.
+fn mint_token() -> Result<String, String> {
     let mut bytes = [0u8; 16];
-    if fill_random(&mut bytes).is_err() {
-        // Fallback fraco só se o SO falhar — ainda único por processo.
-        let n = TOKEN_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        bytes = [
-            (n >> 56) as u8,
-            (n >> 48) as u8,
-            (n >> 40) as u8,
-            (n >> 32) as u8,
-            (n >> 24) as u8,
-            (n >> 16) as u8,
-            (n >> 8) as u8,
-            n as u8,
-            (nanos >> 56) as u8,
-            (nanos >> 48) as u8,
-            (nanos >> 40) as u8,
-            (nanos >> 32) as u8,
-            (nanos >> 24) as u8,
-            (nanos >> 16) as u8,
-            (nanos >> 8) as u8,
-            nanos as u8,
-        ];
-    } else {
-        let _ = TOKEN_COUNTER.fetch_add(1, Ordering::SeqCst);
-    }
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn fill_random(buf: &mut [u8]) -> Result<(), ()> {
-    // Sem dependência direta: usa `std` + Windows BCrypt / Unix getrandom via
-    // leitura de fonte do SO com API estável do Rust 1.79+ não disponível;
-    // usamos o crate transitivo getrandom se linkado, senão File.
-    #[cfg(windows)]
-    {
-        use std::ptr;
-        #[link(name = "bcrypt")]
-        extern "system" {
-            fn BCryptGenRandom(
-                h_algorithm: *mut core::ffi::c_void,
-                pb_buffer: *mut u8,
-                cb_buffer: u32,
-                dw_flags: u32,
-            ) -> i32;
-        }
-        const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x00000002;
-        let status = unsafe {
-            BCryptGenRandom(
-                ptr::null_mut(),
-                buf.as_mut_ptr(),
-                buf.len() as u32,
-                BCRYPT_USE_SYSTEM_PREFERRED_RNG,
-            )
-        };
-        if status == 0 {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        use std::fs::File;
-        use std::io::Read;
-        File::open("/dev/urandom")
-            .and_then(|mut f| f.read_exact(buf))
-            .map_err(|_| ())
-    }
+    getrandom::fill(&mut bytes)
+        .map_err(|_| "Gerador de aleatoriedade do sistema indisponível.".to_string())?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Paths equivalentes para o mesmo working tree (normaliza barras / trim).

@@ -1,17 +1,9 @@
 //! Listagem de tags (`git for-each-ref refs/tags`).
 
-use serde::Serialize;
+use crate::domain::TagEntry;
 
 use crate::application::{GitCommand, GitError};
 use crate::infrastructure::SafeGitCli;
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct TagEntry {
-    pub name: String,
-    pub commit_id: String,
-    pub short_id: String,
-}
 
 pub fn list_tags(repo_path: &str) -> Result<Vec<TagEntry>, GitError> {
     let cli = SafeGitCli::new(repo_path);

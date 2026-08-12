@@ -16,31 +16,43 @@ pub use execute::execute_write_prevalidated;
 pub use preview::preview_write;
 
 use crate::application::GitError;
+use crate::domain::caminho_git_do_rotulo;
 use crate::infrastructure::validate_repo_relative_path;
 #[cfg(test)]
 use crate::application::RepoContext;
 #[cfg(test)]
 use crate::domain::WriteRequest;
 
-/// Extrai o path Git de um rótulo de rename (`old → new`).
-fn git_path_from_display(display: &str) -> &str {
-    display
-        .split_once(" → ")
-        .map(|(_, new)| new)
-        .unwrap_or(display)
+pub(super) const MSG_SELECAO_VAZIA: &str = "Nenhum arquivo selecionado.";
+
+/// Resultado da validação de uma lista de paths. Seleção vazia não é falha:
+/// no preview vira bloqueio; só na execução vira erro.
+pub(super) enum PathsValidados {
+    Validos(Vec<String>),
+    SelecaoVazia,
 }
 
-fn validate_paths(paths: &[String]) -> Result<Vec<String>, GitError> {
+fn validate_paths(paths: &[String]) -> Result<PathsValidados, GitError> {
     if paths.is_empty() {
-        return Err(GitError::Git("Nenhum arquivo selecionado.".into()));
+        return Ok(PathsValidados::SelecaoVazia);
     }
-    paths
+    let validos = paths
         .iter()
         .map(|p| {
-            validate_repo_relative_path(git_path_from_display(p))
+            validate_repo_relative_path(caminho_git_do_rotulo(p))
                 .map_err(|e| GitError::Git(e.to_string()))
         })
-        .collect()
+        .collect::<Result<Vec<String>, GitError>>()?;
+    Ok(PathsValidados::Validos(validos))
+}
+
+/// Igual a `validate_paths`, mas para a execução, onde seleção vazia já é erro
+/// (o preview deveria ter bloqueado antes).
+fn validate_paths_obrigatorios(paths: &[String]) -> Result<Vec<String>, GitError> {
+    match validate_paths(paths)? {
+        PathsValidados::Validos(p) => Ok(p),
+        PathsValidados::SelecaoVazia => Err(GitError::Git(MSG_SELECAO_VAZIA.into())),
+    }
 }
 
 /// Preview (gates) + execução em um passo — usado nos testes deste módulo.

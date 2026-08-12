@@ -6,7 +6,7 @@ use super::branch::{
 };
 use super::commit_history::{
     cherry_pick_description, gate_amend, gate_cherry_pick_shas, gate_reset, gate_revert,
-    gate_revert_merge, gate_reword, gate_uncommit, reset_mode_from_dto, reset_needs_force_push,
+    gate_revert_merge, gate_reword, gate_uncommit, reset_needs_force_push,
     resolve_cherry_pick_shas, reword_target_on_remote, RESET_HARD_STASH_MSG,
 };
 use super::conflict_sequencer::{
@@ -27,13 +27,14 @@ use super::sync_remote::{
     gate_force_push_standalone, gate_pull, gate_push, gate_unshallow, is_likely_protected_branch,
     preview_publish, push_upstream_op, remote_only_commit_short_ids,
 };
-use super::{git_path_from_display, validate_paths};
+use super::{validate_paths, PathsValidados, MSG_SELECAO_VAZIA};
+use crate::domain::{caminho_git_do_rotulo, ResetMode};
 use crate::application::backup_ref::backup_ref_preview_command;
 use crate::application::operations::{
     AbortCherryPick, AbortMerge, AbortRevert, ApplyReversePatch, CherryPickCommit, ContinueMerge,
     CreateCommit, DeleteLocalBranch, DeleteRemoteBranch, DeleteTag, DiscardWorktree,
     DiscardWorktreeAll, DiscardWorktreeMany, GitOperation, PullFfOnly, PushUpstream,
-    RemoveUntracked, RemoveUntrackedMany, ResetCommit, ResetMode, RevertCommit, SkipCherryPick,
+    RemoveUntracked, RemoveUntrackedMany, ResetCommit, RevertCommit, SkipCherryPick,
     SkipRevert, Stage, StageAll, StageMany, StashApply, StashDrop, StashPop, StashPush,
     SwitchBranch, UncommitSoft, UnshallowRemote, Unstage, UnstageAll, UnstageMany,
 };
@@ -61,18 +62,17 @@ pub fn preview_write(
 ) -> Result<OperationPreview, GitError> {
     let (commands, description, blocked) = match req {
         WriteRequest::Stage { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let op = Stage { path };
             (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::StageMany { paths } => {
-            let paths = match validate_paths(paths) {
-                Ok(p) => p,
-                Err(GitError::Git(msg)) if msg.contains("Nenhum") => {
-                    return Ok(blocked_preview(repo_path, &msg));
+            let paths = match validate_paths(paths)? {
+                PathsValidados::Validos(p) => p,
+                PathsValidados::SelecaoVazia => {
+                    return Ok(blocked_preview(repo_path, MSG_SELECAO_VAZIA));
                 }
-                Err(e) => return Err(e),
             };
             let count = paths.len();
             let op = StageMany { paths };
@@ -87,18 +87,17 @@ pub fn preview_write(
             (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::Unstage { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let op = Unstage { path };
             (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::UnstageMany { paths } => {
-            let paths = match validate_paths(paths) {
-                Ok(p) => p,
-                Err(GitError::Git(msg)) if msg.contains("Nenhum") => {
-                    return Ok(blocked_preview(repo_path, &msg));
+            let paths = match validate_paths(paths)? {
+                PathsValidados::Validos(p) => p,
+                PathsValidados::SelecaoVazia => {
+                    return Ok(blocked_preview(repo_path, MSG_SELECAO_VAZIA));
                 }
-                Err(e) => return Err(e),
             };
             let count = paths.len();
             let op = UnstageMany { paths };
@@ -356,7 +355,7 @@ pub fn preview_write(
             (ctx.preview_op(&op), description, blocked)
         }
         WriteRequest::DiscardWorktree { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let blocked = gate_discard_worktree(ctx, std::slice::from_ref(&path))?;
             let op = DiscardWorktree { path };
@@ -367,12 +366,11 @@ pub fn preview_write(
             )
         }
         WriteRequest::DiscardWorktreeMany { paths } => {
-            let paths = match validate_paths(paths) {
-                Ok(p) => p,
-                Err(GitError::Git(msg)) if msg.contains("Nenhum") => {
-                    return Ok(blocked_preview(repo_path, &msg));
+            let paths = match validate_paths(paths)? {
+                PathsValidados::Validos(p) => p,
+                PathsValidados::SelecaoVazia => {
+                    return Ok(blocked_preview(repo_path, MSG_SELECAO_VAZIA));
                 }
-                Err(e) => return Err(e),
             };
             let blocked = gate_discard_worktree(ctx, &paths)?;
             let count = paths.len();
@@ -399,7 +397,7 @@ pub fn preview_write(
             )
         }
         WriteRequest::RemoveUntracked { path } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let blocked = gate_remove_untracked(ctx, std::slice::from_ref(&path))?;
             let op = RemoveUntracked { path };
@@ -413,12 +411,11 @@ pub fn preview_write(
             )
         }
         WriteRequest::RemoveUntrackedMany { paths } => {
-            let paths = match validate_paths(paths) {
-                Ok(p) => p,
-                Err(GitError::Git(msg)) if msg.contains("Nenhum") => {
-                    return Ok(blocked_preview(repo_path, &msg));
+            let paths = match validate_paths(paths)? {
+                PathsValidados::Validos(p) => p,
+                PathsValidados::SelecaoVazia => {
+                    return Ok(blocked_preview(repo_path, MSG_SELECAO_VAZIA));
                 }
-                Err(e) => return Err(e),
             };
             let blocked = gate_remove_untracked(ctx, &paths)?;
             let count = paths.len();
@@ -433,7 +430,7 @@ pub fn preview_write(
             )
         }
         WriteRequest::DiscardHunk { path, patch, staged } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let blocked = gate_discard_hunk(ctx, &path, *staged, patch)?;
             let op = ApplyReversePatch {
@@ -450,7 +447,7 @@ pub fn preview_write(
             )
         }
         WriteRequest::ResolveConflictSide { path, side } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let side_norm = normalize_conflict_side(side)?;
             let blocked = gate_resolve_conflict(ctx, &path)?;
@@ -472,7 +469,7 @@ pub fn preview_write(
             )
         }
         WriteRequest::ResolveConflictContent { path, content } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let blocked = gate_resolve_conflict(ctx, &path)?;
             if content.contains("<<<<<<<") || content.contains(">>>>>>>") {
@@ -500,7 +497,7 @@ pub fn preview_write(
             )
         }
         WriteRequest::SaveWorktreeFile { path, content } => {
-            let path = validate_repo_relative_path(git_path_from_display(path))
+            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
                 .map_err(|e| GitError::Git(e.to_string()))?;
             let blocked = gate_save_worktree_file(ctx, &path)?;
             let bytes = content.len();
@@ -626,7 +623,7 @@ pub fn preview_write(
         } => {
             let sha =
                 validate_git_object_id(commit_id).map_err(|e| GitError::Git(e.to_string()))?;
-            let reset_mode = reset_mode_from_dto(*mode);
+            let reset_mode = *mode;
             let needs_force = reset_needs_force_push(ctx, &sha)?;
             let blocked = gate_reset(ctx, repo_path, &sha, reset_mode, *force_push, needs_force)?;
             let short = &sha[..sha.len().min(7)];
