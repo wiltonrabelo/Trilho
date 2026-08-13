@@ -423,7 +423,8 @@ fn spawn_codex(
     let _ = std::fs::create_dir_all(&tmp);
 
     let mut cmd = Command::new(bin);
-    cmd.args(args)
+    crate::infrastructure::subprocesso::sem_janela_de_console(&mut cmd)
+        .args(args)
         .current_dir(&tmp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

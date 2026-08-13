@@ -183,16 +183,25 @@ pub fn reveal_worktree_path(repo_path: &str, path: &str) -> Result<(), GitError>
     }
 }
 
+/// Abre a pasta raiz do repositório aberto no gerenciador de arquivos.
+pub fn open_repo_folder(repo_path: &str) -> Result<(), GitError> {
+    let root = Path::new(repo_path);
+    if !root.is_dir() {
+        return Err(GitError::Io(
+            "Pasta do repositório inválida ou inexistente.".into(),
+        ));
+    }
+    open_folder_os(root)
+}
+
 fn open_path_os(path: &Path) -> Result<(), GitError> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let native = native_path_string(path);
-        let status = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &native])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
+        let status =
+            super::subprocesso::sem_janela_de_console(&mut std::process::Command::new("cmd"))
+                .args(["/C", "start", "", &native])
+                .status()
             .map_err(|e| GitError::Io(format!("Falha ao abrir: {e}")))?;
         if !status.success() {
             return Err(GitError::Io("Não foi possível abrir o arquivo.".into()));
@@ -303,7 +312,11 @@ fn find_git_bash() -> Result<std::path::PathBuf, GitError> {
         }
     }
 
-    if let Ok(output) = std::process::Command::new("where").arg("git").output() {
+    if let Ok(output) =
+        super::subprocesso::sem_janela_de_console(&mut std::process::Command::new("where"))
+            .arg("git")
+            .output()
+    {
         if output.status.success() {
             if let Some(line) = String::from_utf8_lossy(&output.stdout)
                 .lines()

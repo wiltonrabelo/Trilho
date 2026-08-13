@@ -1,4 +1,12 @@
-import { GitBranch, KeyRound, ScrollText, Terminal, TrainFront, X } from "lucide-react";
+import {
+  FolderOpen,
+  GitBranch,
+  KeyRound,
+  ScrollText,
+  Terminal,
+  TrainFront,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AuditLogDialog } from "@/components/AuditLogDialog";
@@ -30,6 +38,7 @@ import { RewordDialog } from "@/components/RewordDialog";
 import { TagDialog } from "@/components/TagDialog";
 import { StatusBar } from "@/components/StatusBar";
 import { SyncIndicator } from "@/components/SyncIndicator";
+import { SyncNoticeBar } from "@/components/SyncNoticeBar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useBlame } from "@/hooks/useBlame";
 import { useBranchOrigin } from "@/hooks/useBranchOrigin";
@@ -52,6 +61,7 @@ import {
   getRepoInfo,
   executeWriteOperation,
   openGitBash,
+  openRepoFolder,
   previewWriteOperation,
   runningInTauri,
 } from "@/lib/api";
@@ -859,22 +869,29 @@ function App() {
           </button>
         </div>
       )}
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-header px-4 py-2 text-headerFg">
-        <div className="flex items-center gap-3">
-          <TrainFront className="text-accent" size={20} />
-          <div className="flex items-baseline gap-2">
+      <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-header px-3 text-headerFg">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <TrainFront className="shrink-0 text-accent" size={20} />
+          <div className="flex shrink-0 items-baseline gap-1.5">
             <h1 className="text-sm font-semibold tracking-tight">Trilho</h1>
-            <span className="text-[11px] text-muted">
+            <span className="hidden text-[11px] text-muted xl:inline">
               {info ? `v${info.version}` : "…"}
             </span>
           </div>
           {repo && (
-            <div className="ml-2 flex items-center gap-1.5 border-l border-border pl-3 text-xs text-muted">
-              <GitBranch size={13} />
+            <div className="flex min-w-0 items-center gap-1.5 border-l border-border pl-2 text-xs text-muted">
+              <GitBranch size={13} className="shrink-0" />
               {repo.isDetached ? (
-                <span className="text-amber-600 dark:text-amber-400">detached HEAD</span>
+                <span className="shrink-0 text-amber-600 dark:text-amber-400">
+                  detached HEAD
+                </span>
               ) : (
-                <span className="font-medium text-text">{repo.branch ?? "—"}</span>
+                <span
+                  className="max-w-[10rem] truncate font-medium text-text xl:max-w-[18rem]"
+                  title={repo.branch ?? undefined}
+                >
+                  {repo.branch ?? "—"}
+                </span>
               )}
               <BranchOriginBadge
                 origin={origin}
@@ -886,7 +903,7 @@ function App() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-1.5">
           {repo && (
             <SyncIndicator
               sync={sync}
@@ -896,7 +913,6 @@ function App() {
               sshUsername={
                 connect.sshTest?.success ? connect.sshTest.username : null
               }
-              hasRemote={repo.hasRemote}
               upstreamConfigured={Boolean(repo.upstream || sync?.upstream)}
               isShallow={repo.isShallow}
               writeDisabled={writeDisabled}
@@ -934,7 +950,7 @@ function App() {
             <button
               type="button"
               onClick={connect.openDialog}
-              className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
               title="Conectar conta GitHub"
             >
               <KeyRound size={14} />
@@ -949,28 +965,54 @@ function App() {
                   ops.setError(e instanceof Error ? e.message : String(e));
                 });
               }}
-              className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
               title={`Abrir Git Bash em ${repo.path}`}
               aria-label="Abrir Git Bash no repositório"
             >
               <Terminal size={14} />
-              Terminal
+              <span className="hidden lg:inline">Terminal</span>
+            </button>
+          )}
+          {!webOnly && repo && (
+            <button
+              type="button"
+              onClick={() => {
+                void openRepoFolder().catch((e) => {
+                  ops.setError(e instanceof Error ? e.message : String(e));
+                });
+              }}
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              title={`Abrir a pasta ${repo.path}`}
+              aria-label="Abrir a pasta do repositório"
+            >
+              <FolderOpen size={14} />
+              <span className="hidden lg:inline">Pasta</span>
             </button>
           )}
           {!webOnly && (
             <button
               type="button"
               onClick={() => setAuditLogOpen(true)}
-              className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted hover:bg-surface"
               title="Histórico de ações (auditoria)"
             >
               <ScrollText size={14} />
-              Ações
+              <span className="hidden lg:inline">Ações</span>
             </button>
           )}
           <ThemeToggle />
         </div>
       </header>
+
+      {repo && (
+        <SyncNoticeBar
+          credential={credential}
+          hasRemote={repo.hasRemote}
+          isShallow={Boolean(repo.isShallow)}
+          needsPublish={Boolean(repo.branch) && !writeDisabled && !upstreamConfigured}
+          error={fetchError || ops.error}
+        />
+      )}
 
       {webOnly && (
         <div className="border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-xs">

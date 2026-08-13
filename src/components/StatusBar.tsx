@@ -50,6 +50,11 @@ export function StatusBar({
             ? "Working tree limpa"
             : `${changeCount} alteração${changeCount === 1 ? "" : "ões"}`}
         </span>
+        <span className="hidden lg:inline" title="Momento do último fetch">
+          {sync?.lastFetchAt
+            ? `Sync: ${new Date(sync.lastFetchAt).toLocaleString("pt-BR")}`
+            : "Sem sync — status local"}
+        </span>
       </div>
       <span
         className="min-w-0 truncate font-mono text-[11px]"

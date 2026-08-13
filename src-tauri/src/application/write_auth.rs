@@ -138,20 +138,38 @@ fn mint_token() -> Result<String, String> {
 
 /// Paths equivalentes para o mesmo working tree (normaliza barras / trim).
 pub fn same_repo_path(a: &str, b: &str) -> bool {
-    fn norm(p: &str) -> String {
-        let p = p.trim().replace('/', "\\");
-        let p = p.trim_end_matches('\\');
-        // Comparação case-insensitive no Windows.
-        #[cfg(windows)]
-        {
-            p.to_ascii_lowercase()
-        }
-        #[cfg(not(windows))]
-        {
-            p.to_string()
-        }
-    }
     norm(a) == norm(b)
+}
+
+/// Forma canônica de um caminho de repositório. Espelhada em
+/// `src/lib/repoPath.ts` — divergir faz a UI achar que é o mesmo repositório
+/// enquanto o gate de escrita recusa o token, ou o contrário.
+fn norm(p: &str) -> String {
+    let bruto = p.trim().replace('/', "\\");
+    // Separador repetido no meio não muda o destino, mas o prefixo importa:
+    // `\\servidor\share` é UNC e `\raiz` é absoluto no Unix.
+    let prefixo = if bruto.starts_with("\\\\") {
+        "\\\\"
+    } else if bruto.starts_with('\\') {
+        "\\"
+    } else {
+        ""
+    };
+    let corpo = bruto
+        .split('\\')
+        .filter(|parte| !parte.is_empty())
+        .collect::<Vec<_>>()
+        .join("\\");
+    let normalizado = format!("{prefixo}{corpo}");
+    // Comparação case-insensitive no Windows.
+    #[cfg(windows)]
+    {
+        normalizado.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        normalizado
+    }
 }
 
 #[cfg(test)]
@@ -209,6 +227,16 @@ mod tests {
     fn same_repo_path_normaliza() {
         assert!(same_repo_path(r"C:\Repo\A", "C:/Repo/A"));
         assert!(!same_repo_path(r"C:\Repo\A", r"C:\Repo\B"));
+    }
+
+    /// Mesmas regras do `normalizeRepoPath` do frontend.
+    #[test]
+    fn same_repo_path_colapsa_separadores_e_preserva_prefixo() {
+        assert!(same_repo_path(r"C:\Repo\\A\", "C:/Repo/A"));
+        assert!(same_repo_path(r"  C:\Repo\A  ", r"C:\Repo\A\\"));
+        // Prefixo preservado: UNC e caminho relativo não podem se confundir.
+        assert!(!same_repo_path(r"\\servidor\share", r"\servidor\share"));
+        assert!(!same_repo_path("/home/u/repo", "home/u/repo"));
     }
 
     /// B-03 — vínculo preview→execute: request/argv ficam no store; execute sem token falha.

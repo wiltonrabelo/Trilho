@@ -8,7 +8,7 @@ fn host_for(provider: &str) -> String {
 }
 
 fn run_credential(args: &[&str], stdin: &[u8]) -> Result<String, String> {
-    let mut child = Command::new("git")
+    let mut child = super::subprocesso::sem_janela_de_console(&mut Command::new("git"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

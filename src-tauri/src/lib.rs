@@ -22,6 +22,69 @@ fn reapply_main_window_icon(app: &tauri::AppHandle) {
     }
 }
 
+/// Encaixa a janela na área de trabalho (tela menos a barra de tarefas) quando
+/// ela não cabe. O Windows não encolhe uma janela criada maior que o monitor:
+/// o tamanho padrão (1200x800) numa tela de 1024x768 nasce com a borda direita
+/// fora da tela e o rodapé atrás da barra. Janela maximizada não precisa de
+/// nada — nela quem calcula o retângulo é o próprio Windows.
+///
+/// `pode_maximizar` só vale na inicialização. Depois disso a correção é
+/// encolher: maximizar prenderia o usuário, porque ao restaurar a janela
+/// voltaria ao tamanho que não cabe e seria maximizada de novo.
+fn encaixar_na_area_de_trabalho(win: &tauri::WebviewWindow, pode_maximizar: bool) {
+    if win.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let Ok(Some(monitor)) = win.current_monitor() else {
+        return;
+    };
+    let Ok(tamanho) = win.outer_size() else {
+        return;
+    };
+    let area = monitor.work_area();
+    if tamanho.width <= area.size.width && tamanho.height <= area.size.height {
+        return;
+    }
+    if pode_maximizar {
+        let _ = win.maximize();
+        return;
+    }
+    // `set_size` dimensiona a área de conteúdo, e `outer_size` mede a janela
+    // com a moldura: pedir o tamanho da área de trabalho direto deixaria a
+    // barra de título e as bordas sobrando para fora dela.
+    let Ok(interno) = win.inner_size() else {
+        return;
+    };
+    let moldura_largura = tamanho.width.saturating_sub(interno.width);
+    let moldura_altura = tamanho.height.saturating_sub(interno.height);
+    let _ = win.set_size(tauri::PhysicalSize::new(
+        area.size.width.saturating_sub(moldura_largura),
+        area.size.height.saturating_sub(moldura_altura),
+    ));
+    let _ = win.set_position(tauri::PhysicalPosition::new(area.position.x, area.position.y));
+}
+
+/// Encaixe na abertura e a cada volta de foco. Mudança de resolução ou de
+/// escala acontece com o app em segundo plano (o usuário vai às configurações
+/// do Windows e volta), então o retorno do foco é o momento natural de
+/// reencaixar. Não usamos `Resized` de propósito: ele dispara a cada quadro do
+/// arrasto e brigaria com quem está redimensionando a janela na mão.
+fn instalar_encaixe_de_janela(app: &tauri::AppHandle) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    encaixar_na_area_de_trabalho(&win, true);
+    let win2 = win.clone();
+    win.on_window_event(move |event| {
+        if matches!(
+            event,
+            tauri::WindowEvent::Focused(true) | tauri::WindowEvent::ScaleFactorChanged { .. }
+        ) {
+            encaixar_na_area_de_trabalho(&win2, false);
+        }
+    });
+}
+
 /// Ao focar a janela, restaura o ícone (mitiga perda após idle no Windows).
 fn install_window_icon_keepalive(app: &tauri::AppHandle) {
     let Some(win) = app.get_webview_window("main") else {
@@ -92,6 +155,7 @@ pub fn run() {
         .setup(|app| {
             let state = AppState::new(app.handle())?;
             app.manage(state);
+            instalar_encaixe_de_janela(app.handle());
             install_window_icon_keepalive(app.handle());
             #[cfg(debug_assertions)]
             install_dev_idle_recovery(app.handle());
@@ -113,6 +177,7 @@ pub fn run() {
             commands::reveal_worktree_path,
             commands::resolve_worktree_path,
             commands::open_git_bash,
+            commands::open_repo_folder,
             commands::get_commit_diff,
             commands::list_commit_files,
             commands::get_commit_file_diff,

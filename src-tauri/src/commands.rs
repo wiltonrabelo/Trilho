@@ -43,6 +43,12 @@ fn abrir_contexto(repo_path: &str) -> Result<RepoContext, String> {
     RepoContext::open(repo_path).map_err(|e| e.to_string())
 }
 
+/// Paths vindos da UI são rótulos de exibição: em renomeação valem
+/// `origem → destino`. Quem vai tocar o arquivo precisa do caminho real.
+fn caminho_de_arquivo(rotulo: &str) -> Result<String, String> {
+    validate_repo_relative_path(caminho_git_do_rotulo(rotulo)).map_err(|e| e.to_string())
+}
+
 /// Trabalho pesado (Git em disco, rede, I/O) sai do runtime assíncrono: um
 /// comando síncrono congelaria a UI e um `await` bloqueante prenderia o
 /// runtime. Todo comando que toca o repositório passa por aqui.
@@ -76,8 +82,8 @@ pub fn get_app_info() -> AppInfo {
 }
 
 #[tauri::command]
-pub fn validate_repo_path(path: String) -> Result<(), String> {
-    AppState::validate_path(&path)
+pub async fn validate_repo_path(path: String) -> Result<(), String> {
+    em_thread_bloqueante(move || AppState::validate_path(&path)).await
 }
 
 // Comandos potencialmente demorados são `async`: no Tauri 2, comando síncrono
@@ -103,9 +109,9 @@ pub async fn close_repo(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_repo_info(state: State<AppState>) -> Result<RepoInfo, String> {
+pub async fn get_repo_info(state: State<'_, AppState>) -> Result<RepoInfo, String> {
     let path = state.repo_path()?;
-    repo_info(&path).map_err(|e| e.to_string())
+    em_thread_bloqueante(move || repo_info(&path).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
@@ -183,7 +189,7 @@ pub async fn get_file_diff(
 pub async fn read_worktree_file(path: String, state: State<'_, AppState>) -> Result<String, String> {
     use std::path::Path;
 
-    let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
+    let path = caminho_de_arquivo(&path)?;
     let repo_path = caminho_do_repo(&state)?;
     em_thread_bloqueante(move || {
         let full = Path::new(&repo_path).join(&path);
@@ -201,6 +207,7 @@ pub async fn read_worktree_file(path: String, state: State<'_, AppState>) -> Res
 #[tauri::command]
 pub async fn open_worktree_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
     let repo_path = state.repo_path()?;
+    let path = caminho_de_arquivo(&path)?;
     em_thread_bloqueante(move || {
         crate::infrastructure::open_worktree_path(&repo_path, &path).map_err(|e| e.to_string())
     })
@@ -211,8 +218,19 @@ pub async fn open_worktree_path(path: String, state: State<'_, AppState>) -> Res
 #[tauri::command]
 pub async fn reveal_worktree_path(path: String, state: State<'_, AppState>) -> Result<(), String> {
     let repo_path = state.repo_path()?;
+    let path = caminho_de_arquivo(&path)?;
     em_thread_bloqueante(move || {
         crate::infrastructure::reveal_worktree_path(&repo_path, &path).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Abre a pasta do repositório aberto no gerenciador de arquivos.
+#[tauri::command]
+pub async fn open_repo_folder(state: State<'_, AppState>) -> Result<(), String> {
+    let repo_path = state.repo_path()?;
+    em_thread_bloqueante(move || {
+        crate::infrastructure::open_repo_folder(&repo_path).map_err(|e| e.to_string())
     })
     .await
 }
@@ -234,6 +252,7 @@ pub async fn resolve_worktree_path(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let repo_path = state.repo_path()?;
+    let path = caminho_de_arquivo(&path)?;
     em_thread_bloqueante(move || {
         crate::infrastructure::absolute_worktree_path(&repo_path, &path)
             .map_err(|e| e.to_string())
@@ -347,54 +366,62 @@ pub async fn get_sync_info(state: State<'_, AppState>) -> Result<SyncInfo, Strin
     Ok(info)
 }
 
+// GCM e SSH sobem subprocessos e vão à rede (`ssh -T` espera até 12s): como
+// todo comando síncrono roda na MAIN thread, estes precisam ser `async`.
 #[tauri::command]
-pub fn get_credential_status() -> CredentialStatus {
-    detect_credential_status()
+pub async fn get_credential_status() -> Result<CredentialStatus, String> {
+    em_thread_bloqueante(|| Ok(detect_credential_status())).await
 }
 
 #[tauri::command]
-pub fn configure_gcm_helper() -> Result<(), String> {
-    ensure_gcm_configured()
+pub async fn configure_gcm_helper() -> Result<(), String> {
+    em_thread_bloqueante(ensure_gcm_configured).await
 }
 
 #[tauri::command]
-pub fn trigger_github_login(remote_url: Option<String>) -> Result<(), String> {
-    crate::infrastructure::trigger_github_login(remote_url.as_deref())
+pub async fn trigger_github_login(remote_url: Option<String>) -> Result<(), String> {
+    em_thread_bloqueante(move || {
+        crate::infrastructure::trigger_github_login(remote_url.as_deref())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn store_github_pat(
+pub async fn store_github_pat(
     pat: String,
     remote_url: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    crate::infrastructure::store_github_pat(
-        &pat,
-        remote_url.as_deref(),
-        state.data_dir(),
-    )?;
-    crate::infrastructure::clear_branch_pr_cache();
-    Ok(())
+    let data_dir = state.data_dir().clone();
+    em_thread_bloqueante(move || {
+        crate::infrastructure::store_github_pat(&pat, remote_url.as_deref(), &data_dir)?;
+        crate::infrastructure::clear_branch_pr_cache();
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn logout_github_account(username: String) -> Result<(), String> {
-    crate::infrastructure::logout_github_account(&username)
+pub async fn logout_github_account(username: String) -> Result<(), String> {
+    em_thread_bloqueante(move || crate::infrastructure::logout_github_account(&username)).await
 }
 
 #[tauri::command]
-pub fn enable_github_use_http_path() -> Result<(), String> {
-    crate::infrastructure::enable_github_use_http_path()
+pub async fn enable_github_use_http_path() -> Result<(), String> {
+    em_thread_bloqueante(crate::infrastructure::enable_github_use_http_path).await
 }
 
 #[tauri::command]
-pub fn test_github_ssh() -> crate::domain::SshTestResult {
-    crate::infrastructure::test_github_ssh()
+pub async fn test_github_ssh() -> Result<crate::domain::SshTestResult, String> {
+    em_thread_bloqueante(|| Ok(crate::infrastructure::test_github_ssh())).await
 }
 
 #[tauri::command]
-pub fn get_ssh_public_key(name: String) -> Result<String, String> {
-    crate::infrastructure::read_ssh_public_key(&name).map_err(|e| e.to_string())
+pub async fn get_ssh_public_key(name: String) -> Result<String, String> {
+    em_thread_bloqueante(move || {
+        crate::infrastructure::read_ssh_public_key(&name).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -487,7 +514,7 @@ pub async fn get_file_blame(
     end_line: u32,
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::domain::BlameLine>, String> {
-    let path = validate_repo_relative_path(&path).map_err(|e| e.to_string())?;
+    let path = caminho_de_arquivo(&path)?;
     let source = parse_blame_source(&source).map_err(|e| e.to_string())?;
     let commit_ref = commit_id
         .as_deref()
@@ -537,6 +564,21 @@ pub async fn preview_write_operation(
     .await
 }
 
+/// Pedido padrão de reconfirmação — o token A-02 é de uso único, então
+/// qualquer falha na execução obriga um novo preview.
+const PEDIR_NOVA_CONFIRMACAO: &str = "Peça a confirmação novamente.";
+
+/// Acrescenta o pedido de reconfirmação sem repetir o que a mensagem já diz.
+fn com_pedido_de_reconfirmacao(mensagem: String) -> String {
+    let ja_pede = mensagem.contains(PEDIR_NOVA_CONFIRMACAO)
+        || mensagem.to_lowercase().contains("preview novamente");
+    if ja_pede {
+        mensagem
+    } else {
+        format!("{mensagem} {PEDIR_NOVA_CONFIRMACAO}")
+    }
+}
+
 /// Id do commit em HEAD via porta de leitura — `None` em repositório vazio.
 fn current_head_id(ctx: &RepoContext) -> Option<String> {
     ctx.reader()
@@ -561,9 +603,9 @@ pub async fn execute_write_operation(
         .map_err(AppError::preview_required)?;
     let path = state.repo_path().map_err(AppError::operation_failed)?;
     if !crate::application::same_repo_path(&entry.repo_path, &path) {
-        return Err(AppError::preview_required(
-            "Repositório mudou desde o preview. Peça a confirmação novamente.",
-        ));
+        return Err(AppError::preview_required(com_pedido_de_reconfirmacao(
+            "Repositório mudou desde o preview.".to_string(),
+        )));
     }
     let data_dir = state.data_dir().clone();
     let from_assistant = from_assistant.unwrap_or(false);
@@ -583,10 +625,9 @@ pub async fn execute_write_operation(
                 return Err(GitError::Git(msg));
             }
             if preview.commands != expected_commands {
+                // O sufixo de reconfirmação é acrescentado por quem trata o erro.
                 return Err(GitError::Git(
-                    "O comando mudou desde o preview (estado do repo alterado). \
-                     Peça a confirmação novamente."
-                        .into(),
+                    "O comando mudou desde o preview (estado do repo alterado).".into(),
                 ));
             }
             let outcome = execute_write_prevalidated(&ctx, request.clone());
@@ -605,13 +646,9 @@ pub async fn execute_write_operation(
         });
         if let Err(e) = result {
             // Token já consumido: qualquer falha exige novo preview (A-02 one-shot).
-            let msg = e.to_string();
-            let msg = if msg.to_lowercase().contains("preview novamente") {
-                msg
-            } else {
-                format!("{msg} Peça a confirmação novamente.")
-            };
-            return Err(AppError::preview_required(msg));
+            return Err(AppError::preview_required(com_pedido_de_reconfirmacao(
+                e.to_string(),
+            )));
         }
         let new_head_id = current_head_id(&ctx);
         Ok(WriteOutcome {
@@ -769,23 +806,30 @@ pub async fn execute_clone_remote(
     let path = match tauri::async_runtime::spawn_blocking(move || execute_clone(&request, &app_clone))
         .await
         .map_err(|e| {
-            AppError::preview_required(format!(
-                "Clone interrompido: {e}. Peça a confirmação novamente."
-            ))
+            AppError::preview_required(com_pedido_de_reconfirmacao(format!(
+                "Clone interrompido: {e}."
+            )))
         })? {
         Ok(p) => p,
         Err(e) => {
-            return Err(AppError::preview_required(format!(
-                "{e} Peça a confirmação novamente."
+            return Err(AppError::preview_required(com_pedido_de_reconfirmacao(
+                e.to_string(),
             )));
         }
     };
-    let warning = validate_post_clone(&path).err().map(|e| e.to_string());
+    // Checagem pós-clone e leitura do repo abrem o repositório recém-clonado:
+    // trabalho de disco que não pode rodar no runtime assíncrono.
+    let path_pos_clone = path.clone();
+    let (warning, repo) = em_thread_bloqueante_tipada(move || {
+        let warning = validate_post_clone(&path_pos_clone).err().map(|e| e.to_string());
+        let repo = repo_info(&path_pos_clone).map_err(AppError::from)?;
+        Ok((warning, repo))
+    })
+    .await?;
     state
-        .set_repo(path.clone(), &app)
+        .set_repo(path, &app)
         .map_err(AppError::operation_failed)?;
     let _ = app.emit("repo-changed", ());
-    let repo = repo_info(&path).map_err(AppError::from)?;
     Ok(CloneResult { repo, warning })
 }
 

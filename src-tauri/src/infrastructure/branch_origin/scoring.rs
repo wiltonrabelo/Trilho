@@ -28,14 +28,22 @@ pub(super) fn score_candidate(
     candidate: &str,
     current_branch: &str,
 ) -> Option<ScoredCandidate> {
+    // Tronco não nasce de branch comum. Sem esta guarda a direção do fork se
+    // inverte: uma branch que saiu do master há pouco (dependabot/*, por
+    // exemplo) tem merge-base recente na trilha da HEAD e passa a ser eleita
+    // «origem» dele, que na verdade não tem origem nenhuma.
+    let current_priority = name_priority(current_branch);
+    if current_priority >= 2 && name_priority(candidate) <= current_priority {
+        return None;
+    }
+
     let tip = branch_tip(repo, candidate)?;
     let merge_base = repo.merge_base(head_oid, tip).ok()?;
 
     // Mesmo commit: só trilha de integração (main/develop) pode ser origem da feature.
     if tip == head_oid {
-        let cur_prio = name_priority(current_branch);
         let cand_prio = name_priority(candidate);
-        if cand_prio <= cur_prio {
+        if cand_prio <= current_priority {
             return None;
         }
         return Some(ScoredCandidate {

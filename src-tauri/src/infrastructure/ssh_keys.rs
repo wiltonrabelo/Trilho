@@ -87,8 +87,10 @@ pub fn read_ssh_public_key(name: &str) -> Result<String, GitError> {
 
 /// `ssh -T git@github.com` — GitHub responde exit 1 com mensagem de sucesso.
 pub fn test_github_ssh() -> SshTestResult {
-    let output = match std::process::Command::new("ssh")
-        .args([
+    let output = match super::subprocesso::sem_janela_de_console(
+        &mut std::process::Command::new("ssh"),
+    )
+    .args([
             "-T",
             "-o",
             "BatchMode=yes",

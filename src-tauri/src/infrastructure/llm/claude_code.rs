@@ -507,7 +507,8 @@ fn spawn_claude(
     let _ = std::fs::create_dir_all(&scratch);
 
     let mut cmd = Command::new(bin);
-    cmd.args(args)
+    crate::infrastructure::subprocesso::sem_janela_de_console(&mut cmd)
+        .args(args)
         .current_dir(&scratch)
         .stdin(if stdin_body.is_some() {
             Stdio::piped()
@@ -518,13 +519,6 @@ fn spawn_claude(
         .stderr(Stdio::piped())
         // Preferir OAuth do plano: não herdar API key do ambiente do Trilho.
         .env_remove("ANTHROPIC_API_KEY");
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
 
     let bin_display = bin.display().to_string();
     let mut child = cmd.spawn().map_err(|e| {

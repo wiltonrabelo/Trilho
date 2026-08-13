@@ -122,6 +122,16 @@ pub fn caminho_git_do_rotulo(rotulo: &str) -> &str {
         .unwrap_or(rotulo)
 }
 
+/// Todos os caminhos que um rótulo representa no índice. Renomeação ocupa duas
+/// entradas (exclusão da origem + adição do destino): operações que mexem no
+/// índice precisam citar as duas, senão metade da renomeação fica para trás.
+pub fn caminhos_git_do_rotulo(rotulo: &str) -> Vec<&str> {
+    match rotulo.split_once(SEPARADOR_RENOMEACAO) {
+        Some((origem, destino)) => vec![origem, destino],
+        None => vec![rotulo],
+    }
+}
+
 /// Operação Git interrompida (revert/merge/cherry-pick).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

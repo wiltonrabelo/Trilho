@@ -1,4 +1,5 @@
 import { AlertTriangle, KeyRound, RefreshCw, Upload } from "lucide-react";
+import { isAuthError, syncSummary } from "@/lib/syncNotices";
 import type { SyncInfoDto, CredentialStatusDto } from "@/types";
 
 interface SyncIndicatorProps {
@@ -7,7 +8,6 @@ interface SyncIndicatorProps {
   branch?: string | null;
   remoteUrl?: string | null;
   sshUsername?: string | null;
-  hasRemote?: boolean;
   upstreamConfigured?: boolean;
   isShallow?: boolean;
   writeDisabled?: boolean;
@@ -23,24 +23,22 @@ interface SyncIndicatorProps {
   error?: string | null;
 }
 
-function isAuthError(error: string | null | undefined): boolean {
-  if (!error) return false;
-  const lower = error.toLowerCase();
-  return (
-    lower.includes("autentica") ||
-    lower.includes("credential") ||
-    lower.includes("gcm") ||
-    lower.includes("conectar")
-  );
-}
+const BOTAO =
+  "flex shrink-0 items-center gap-1.5 rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-50";
+const BOTAO_DESTAQUE =
+  "flex shrink-0 items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50";
 
+/**
+ * Ações de sincronização — uma linha só, sem quebra. Os avisos que antes
+ * viviam aqui embaixo saíram para `SyncNoticeBar`, porque empilhados dentro do
+ * cabeçalho eles espremiam tudo em telas de 1024px.
+ */
 export function SyncIndicator({
   sync,
   credential,
   branch,
   remoteUrl,
   sshUsername,
-  hasRemote = false,
   upstreamConfigured = false,
   isShallow = false,
   writeDisabled,
@@ -55,13 +53,7 @@ export function SyncIndicator({
   pushLoading,
   error,
 }: SyncIndicatorProps) {
-  const lastSync = sync?.lastFetchAt
-    ? new Date(sync.lastFetchAt).toLocaleString("pt-BR")
-    : null;
   const authError = isAuthError(error);
-  const needsCredentialSetup = Boolean(
-    credential?.hint && !credential.gcmAvailable,
-  );
   const showConnect = Boolean(onConnect);
   const needsPublish =
     Boolean(branch) && !writeDisabled && !upstreamConfigured;
@@ -71,171 +63,118 @@ export function SyncIndicator({
     sync?.upstream && sync.behind > 0 && onPushForce && !writeDisabled,
   );
   const busy = loading || pushLoading;
-  const usesSshRemote =
-    remoteUrl?.startsWith("git@") || remoteUrl?.startsWith("ssh://");
-  const usesHttpsRemote =
-    remoteUrl?.startsWith("https://") || remoteUrl?.startsWith("http://");
+  const resumo = syncSummary({ sync, credential, remoteUrl, sshUsername }).join(
+    "\n",
+  );
 
   return (
-    <div className="flex max-w-md flex-col gap-1 text-xs" role="region" aria-label="Sincronização com remoto">
-      <div className="flex flex-wrap gap-1">
+    <div
+      className="flex items-center gap-1.5 text-xs"
+      role="region"
+      aria-label="Sincronização com remoto"
+    >
+      <button
+        type="button"
+        onClick={onFetch}
+        disabled={busy}
+        aria-label="Sincronizar com o remoto (fetch)"
+        className={BOTAO}
+        title={`Sincronizar (fetch)\n${resumo}`}
+      >
+        <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+        <span className="hidden lg:inline">Fetch</span>
+      </button>
+      {needsPublish && onPublish && (
+        <button
+          type="button"
+          onClick={onPublish}
+          disabled={busy}
+          aria-label="Publicar branch no remoto"
+          className={BOTAO_DESTAQUE}
+          title="Vincular a branch ao GitHub e enviar"
+        >
+          <Upload size={14} />
+          Publicar
+        </button>
+      )}
+      {showPull && (
+        <button
+          type="button"
+          onClick={onPull}
+          disabled={busy}
+          aria-label={`Puxar ${sync!.behind} commit(s) do remoto`}
+          className={BOTAO}
+          title="Atualizar com pull --ff-only"
+        >
+          Pull ↓{sync!.behind}
+        </button>
+      )}
+      {isShallow && onUnshallow && (
+        <button
+          type="button"
+          onClick={onUnshallow}
+          disabled={busy}
+          aria-label="Completar histórico do clone raso"
+          className="flex shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-300"
+          title="git fetch --unshallow — baixa todo o histórico"
+        >
+          <RefreshCw size={14} />
+          <span className="hidden xl:inline">Completar histórico</span>
+        </button>
+      )}
+      {showPush && (
+        <button
+          type="button"
+          onClick={onPush}
+          disabled={busy}
+          aria-label={`Enviar ${sync!.ahead} commit(s) ao remoto`}
+          className={BOTAO_DESTAQUE}
+          title="Enviar commits (push)"
+        >
+          <Upload size={14} className={pushLoading ? "animate-pulse" : ""} />
+          Push ↑{sync!.ahead}
+        </button>
+      )}
+      {showPushForce && (
+        <button
+          type="button"
+          onClick={onPushForce}
+          disabled={busy}
+          aria-label={`Push forçado — remoto ${sync!.behind} commit(s) à frente`}
+          className="flex shrink-0 items-center gap-1 rounded border border-red-500/50 bg-red-500/10 px-2 py-1 text-red-700 hover:bg-red-500/20 disabled:opacity-50 dark:text-red-300"
+          title="git push --force-with-lease — reescreve histórico remoto"
+        >
+          <AlertTriangle size={14} />
+          <span className="hidden xl:inline">Force push</span>
+        </button>
+      )}
+      {showConnect && onConnect && (
+        <button
+          type="button"
+          onClick={onConnect}
+          disabled={loading}
+          aria-label="Conectar conta GitHub"
+          className={BOTAO_DESTAQUE}
+          title="Assistente de conexão GitHub"
+        >
+          <KeyRound size={14} />
+          <span className="hidden lg:inline">
+            {credential?.githubConnected ? "Conta" : "Conectar"}
+          </span>
+        </button>
+      )}
+      {authError && !onConnect && (
         <button
           type="button"
           onClick={onFetch}
-          disabled={busy}
-          aria-label="Sincronizar com o remoto (fetch)"
-          className="flex items-center gap-1.5 rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-50"
-          title="Sincronizar (fetch)"
+          disabled={loading}
+          aria-label="Conectar ou reautenticar no GitHub"
+          className={BOTAO_DESTAQUE}
+          title="Reautenticar via Git Credential Manager"
         >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          Fetch
+          <KeyRound size={14} />
+          <span className="hidden lg:inline">Conectar</span>
         </button>
-        {needsPublish && onPublish && (
-          <button
-            type="button"
-            onClick={onPublish}
-            disabled={busy}
-            aria-label="Publicar branch no remoto"
-            className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
-          >
-            <Upload size={14} />
-            Publicar
-          </button>
-        )}
-        {showPull && (
-          <button
-            type="button"
-            onClick={onPull}
-            disabled={busy}
-            aria-label={`Puxar ${sync!.behind} commit(s) do remoto`}
-            className="flex items-center gap-1 rounded border border-border px-2 py-1 hover:bg-surface disabled:opacity-50"
-            title="Atualizar com pull --ff-only"
-          >
-            Pull ↓{sync!.behind}
-          </button>
-        )}
-        {isShallow && onUnshallow && (
-          <button
-            type="button"
-            onClick={onUnshallow}
-            disabled={busy}
-            aria-label="Completar histórico do clone raso"
-            className="flex items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1 text-amber-700 hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-300"
-            title="git fetch --unshallow — baixa todo o histórico"
-          >
-            <RefreshCw size={14} />
-            Completar histórico
-          </button>
-        )}
-        {showPush && (
-          <button
-            type="button"
-            onClick={onPush}
-            disabled={busy}
-            aria-label={`Enviar ${sync!.ahead} commit(s) ao remoto`}
-            className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title="Enviar commits (push)"
-          >
-            <Upload size={14} className={pushLoading ? "animate-pulse" : ""} />
-            Push ↑{sync!.ahead}
-          </button>
-        )}
-        {showPushForce && (
-          <button
-            type="button"
-            onClick={onPushForce}
-            disabled={busy}
-            aria-label={`Push forçado — remoto ${sync!.behind} commit(s) à frente`}
-            className="flex items-center gap-1 rounded border border-red-500/50 bg-red-500/10 px-2 py-1 text-red-700 hover:bg-red-500/20 disabled:opacity-50 dark:text-red-300"
-            title="git push --force-with-lease — reescreve histórico remoto"
-          >
-            <AlertTriangle size={14} />
-            Force push
-          </button>
-        )}
-        {showConnect && onConnect && (
-          <button
-            type="button"
-            onClick={onConnect}
-            disabled={loading}
-            aria-label="Conectar conta GitHub"
-            className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title="Assistente de conexão GitHub"
-          >
-            <KeyRound size={14} />
-            {credential?.githubConnected ? "Conta" : "Conectar"}
-          </button>
-        )}
-        {authError && !onConnect && (
-          <button
-            type="button"
-            onClick={onFetch}
-            disabled={loading}
-            aria-label="Conectar ou reautenticar no GitHub"
-            className="flex items-center gap-1 rounded border border-accent/50 bg-accent/10 px-2 py-1 text-accent hover:bg-accent/20 disabled:opacity-50"
-            title="Reautenticar via Git Credential Manager"
-          >
-            <KeyRound size={14} />
-            Conectar
-          </button>
-        )}
-      </div>
-      {sync?.upstream && (
-        <span className="text-muted">
-          {sync.upstream}
-          {sync.ahead > 0 || sync.behind > 0
-            ? ` · ↑${sync.ahead} ↓${sync.behind}`
-            : ""}
-        </span>
-      )}
-      <span className="text-muted">
-        {lastSync
-          ? `Baseado na última sync: ${lastSync}`
-          : "Ainda não sincronizado — status local"}
-      </span>
-      {isShallow && (
-        <span className="text-amber-600 dark:text-amber-400">
-          Clone raso — só parte do histórico está local. Use «Completar histórico»
-          para baixar o restante.
-        </span>
-      )}
-      {needsPublish && (
-        <span className="text-amber-600 dark:text-amber-400">
-          {hasRemote
-            ? "Branch sem rastreamento remoto — faça Fetch ou use Publicar para vincular ao GitHub."
-            : "Repositório só local — use Publicar para conectar ao GitHub e enviar a branch."}
-        </span>
-      )}
-      {usesSshRemote && sshUsername && (
-        <span className="text-muted">GitHub SSH: @{sshUsername}</span>
-      )}
-      {usesHttpsRemote &&
-        credential?.githubConnected &&
-        credential.githubUsername &&
-        credential.githubUsername !== "git" && (
-        <span className="text-muted">
-          GitHub HTTPS: @{credential.githubUsername}
-        </span>
-      )}
-      {!usesSshRemote && !usesHttpsRemote && credential?.githubConnected && credential.githubUsername && (
-        <span className="text-muted">
-          GitHub: @{credential.githubUsername}
-        </span>
-      )}
-      {needsCredentialSetup && (
-        <span className="text-amber-600 dark:text-amber-400">
-          Conta Git ainda não configurada — use «Conectar» para abrir o assistente
-          (GCM ou token).
-        </span>
-      )}
-      {error && (
-        <span
-          className={
-            authError ? "text-amber-600 dark:text-amber-400" : "text-red-500"
-          }
-        >
-          {error}
-        </span>
       )}
     </div>
   );

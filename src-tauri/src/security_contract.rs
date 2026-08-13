@@ -77,6 +77,34 @@ mod tests {
         }
     }
 
+    /// Registrar no `invoke_handler` não libera o comando: sem entrada na ACL a
+    /// chamada morre em runtime com «not allowed by ACL», e nada em tempo de
+    /// compilação avisa. Este teste é o aviso.
+    #[test]
+    fn todo_comando_registrado_esta_em_alguma_permissao() {
+        let lib = include_str!("lib.rs");
+        let toml = include_str!("../permissions/trilho-commands.toml");
+        let registrados: Vec<&str> = lib
+            .lines()
+            .filter_map(|linha| linha.trim().strip_prefix("commands::"))
+            .filter_map(|resto| resto.strip_suffix(','))
+            .collect();
+        assert!(
+            registrados.len() > 30,
+            "extração falhou: só {} comandos encontrados em lib.rs",
+            registrados.len()
+        );
+        let sem_permissao: Vec<&str> = registrados
+            .iter()
+            .copied()
+            .filter(|cmd| !toml.contains(&format!("\"{cmd}\"")))
+            .collect();
+        assert!(
+            sem_permissao.is_empty(),
+            "comandos sem permissão em trilho-commands.toml: {sem_permissao:?}"
+        );
+    }
+
     #[test]
     fn editor_recusa_conteudo_acima_do_limite() {
         let dir: PathBuf =

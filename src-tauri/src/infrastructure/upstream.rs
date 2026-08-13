@@ -107,7 +107,7 @@ pub fn sync_upstream_remote_ref(repo_path: &str) -> Result<(), GitError> {
         return Ok(());
     };
     let spec = format!("refs/heads/{short}:refs/remotes/{upstream_name}");
-    let output = Command::new("git")
+    let output = super::subprocesso::sem_janela_de_console(&mut Command::new("git"))
         .arg("-C")
         .arg(repo_path)
         .args(["fetch", remote, &spec])

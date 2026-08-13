@@ -810,4 +810,75 @@ mod tests {
         );
         let _ = fs::remove_dir_all(&dir);
     }
+
+    /// Caso real: no próprio Trilho, `master` exibia como origem uma branch
+    /// `dependabot/*` que na verdade nasceu DELE. As duas divergiram (o tronco
+    /// andou, a filha tem commit próprio), então a filha não cai na guarda de
+    /// «candidata à frente da HEAD» e ganhava por ser o fork mais recente.
+    #[test]
+    fn branch_filha_divergente_nao_e_origem_do_tronco() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-trunk-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+        let default = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let default = String::from_utf8_lossy(&default.stdout).trim().to_string();
+
+        // Filha sai do tronco e faz o commit dela (bump de dependência).
+        Command::new("git")
+            .args(["checkout", "-b", "dependabot/cargo/git2-0.21.0"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "cargo.txt", "bump git2");
+
+        // O tronco segue andando: as duas divergem.
+        Command::new("git")
+            .args(["checkout", &default])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        for arquivo in ["b.txt", "c.txt", "d.txt"] {
+            commit_file(&dir, arquivo, "trabalho no tronco");
+        }
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_eq!(
+            origin.candidate, None,
+            "tronco não tem origem — obteve {:?} ({:?})",
+            origin.candidate, origin.signals
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A guarda não pode matar o caso legítimo: `main` derivado de `develop`.
+    #[test]
+    fn tronco_pode_nascer_de_trilha_de_integracao() {
+        let dir = std::env::temp_dir().join(format!("trilho-origin-dev-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        init_repo(&dir);
+        commit_file(&dir, "a.txt", "base");
+        Command::new("git")
+            .args(["checkout", "-b", "develop"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "b.txt", "integração");
+        Command::new("git")
+            .args(["checkout", "-b", "main"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        commit_file(&dir, "c.txt", "release");
+
+        let repo = Repository::discover(&dir).unwrap();
+        let origin = infer_branch_origin(&repo);
+        assert_eq!(origin.candidate.as_deref(), Some("develop"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

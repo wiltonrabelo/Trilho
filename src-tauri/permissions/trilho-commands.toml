@@ -26,6 +26,7 @@ commands.allow = [
   "reveal_worktree_path",
   "resolve_worktree_path",
   "open_git_bash",
+  "open_repo_folder",
   "get_commit_diff",
   "list_commit_files",
   "get_commit_file_diff",

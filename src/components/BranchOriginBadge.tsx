@@ -39,22 +39,38 @@ export function BranchOriginBadge({
     ? `Base do PR aberto${prNumber ? ` #${prNumber}` : ""}: ${prBaseBranch}`
     : origin.explanation;
 
+  // Nome de branch é ilimitado (`origin/dependabot/cargo/…`): sem truncar, o
+  // badge quebra em duas linhas e dobra a altura do cabeçalho.
+  const titulo = candidate
+    ? `Origem: ${candidate} (confiança ${CONFIDENCE_LABEL[confidence].toLowerCase()})\n${explanation}`
+    : explanation;
+
   return (
     <span
-      className="ml-2 inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[10px]"
-      title={explanation}
+      className="inline-flex min-w-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[10px]"
+      title={titulo}
     >
-      <span className="text-muted">origem</span>
+      <span className="shrink-0 text-muted">origem</span>
       {candidate ? (
         <>
-          <span className="font-medium">{candidate}</span>
-          <span className={CONFIDENCE_CLASS[confidence]}>
-            ({CONFIDENCE_LABEL[confidence]}
-            {prBaseBranch ? " · PR" : ""})
+          <span className="max-w-[8rem] truncate font-medium xl:max-w-[16rem]">
+            {candidate}
+          </span>
+          <span
+            className={`shrink-0 ${CONFIDENCE_CLASS[confidence]}`}
+            aria-label={`Confiança ${CONFIDENCE_LABEL[confidence].toLowerCase()}`}
+          >
+            <span className="hidden xl:inline">
+              ({CONFIDENCE_LABEL[confidence]}
+              {prBaseBranch ? " · PR" : ""})
+            </span>
+            <span aria-hidden className="xl:hidden">
+              ●
+            </span>
           </span>
         </>
       ) : (
-        <span className={CONFIDENCE_CLASS[confidence]}>
+        <span className={`shrink-0 ${CONFIDENCE_CLASS[confidence]}`}>
           {CONFIDENCE_LABEL[confidence]}
         </span>
       )}

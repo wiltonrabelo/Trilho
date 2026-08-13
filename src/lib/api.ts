@@ -220,6 +220,14 @@ export async function openGitBash(): Promise<void> {
   return invoke("open_git_bash");
 }
 
+/** Abre a pasta do repositório aberto no gerenciador de arquivos. */
+export async function openRepoFolder(): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Abrir a pasta só funciona no app desktop (Tauri).");
+  }
+  return invoke("open_repo_folder");
+}
+
 /** Caminho absoluto do arquivo no working tree. */
 export async function resolveWorktreePath(path: string): Promise<string> {
   if (!isTauri()) return path;

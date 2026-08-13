@@ -5,6 +5,7 @@ use crate::infrastructure::github_pat_store::{
     load_pat_file, save_pat_file, session_pat_token,
 };
 use crate::domain::{CredentialStatus, GithubAccount};
+use crate::infrastructure::subprocesso::sem_janela_de_console;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -109,7 +110,7 @@ pub fn logout_github_account(username: &str) -> Result<(), String> {
 }
 
 pub fn read_github_use_http_path() -> bool {
-    Command::new("git")
+    sem_janela_de_console(&mut Command::new("git"))
         .args([
             "config",
             "--global",
@@ -129,7 +130,7 @@ pub fn read_github_use_http_path() -> bool {
 
 /// Recomendado para múltiplas contas HTTPS no mesmo PC (credencial por caminho do repo).
 pub fn enable_github_use_http_path() -> Result<(), String> {
-    let output = Command::new("git")
+    let output = sem_janela_de_console(&mut Command::new("git"))
         .args([
             "config",
             "--global",
@@ -165,7 +166,7 @@ fn run_gcm_github(args: &[&str]) -> Result<std::process::Output, String> {
         let mut cmd_args: Vec<&str> = prefix.to_vec();
         cmd_args.push("github");
         cmd_args.extend(args);
-        let output = Command::new(bin)
+        let output = sem_janela_de_console(&mut Command::new(bin))
             .args(&cmd_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -213,7 +214,7 @@ pub fn ensure_gcm_configured() -> Result<(), String> {
     if status.gcm_available {
         return Ok(());
     }
-    let output = Command::new("git")
+    let output = sem_janela_de_console(&mut Command::new("git"))
         .args(["config", "--global", "credential.helper", "manager"])
         .output()
         .map_err(|e| format!("Não foi possível executar git: {e}"))?;
@@ -238,7 +239,7 @@ pub fn trigger_github_login(remote_url: Option<&str>) -> Result<(), String> {
         .map(str::to_string)
         .unwrap_or_else(|| "https://github.com/octocat/Hello-World.git".into());
 
-    let output = Command::new("git")
+    let output = sem_janela_de_console(&mut Command::new("git"))
         .args(crate::infrastructure::git_cli::defensive_config_args())
         .arg("ls-remote")
         .arg("--heads")
@@ -322,7 +323,7 @@ fn approve_github_pat(host: &str, path: Option<&str>, pat: &str) -> Result<(), S
     }
     input.push_str(&format!("password={pat}\n\n"));
 
-    let mut child = Command::new("git")
+    let mut child = sem_janela_de_console(&mut Command::new("git"))
         .args(["credential", "approve"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -420,7 +421,7 @@ fn validate_github_pat_live(pat: &str) -> Result<(), String> {
 }
 
 fn try_gcm_github_login() -> bool {
-    let output = Command::new("git")
+    let output = sem_janela_de_console(&mut Command::new("git"))
         .args(["credential-manager", "github", "login"])
         .env("GCM_INTERACTIVE", "always")
         .stdout(Stdio::piped())
@@ -537,7 +538,7 @@ struct CredentialFill {
 }
 
 fn run_credential_fill(input: &[u8]) -> CredentialFill {
-    let mut child = match Command::new("git")
+    let mut child = match sem_janela_de_console(&mut Command::new("git"))
         .args([
             "-c",
             "credential.interactive=false",
@@ -605,7 +606,7 @@ fn parse_credential_fill_full(stdout: &str) -> CredentialFill {
 }
 
 fn read_credential_helpers() -> Vec<String> {
-    let output = Command::new("git")
+    let output = sem_janela_de_console(&mut Command::new("git"))
         .args(["config", "--global", "--get-all", "credential.helper"])
         .output()
         .ok();
@@ -652,7 +653,9 @@ fn probe_gcm_binary() -> bool {
 
 fn command_exists(name: &str) -> bool {
     #[cfg(windows)]
-    let probe = Command::new("where").arg(name).output();
+    let probe = sem_janela_de_console(&mut Command::new("where"))
+        .arg(name)
+        .output();
     #[cfg(not(windows))]
     let probe = Command::new("which").arg(name).output();
     probe.map(|o| o.status.success()).unwrap_or(false)

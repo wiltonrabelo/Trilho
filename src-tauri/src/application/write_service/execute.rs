@@ -14,7 +14,9 @@ use super::gates::{
 use super::sync_remote::{
     execute_force_push_with_lease, execute_publish, push_upstream_op, sync_local_upstream_ref,
 };
-use super::validate_paths_obrigatorios;
+use super::{
+    validate_paths_de_indice, validate_paths_de_indice_obrigatorios, validate_paths_obrigatorios,
+};
 use crate::domain::{caminho_git_do_rotulo, ResetMode};
 use crate::application::backup_ref::create_backup_ref;
 use crate::application::operations::{
@@ -50,12 +52,11 @@ pub fn execute_write_prevalidated(ctx: &RepoContext, req: WriteRequest) -> Resul
             ctx.execute_op(&StageAll)?;
         }
         WriteRequest::Unstage { path } => {
-            let path = validate_repo_relative_path(caminho_git_do_rotulo(&path))
-                .map_err(|e| GitError::Git(e.to_string()))?;
-            ctx.execute_op(&Unstage { path })?;
+            let paths = validate_paths_de_indice(&path)?;
+            ctx.execute_op(&Unstage { paths })?;
         }
         WriteRequest::UnstageMany { paths } => {
-            let paths = validate_paths_obrigatorios(&paths)?;
+            let paths = validate_paths_de_indice_obrigatorios(&paths)?;
             ctx.execute_op(&UnstageMany { paths })?;
         }
         WriteRequest::UnstageAll => {

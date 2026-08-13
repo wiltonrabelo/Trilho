@@ -1,5 +1,6 @@
 //! Executor seguro da Git CLI (escrita e leitura via subprocess).
 
+use super::subprocesso::sem_janela_de_console;
 use crate::application::{GitCommand, GitError, GitWriter};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -135,7 +136,7 @@ fn safe_os_credential_helper() -> Option<&'static str> {
 }
 
 fn read_global_credential_helper() -> Option<String> {
-    let output = Command::new("git")
+    let output = sem_janela_de_console(&mut Command::new("git"))
         .args(["config", "--global", "--get", "credential.helper"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -202,7 +203,7 @@ fn timeout_for_git_command(command: &GitCommand) -> Duration {
 fn kill_process_tree(pid: u32) {
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        let _ = sem_janela_de_console(&mut Command::new("taskkill"))
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -277,7 +278,8 @@ pub fn run_unbound_git(args: &[&str], network: bool) -> Result<String, GitError>
         local_operation_timeout()
     };
     let mut cmd = Command::new("git");
-    cmd.args(defensive_config_args())
+    sem_janela_de_console(&mut cmd)
+        .args(defensive_config_args())
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -309,7 +311,8 @@ pub fn run_streaming_git(
     mut on_stderr_line: impl FnMut(&str) + Send + 'static,
 ) -> Result<std::process::ExitStatus, GitError> {
     let mut cmd = Command::new("git");
-    cmd.args(defensive_config_args())
+    sem_janela_de_console(&mut cmd)
+        .args(defensive_config_args())
         .args(args)
         .current_dir(current_dir)
         .stdout(Stdio::null())
@@ -426,7 +429,8 @@ impl SafeGitCli {
         }
         let args = self.full_args(command);
         let mut cmd = Command::new("git");
-        cmd.args(&args)
+        sem_janela_de_console(&mut cmd)
+            .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("GIT_TERMINAL_PROMPT", "0")

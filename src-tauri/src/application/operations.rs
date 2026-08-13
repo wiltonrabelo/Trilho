@@ -164,20 +164,17 @@ impl GitOperation for StageAll {
     }
 }
 
+/// Desfaz o stage de UM arquivo. São `paths` no plural porque uma renomeação
+/// ocupa duas entradas no índice e as duas precisam sair juntas.
 pub struct Unstage {
-    pub path: String,
+    pub paths: Vec<String>,
 }
 
 impl GitOperation for Unstage {
     fn command(&self) -> GitCommand {
-        GitCommand {
-            args: vec![
-                "restore".into(),
-                "--staged".into(),
-                "--".into(),
-                self.path.clone(),
-            ],
-        }
+        let mut args = vec!["restore".into(), "--staged".into(), "--".into()];
+        args.extend(self.paths.iter().cloned());
+        GitCommand { args }
     }
     fn description(&self) -> &'static str {
         "Remove o arquivo da staging area; o conteúdo permanece na working tree."
@@ -1079,11 +1076,24 @@ mod tests {
     #[test]
     fn unstage_usa_restore_staged() {
         let op = Unstage {
-            path: "src/a.ts".into(),
+            paths: vec!["src/a.ts".into()],
         };
         assert_eq!(
             op.command().args,
             vec!["restore", "--staged", "--", "src/a.ts"]
+        );
+    }
+
+    /// Renomeação são duas entradas no índice: citar só o destino deixaria a
+    /// exclusão da origem staged.
+    #[test]
+    fn unstage_de_renomeacao_cita_origem_e_destino() {
+        let op = Unstage {
+            paths: vec!["src/velho.ts".into(), "src/novo.ts".into()],
+        };
+        assert_eq!(
+            op.command().args,
+            vec!["restore", "--staged", "--", "src/velho.ts", "src/novo.ts"]
         );
     }
 

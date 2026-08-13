@@ -1,6 +1,6 @@
 use super::sync_remote::{plan_publish, PlanoPublicacao, PublishPlan};
 use super::{execute_write, preview_write};
-use crate::domain::caminho_git_do_rotulo;
+use crate::domain::{caminho_git_do_rotulo, rotulo_renomeacao};
 use crate::application::RepoContext;
 use crate::domain::WriteRequest;
 
@@ -8,6 +8,55 @@ use crate::domain::WriteRequest;
 fn git_path_from_rename_display() {
     assert_eq!(caminho_git_do_rotulo("a.ts → b.ts"), "b.ts");
     assert_eq!(caminho_git_do_rotulo("plain.ts"), "plain.ts");
+}
+
+/// Regressão: renomeação são duas entradas no índice. Desfazer o stage citando
+/// só o destino deixava a exclusão da origem staged (`D f.txt` + `?? g.txt`).
+#[test]
+fn unstage_de_renomeacao_limpa_as_duas_entradas() {
+    let dir = std::env::temp_dir().join(format!("trilho-unstg-rn-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    init_repo_with_commit(&dir);
+    std::process::Command::new("git")
+        .args(["mv", "f.txt", "g.txt"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+
+    let ctx = RepoContext::open(&dir.to_string_lossy()).expect("ctx");
+    let rotulo = rotulo_renomeacao("f.txt", "g.txt");
+    let preview = preview_write(
+        &ctx,
+        ctx.repo_path(),
+        &WriteRequest::Unstage {
+            path: rotulo.clone(),
+        },
+    )
+    .expect("preview");
+    assert!(preview.blocked.is_none(), "{:?}", preview.blocked);
+    let joined = preview.commands.join(" ");
+    assert!(
+        joined.contains("f.txt") && joined.contains("g.txt"),
+        "preview deve citar origem e destino: {joined}"
+    );
+
+    execute_write(&ctx, WriteRequest::Unstage { path: rotulo }).expect("unstage");
+
+    let saida = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    let status = String::from_utf8_lossy(&saida.stdout).to_string();
+    assert!(
+        !status.contains("D  f.txt"),
+        "exclusão da origem continuou no índice: {status}"
+    );
+    assert!(
+        status.contains("?? g.txt"),
+        "destino deveria ficar como untracked: {status}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 fn init_repo_with_commit(dir: &std::path::Path) {

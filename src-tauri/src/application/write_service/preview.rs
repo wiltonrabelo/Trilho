@@ -27,7 +27,10 @@ use super::sync_remote::{
     gate_force_push_standalone, gate_pull, gate_push, gate_unshallow, is_likely_protected_branch,
     preview_publish, push_upstream_op, remote_only_commit_short_ids,
 };
-use super::{validate_paths, PathsValidados, MSG_SELECAO_VAZIA};
+use super::{
+    validate_paths, validate_paths_de_indice, validate_paths_de_indice_muitos, PathsValidados,
+    MSG_SELECAO_VAZIA,
+};
 use crate::domain::{caminho_git_do_rotulo, ResetMode};
 use crate::application::backup_ref::backup_ref_preview_command;
 use crate::application::operations::{
@@ -87,19 +90,21 @@ pub fn preview_write(
             (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::Unstage { path } => {
-            let path = validate_repo_relative_path(caminho_git_do_rotulo(path))
-                .map_err(|e| GitError::Git(e.to_string()))?;
-            let op = Unstage { path };
+            let op = Unstage {
+                paths: validate_paths_de_indice(path)?,
+            };
             (ctx.preview_op(&op), op.description().to_string(), None)
         }
         WriteRequest::UnstageMany { paths } => {
-            let paths = match validate_paths(paths)? {
+            // `count` conta arquivos escolhidos; `paths` pode ser maior, porque
+            // cada renomeação ocupa duas entradas no índice.
+            let count = paths.len();
+            let paths = match validate_paths_de_indice_muitos(paths)? {
                 PathsValidados::Validos(p) => p,
                 PathsValidados::SelecaoVazia => {
                     return Ok(blocked_preview(repo_path, MSG_SELECAO_VAZIA));
                 }
             };
-            let count = paths.len();
             let op = UnstageMany { paths };
             (
                 ctx.preview_op(&op),
