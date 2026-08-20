@@ -61,9 +61,9 @@
         let ollama = reply_meta_review(LlmProviderKind::Ollama);
         assert!(ollama.contains("llama3.2"));
         assert!(ollama.contains("qwen2.5-coder"));
-        let claude = reply_meta_review(LlmProviderKind::ClaudeCode);
-        assert!(!claude.contains("llama3.2"));
-        assert!(claude.contains("Tente de novo"));
+        let anthropic = reply_meta_review(LlmProviderKind::Anthropic);
+        assert!(!anthropic.contains("llama3.2"));
+        assert!(anthropic.contains("Tente de novo"));
         let openai = reply_meta_review(LlmProviderKind::OpenAi);
         assert!(!openai.contains("Ollama"));
     }

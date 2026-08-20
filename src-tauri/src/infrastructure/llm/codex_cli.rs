@@ -3,7 +3,7 @@
 //!
 //! Invoca `codex exec` em modo não-interativo com sandbox read-only e cwd
 //! neutro (não opera no working tree do usuário). Tool-calling do Trilho via
-//! o mesmo protocolo textual que Claude Code (`<<<TRILHO_TOOL_CALLS>>>`).
+//! protocolo textual (`<<<TRILHO_TOOL_CALLS>>>`).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use crate::application::{
     GitError, LlmChatRequest, LlmChatResponse, LlmProvider,
 };
 
-use super::claude_code::{flatten_messages, split_text_and_tool_calls};
+use super::cli_protocol::{flatten_messages, split_text_and_tool_calls};
 
 const CODEX_TIMEOUT_SECS: u64 = 300;
 

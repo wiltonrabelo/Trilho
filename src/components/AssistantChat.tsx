@@ -382,7 +382,6 @@ export function AssistantChat({
                 <option value="openAi">OpenAI (API key)</option>
                 <option value="codexCli">Codex CLI (ChatGPT)</option>
                 <option value="anthropic">Anthropic (API key)</option>
-                <option value="claudeCode">Claude Code (plano)</option>
               </select>
             </label>
             <label className="flex items-center gap-1">
@@ -423,19 +422,6 @@ export function AssistantChat({
                 usam a conta Ollama Cloud — exigem assinatura, não só login.
               </p>
             </div>
-          )}
-          {settings.provider === "claudeCode" && (
-            <p className="text-[10px] leading-snug text-muted">
-              Usa o Claude Code (CLI ou extensão VS Code/Cursor) já autenticado neste PC
-              — não o app Desktop/chat. Tools do Trilho (leitura / propostas) usam o
-              mesmo loop dos outros provedores. Cada mensagem sobe o CLI de novo (pode
-              levar vários segundos a mais). Se só usa a extensão, o Trilho procura o
-              binário em{" "}
-              <span className="font-mono">
-                .vscode/extensions/anthropic.claude-code-*
-              </span>
-              . Modelo: sonnet (ou opus / haiku). Plano Pro/Max — sem API key.
-            </p>
           )}
           {settings.provider === "codexCli" && (
             <p className="text-[10px] leading-snug text-muted">

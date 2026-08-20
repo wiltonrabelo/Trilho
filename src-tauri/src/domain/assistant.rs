@@ -12,8 +12,6 @@ pub enum LlmProviderKind {
     Ollama,
     OpenAi,
     Anthropic,
-    /// Claude Code CLI já autenticado no PC (plano Pro/Max) — sem API key no Trilho.
-    ClaudeCode,
     /// Codex CLI já autenticado com ChatGPT (acesso Codex) — sem API key no Trilho.
     CodexCli,
 }

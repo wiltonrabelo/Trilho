@@ -32,7 +32,6 @@ describe("providerLabel / defaultModelFor", () => {
       "ollama",
       "openAi",
       "anthropic",
-      "claudeCode",
       "codexCli",
     ] as const) {
       expect(providerLabel(p)).toBeTruthy();
@@ -66,10 +65,7 @@ describe("providerReady", () => {
     ).toBe(true);
   });
 
-  it("CLIs autenticam sozinhos: basta o modelo", () => {
-    expect(providerReady(settings({ provider: "claudeCode", model: "sonnet" }))).toBe(
-      true
-    );
+  it("codexCli autentica sozinho: basta o modelo", () => {
     expect(
       providerReady(settings({ provider: "codexCli", model: "gpt-5.4-mini" }))
     ).toBe(true);

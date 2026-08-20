@@ -55,7 +55,7 @@ GCM/PAT/SSH; badge PR (github.com + GHE, multi-PR).
 Histórico 7 dias; marca assistente.
 
 ## assistant
-Opt-in; Ollama/OpenAI/Anthropic/Claude Code/Codex CLI (mesmo loop de tools; CLIs via
+Opt-in; Ollama/OpenAI/Anthropic/Codex CLI (mesmo loop de tools; Codex via
 protocolo textual). Leituras: list_commits (máx. 30), **count_commits** (rev-list
 --count; exclude=base para branch desde main), sync, blame, etc. Com send_diffs:
 revisão determinística sem tools + tools de diff no chat geral. Default-deny em

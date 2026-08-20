@@ -11,8 +11,7 @@ use crate::domain::{
     ChatMessage, LlmProviderKind, WriteRequest,
 };
 use crate::infrastructure::llm::{
-    ping_ollama, AnthropicProvider, ClaudeCodeProvider, CodexCliProvider, OllamaProvider,
-    OpenAiProvider,
+    ping_ollama, AnthropicProvider, CodexCliProvider, OllamaProvider, OpenAiProvider,
 };
 use crate::infrastructure::{
     get_branch_file_diff, get_branch_pr_status, get_conflict_file, get_llm_api_key, list_branch_diff,
@@ -67,13 +66,6 @@ pub fn build_provider(settings: &AssistantSettings) -> Result<Box<dyn LlmProvide
             })?;
             Ok(Box::new(AnthropicProvider { api_key: key }))
         }
-        LlmProviderKind::ClaudeCode => Ok(Box::new(ClaudeCodeProvider {
-            model: if settings.model.trim().is_empty() {
-                "sonnet".into()
-            } else {
-                settings.model.clone()
-            },
-        })),
         LlmProviderKind::CodexCli => Ok(Box::new(CodexCliProvider {
             model: if settings.model.trim().is_empty() {
                 "gpt-5.4-mini".into()
@@ -276,8 +268,8 @@ fn looks_like_code_review_request(text: &str) -> bool {
 
 fn looks_like_fake_tool_json(text: &str) -> bool {
     let t = text.trim();
-    // Protocolo Claude Code: o adaptador deveria ter consumido o bloco; se sobrou
-    // no reply final, não tratar como “JSON falso” genérico de modelo fraco.
+    // Protocolo textual do Codex CLI: o adaptador deveria ter consumido o bloco;
+    // se sobrou no reply final, não tratar como “JSON falso” genérico de modelo fraco.
     if t.contains("<<<TRILHO_TOOL_CALLS>>>") {
         return true;
     }

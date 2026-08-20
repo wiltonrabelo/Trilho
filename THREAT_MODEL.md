@@ -47,7 +47,7 @@ Tratar como **não confiáveis** por padrão:
 | Execute sem preview / replay | Token one-shot preview→execute (write + clone) | A-02 |
 | Editor segue symlink para fora do repo | `symlink_metadata` + rejeição de reparse | A-03 |
 | PAT em texto puro | Credential Manager (+ migrate) | A-04 |
-| Tools próprias do Claude Code | Allowlist vazia / bloqueio explícito | M-01 |
+| Tools próprias do Codex CLI | Allowlist vazia / bloqueio explícito | M-01 |
 | Git/LLM pendurados | Timeouts + kill árvore (SafeGitCli, clone, ls-remote) | M-02 |
 | Deps vulneráveis | `npm audit` + `cargo audit` no CI | M-03 |
 | IPC amplo demais | Capabilities: read / write-propose / write-execute / secrets | M-04 |

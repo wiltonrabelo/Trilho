@@ -1,9 +1,8 @@
-//! RF-21 — adaptadores HTTP (Ollama / OpenAI / Anthropic) + CLIs Claude Code / Codex.
+//! RF-21 — adaptadores HTTP (Ollama / OpenAI / Anthropic) + Codex CLI.
 
-mod claude_code;
+mod cli_protocol;
 mod codex_cli;
 
-pub use claude_code::ClaudeCodeProvider;
 pub use codex_cli::CodexCliProvider;
 
 use serde_json::{json, Value};

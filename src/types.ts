@@ -418,7 +418,6 @@ export type LlmProviderKindDto =
   | "ollama"
   | "openAi"
   | "anthropic"
-  | "claudeCode"
   | "codexCli";
 
 export interface AssistantSettingsDto {

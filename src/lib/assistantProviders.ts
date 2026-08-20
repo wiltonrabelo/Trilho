@@ -9,8 +9,6 @@ export function providerLabel(provider: LlmProviderKindDto): string {
       return "OpenAI";
     case "anthropic":
       return "Anthropic";
-    case "claudeCode":
-      return "Claude Code";
     case "codexCli":
       return "Codex CLI";
   }
@@ -25,8 +23,6 @@ export function defaultModelFor(provider: LlmProviderKindDto): string {
       return "gpt-4o-mini";
     case "anthropic":
       return "claude-3-5-haiku-latest";
-    case "claudeCode":
-      return "sonnet";
     case "codexCli":
       return "gpt-5.4-mini";
   }
@@ -43,7 +39,6 @@ export function providerReady(s: AssistantSettingsViewDto): boolean {
       return s.hasOpenaiKey;
     case "anthropic":
       return s.hasAnthropicKey;
-    case "claudeCode":
     case "codexCli":
       // Auth fica no CLI do usuário; o Trilho só precisa do modelo.
       return true;

@@ -104,7 +104,7 @@ pub(super) fn context_preamble(
     let mut parts = Vec::new();
     // Gate de diffs: sempre enviado (não é metadado de repo). `send_metadata`
     // controla só path/branch/status/UI abaixo — opt-out não esconde este gate.
-    // Claude Code usa protocolo textual de tools no adaptador; Ollama/OpenAI/Anthropic
+    // Codex CLI usa protocolo textual de tools no adaptador; Ollama/OpenAI/Anthropic
     // usam tool-calling nativo da API — em ambos o chat geral tem a allowlist.
     parts.push(format!(
         "Config Assistente: Enviar diffs = {}{}",

@@ -1,19 +1,17 @@
 # Assistente LLM (RF-21)
 
 Aba Assistente (centro-baixo). Opt-in desligado por padrão; provedores Ollama /
-OpenAI (API key) / **Codex CLI (ChatGPT)** / Anthropic (API key) /
-**Claude Code (plano)**.
+OpenAI (API key) / **Codex CLI (ChatGPT)** / Anthropic (API key).
 Chaves OpenAI/Anthropic no Credential Manager (nunca no código).
 
-### CLIs com plano (sem API key no Trilho)
-- **Claude Code:** `claude auth login` (Pro/Max). Modelo típico: `sonnet` / `opus` / `haiku`.
+### Codex CLI (sem API key no Trilho)
 - **Codex CLI:** `codex login` (ChatGPT com acesso Codex). Modelo típico: `gpt-5.4-mini`.
   Invoca `codex exec --sandbox read-only` em cwd neutro; remove `OPENAI_API_KEY`/
   `CODEX_API_KEY` do subprocesso para preferir auth ChatGPT. Não exige `codex` no PATH
   se a extensão VS Code/Cursor `openai.chatgpt-*` estiver instalada (usa
   `bin/windows-x86_64/codex.exe`).
 
-Ambos usam a **mesma allowlist** que Ollama/OpenAI/Anthropic: o adaptador interpreta o
+Usa a **mesma allowlist** que Ollama/OpenAI/Anthropic: o adaptador interpreta o
 bloco textual `<<<TRILHO_TOOL_CALLS>>>`…`<<<END_TRILHO_TOOL_CALLS>>>` e o runtime
 executa as tools. Não há Bash/`git` livre do agent do CLI no repo do usuário.
 Revisão por pacote de diffs continua **sem** tools.
